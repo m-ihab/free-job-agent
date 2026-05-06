@@ -301,7 +301,7 @@ def score(job_id: str = typer.Argument(..., help="Job ID")) -> None:
     job.fit_score = breakdown.total_score
     job.fit_notes = breakdown.notes
     tracker.db.save_job(job)
-    tracker.db.update_job_status(job_id, JobStatus.SCORED)
+    tracker.update_status(job_id, JobStatus.SCORED)
 
     console.print(Panel(
         f"[bold]Total Score:[/bold] {breakdown.total_score:.2f}\n"
