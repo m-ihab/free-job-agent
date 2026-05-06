@@ -1,0 +1,29 @@
+{
+  "entries": [
+    {
+      "question_pattern": "are you authorized to work",
+      "answer": "Yes, I am a US Citizen and fully authorized to work in the United States without sponsorship.",
+      "locked": true
+    },
+    {
+      "question_pattern": "do you require visa sponsorship",
+      "answer": "No, I do not require visa sponsorship.",
+      "locked": true
+    },
+    {
+      "question_pattern": "expected salary",
+      "answer": "My salary expectation is $150,000 - $220,000 depending on total compensation package.",
+      "locked": true
+    },
+    {
+      "question_pattern": "years of experience",
+      "answer": "I have 7 years of professional software engineering experience.",
+      "locked": true
+    },
+    {
+      "question_pattern": "willing to relocate",
+      "answer": "I prefer remote or San Francisco Bay Area positions, but am open to discussing options.",
+      "locked": true
+    }
+  ]
+}

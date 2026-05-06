@@ -1,0 +1,86 @@
+{
+  "contact": {
+    "name": "Alex Chen",
+    "email": "alex.chen@example.com",
+    "phone": "+1-555-0100",
+    "location": "San Francisco, CA",
+    "linkedin_url": "https://linkedin.com/in/alexchen-example",
+    "github_url": "https://github.com/alexchen-example",
+    "work_authorization": "US Citizen"
+  },
+  "summary": "Senior Software Engineer with 7 years of experience building scalable distributed systems and data pipelines. Expertise in Python, Go, and cloud-native architectures.",
+  "education": [
+    {
+      "institution": "University of California, Berkeley",
+      "degree": "Bachelor of Science",
+      "field": "Computer Science",
+      "start_year": 2012,
+      "end_year": 2016,
+      "gpa": 3.8,
+      "honors": ["Magna Cum Laude", "Dean's List"]
+    }
+  ],
+  "experience": [
+    {
+      "company": "DataStream Inc.",
+      "title": "Senior Software Engineer",
+      "start_date": "2020-03",
+      "end_date": null,
+      "location": "San Francisco, CA",
+      "bullet_points": [
+        "Designed and implemented a real-time data pipeline processing 5M events/day using Python, Kafka, and PostgreSQL",
+        "Led migration of monolithic services to Kubernetes microservices, reducing deployment time by 60%",
+        "Mentored 3 junior engineers and introduced team code review best practices",
+        "Built a FastAPI-based REST API serving 10K+ requests/minute with 99.9% uptime"
+      ],
+      "technologies": ["Python", "FastAPI", "Kafka", "PostgreSQL", "Kubernetes", "Docker", "AWS"]
+    },
+    {
+      "company": "CloudBase Labs",
+      "title": "Software Engineer",
+      "start_date": "2017-06",
+      "end_date": "2020-02",
+      "location": "San Francisco, CA",
+      "bullet_points": [
+        "Built Go microservices for the authentication and authorization platform serving 1M+ users",
+        "Implemented CI/CD pipelines using GitHub Actions and Terraform, cutting release cycles from weekly to daily",
+        "Developed React dashboard for monitoring infrastructure metrics in real-time"
+      ],
+      "technologies": ["Go", "React", "Terraform", "AWS", "Docker", "GitHub Actions"]
+    }
+  ],
+  "projects": [
+    {
+      "name": "OpenMetrics Exporter",
+      "description": "An open-source Prometheus metrics exporter for PostgreSQL with support for custom queries and alerting rules. Used by 200+ teams.",
+      "url": "https://github.com/alexchen-example/openmetrics-exporter",
+      "technologies": ["Python", "PostgreSQL", "Prometheus", "Docker"]
+    },
+    {
+      "name": "JobTracker CLI",
+      "description": "A command-line job application tracker built with Python and SQLite, supporting CSV export and status notifications.",
+      "url": "https://github.com/alexchen-example/jobtracker",
+      "technologies": ["Python", "SQLite", "Typer", "Rich"]
+    }
+  ],
+  "certifications": [
+    {
+      "name": "AWS Certified Solutions Architect – Associate",
+      "issuer": "Amazon Web Services",
+      "year": 2021,
+      "url": "https://aws.amazon.com/certification/"
+    }
+  ],
+  "skills": [
+    {"name": "Python", "category": "language", "years_experience": 7},
+    {"name": "Go", "category": "language", "years_experience": 3},
+    {"name": "PostgreSQL", "category": "database", "years_experience": 5},
+    {"name": "Docker", "category": "devops", "years_experience": 4},
+    {"name": "Kubernetes", "category": "devops", "years_experience": 3},
+    {"name": "AWS", "category": "cloud", "years_experience": 4},
+    {"name": "FastAPI", "category": "framework", "years_experience": 3},
+    {"name": "React", "category": "frontend", "years_experience": 2},
+    {"name": "Kafka", "category": "messaging", "years_experience": 2},
+    {"name": "Terraform", "category": "devops", "years_experience": 3}
+  ]
+}
