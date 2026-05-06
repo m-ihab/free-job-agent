@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "free-job-agent"
+version = "0.1.0"
+description = "A free, local-first job-search and application assistant"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "typer[all]>=0.9",
+    "rich>=13.0",
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+    "rapidfuzz>=3.0",
+    "reportlab>=4.0",
+    "feedparser>=6.0",
+    "python-dateutil>=2.8",
+    "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+ui = ["streamlit>=1.28"]
+ollama = ["httpx>=0.25"]
+dev = ["pytest>=7.4", "pytest-cov>=4.1"]
+
+[project.scripts]
+job-agent = "job_agent.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

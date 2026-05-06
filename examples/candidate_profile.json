@@ -1,0 +1,30 @@
+{
+  "contact": {
+    "name": "Alex Chen",
+    "email": "alex.chen@example.com",
+    "phone": "+1-555-0100",
+    "location": "San Francisco, CA",
+    "linkedin_url": "https://linkedin.com/in/alexchen-example",
+    "github_url": "https://github.com/alexchen-example",
+    "work_authorization": "US Citizen"
+  },
+  "summary": "Senior Software Engineer with 7 years of experience building scalable distributed systems and data pipelines. Expertise in Python, Go, and cloud-native architectures.",
+  "skills": [
+    {"name": "Python", "category": "language", "years_experience": 7},
+    {"name": "Go", "category": "language", "years_experience": 3},
+    {"name": "PostgreSQL", "category": "database", "years_experience": 5},
+    {"name": "Docker", "category": "devops", "years_experience": 4},
+    {"name": "Kubernetes", "category": "devops", "years_experience": 3},
+    {"name": "AWS", "category": "cloud", "years_experience": 4},
+    {"name": "FastAPI", "category": "framework", "years_experience": 3},
+    {"name": "React", "category": "frontend", "years_experience": 2}
+  ],
+  "languages": ["English"],
+  "work_authorizations": ["US Citizen"],
+  "salary_min": 150000,
+  "salary_max": 220000,
+  "target_roles": ["Senior Software Engineer", "Staff Software Engineer", "Backend Engineer", "Platform Engineer"],
+  "target_locations": ["San Francisco, CA", "New York, NY", "Seattle, WA"],
+  "remote_ok": true,
+  "relocation_ok": false
+}
