@@ -1,2 +1,2 @@
-"""Free Job Agent - A free, local-first job-search and application assistant."""
-__version__ = "0.1.0"
+"""Free Job Agent - France/Paris Data & AI Edition."""
+__version__ = "0.3.0"

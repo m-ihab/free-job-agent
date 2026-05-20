@@ -14,7 +14,7 @@ def test_tailor_cv_returns_markdown(sample_job, sample_master_cv, sample_profile
 
 def test_tailor_cv_contains_candidate_name(sample_job, sample_master_cv, sample_profile):
     result = tailor_cv(sample_job, sample_master_cv, sample_profile)
-    assert "Alex Chen" in result
+    assert "Candidate Data AI Paris" in result
 
 
 def test_tailor_cv_contains_source_comment(sample_job, sample_master_cv, sample_profile):
@@ -54,12 +54,12 @@ def test_generate_cover_letter_contains_source_comment(sample_job, sample_master
 
 
 def test_answer_screening_questions_matched(sample_qa_profile, sample_profile):
-    questions = ["Are you authorized to work in the US?"]
+    questions = ["Are you authorized to work in France?"]
     answers = answer_screening_questions(questions, sample_qa_profile, sample_profile)
-    assert "Are you authorized to work in the US?" in answers
-    answer = answers["Are you authorized to work in the US?"]
+    assert "Are you authorized to work in France?" in answers
+    answer = answers["Are you authorized to work in France?"]
     assert answer != MANUAL_REVIEW_MARKER
-    assert "US Citizen" in answer or "authorized" in answer.lower()
+    assert "authorized" in answer or "authorized" in answer.lower()
 
 
 def test_answer_screening_questions_unmatched(sample_qa_profile, sample_profile):

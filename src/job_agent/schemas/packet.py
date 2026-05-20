@@ -1,27 +1,62 @@
 """Application packet schemas."""
 from __future__ import annotations
 
-import datetime
 from enum import Enum
 from typing import Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+try:
+    from pydantic.v1 import BaseModel, Field
+except Exception:  # pragma: no cover
+    from pydantic import BaseModel, Field
+
+from job_agent.timeutil import utc_now
 
 
 class PacketStatus(str, Enum):
     DRAFT = "DRAFT"
     READY = "READY"
-    SUBMITTED = "SUBMITTED"
+    NEEDS_REVIEW = "NEEDS_REVIEW"
+    ASSISTED_APPLY_OPENED = "ASSISTED_APPLY_OPENED"
+    SUBMITTED = "SUBMITTED"  # backward-compatible alias
+    MANUALLY_SUBMITTED = "MANUALLY_SUBMITTED"
+    SKIPPED = "SKIPPED"
+    FAILED = "FAILED"
+
+
+class DocumentArtifact(BaseModel):
+    kind: str
+    path: str
+    sha256: str
+    created_at: str = Field(default_factory=utc_now)
+
+
+class ScreeningAnswer(BaseModel):
+    question: str
+    answer: str
+    source: str = "master_qa_profile"
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    needs_review: bool = False
 
 
 class ApplicationPacket(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
-
     id: str = Field(default_factory=lambda: str(uuid4()))
     job_id: str
+    job_fingerprint: str = ""
     version: int = 1
     status: PacketStatus = PacketStatus.DRAFT
+    fit_score: Optional[float] = None
+    fit_confidence: Optional[float] = None
+    fit_decision: Optional[str] = None
+    fit_notes: list[str] = Field(default_factory=list)
+    risk_flags: list[str] = Field(default_factory=list)
+    profile_hash: Optional[str] = None
+    master_cv_hash: Optional[str] = None
+    qa_profile_hash: Optional[str] = None
+    artifacts: list[DocumentArtifact] = Field(default_factory=list)
+    screening_answers: list[ScreeningAnswer] = Field(default_factory=list)
+
+    # Backward-compatible content/path fields used by existing tests and CLI output.
     tailored_cv_md: str = ""
     tailored_cv_html: str = ""
     tailored_cv_pdf_path: Optional[str] = None
@@ -31,5 +66,9 @@ class ApplicationPacket(BaseModel):
     qa_answers: dict[str, str] = Field(default_factory=dict)
     assistant_page_html: str = ""
     notes: str = ""
-    created_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
-    updated_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    created_at: str = Field(default_factory=utc_now)
+    updated_at: str = Field(default_factory=utc_now)
+
+    class Config:
+        anystr_strip_whitespace = True
+        extra = "allow"

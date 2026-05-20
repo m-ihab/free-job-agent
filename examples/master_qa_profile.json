@@ -1,29 +1,74 @@
 {
+  "hold_if_missing": true,
   "entries": [
     {
-      "question_pattern": "are you authorized to work",
-      "answer": "Yes, I am a US Citizen and fully authorized to work in the United States without sponsorship.",
-      "locked": true
+      "id": "work_authorization_france",
+      "question_patterns": [
+        "are you authorized to work in france",
+        "êtes-vous autorisé à travailler en france",
+        "autorisation de travail",
+        "droit de travailler en france"
+      ],
+      "answer": "EDIT THIS: I am authorized to work in France. I can provide details if required.",
+      "category": "work_authorization",
+      "jurisdiction": "FR",
+      "locked": true,
+      "sensitive": true
     },
     {
-      "question_pattern": "do you require visa sponsorship",
-      "answer": "No, I do not require visa sponsorship.",
-      "locked": true
+      "id": "visa_sponsorship_france",
+      "question_patterns": [
+        "do you require visa sponsorship",
+        "will you require sponsorship",
+        "avez-vous besoin d'un visa",
+        "sponsorship visa"
+      ],
+      "answer": "EDIT THIS: My work authorization / visa sponsorship situation is as follows: ...",
+      "category": "work_authorization",
+      "jurisdiction": "FR",
+      "locked": true,
+      "sensitive": true
     },
     {
-      "question_pattern": "expected salary",
-      "answer": "My salary expectation is $150,000 - $220,000 depending on total compensation package.",
-      "locked": true
+      "id": "internship_agreement_france",
+      "question_patterns": [
+        "convention de stage",
+        "can you provide an internship agreement",
+        "avez-vous une convention de stage"
+      ],
+      "answer": "EDIT THIS: Yes, I can provide a convention de stage through my school/university, if applicable.",
+      "category": "internship_agreement",
+      "jurisdiction": "FR",
+      "locked": true,
+      "sensitive": true
     },
     {
-      "question_pattern": "years of experience",
-      "answer": "I have 7 years of professional software engineering experience.",
-      "locked": true
+      "id": "availability_france",
+      "question_patterns": [
+        "availability",
+        "date de disponibilité",
+        "start date",
+        "quand pouvez-vous commencer"
+      ],
+      "answer": "EDIT THIS: I am available from ... for a stage/alternance/internship in Paris or Île-de-France.",
+      "category": "availability",
+      "locked": true,
+      "sensitive": false
     },
     {
-      "question_pattern": "willing to relocate",
-      "answer": "I prefer remote or San Francisco Bay Area positions, but am open to discussing options.",
-      "locked": true
+      "id": "languages_fr_en",
+      "question_patterns": [
+        "languages",
+        "langues",
+        "french level",
+        "english level",
+        "niveau de français",
+        "niveau d'anglais"
+      ],
+      "answer": "EDIT THIS: French: ..., English: ...",
+      "category": "languages",
+      "locked": true,
+      "sensitive": false
     }
   ]
 }

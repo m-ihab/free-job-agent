@@ -1,86 +1,77 @@
 {
   "contact": {
-    "name": "Alex Chen",
-    "email": "alex.chen@example.com",
-    "phone": "+1-555-0100",
-    "location": "San Francisco, CA",
-    "linkedin_url": "https://linkedin.com/in/alexchen-example",
-    "github_url": "https://github.com/alexchen-example",
-    "work_authorization": "US Citizen"
+    "name": "Candidate Data AI Paris",
+    "email": "candidate@example.com",
+    "phone": "+33 6 00 00 00 00",
+    "location": "Paris, France",
+    "linkedin_url": "https://linkedin.com/in/candidate-example",
+    "github_url": "https://github.com/candidate-example",
+    "portfolio_url": "https://candidate.example.com",
+    "work_authorization": "Authorized to work in France / EU - EDIT THIS"
   },
-  "summary": "Senior Software Engineer with 7 years of experience building scalable distributed systems and data pipelines. Expertise in Python, Go, and cloud-native architectures.",
+  "summary": "Data Science / Machine Learning candidate based in Paris, focused on Python, SQL, machine learning, analytics, dashboards, and applied AI projects. EDIT THIS SUMMARY WITH YOUR REAL BACKGROUND.",
   "education": [
     {
-      "institution": "University of California, Berkeley",
-      "degree": "Bachelor of Science",
-      "field": "Computer Science",
-      "start_year": 2012,
-      "end_year": 2016,
-      "gpa": 3.8,
-      "honors": ["Magna Cum Laude", "Dean's List"]
+      "institution": "Your University / School",
+      "degree": "Master / Engineering Degree - EDIT THIS",
+      "field": "Data Science / Artificial Intelligence / Computer Science",
+      "start_year": 2024,
+      "end_year": 2026,
+      "location": "Paris, France",
+      "honors": []
     }
   ],
   "experience": [
     {
-      "company": "DataStream Inc.",
-      "title": "Senior Software Engineer",
-      "start_date": "2020-03",
-      "end_date": null,
-      "location": "San Francisco, CA",
+      "company": "Example Data Automation Project / Previous Internship - EDIT THIS",
+      "title": "Data / Automation Intern",
+      "start_date": "2025-01",
+      "end_date": "2025-06",
+      "location": "Paris, France",
       "bullet_points": [
-        "Designed and implemented a real-time data pipeline processing 5M events/day using Python, Kafka, and PostgreSQL",
-        "Led migration of monolithic services to Kubernetes microservices, reducing deployment time by 60%",
-        "Mentored 3 junior engineers and introduced team code review best practices",
-        "Built a FastAPI-based REST API serving 10K+ requests/minute with 99.9% uptime"
+        "Automated recurring Excel reporting workflows using Python/VBA, reducing manual preparation time",
+        "Cleaned and transformed business datasets with Python, Pandas and SQL for analysis and dashboarding",
+        "Built KPI dashboards in Power BI/Excel to help stakeholders monitor operational performance",
+        "Documented data processing steps and validation checks to improve reproducibility"
       ],
-      "technologies": ["Python", "FastAPI", "Kafka", "PostgreSQL", "Kubernetes", "Docker", "AWS"]
-    },
-    {
-      "company": "CloudBase Labs",
-      "title": "Software Engineer",
-      "start_date": "2017-06",
-      "end_date": "2020-02",
-      "location": "San Francisco, CA",
-      "bullet_points": [
-        "Built Go microservices for the authentication and authorization platform serving 1M+ users",
-        "Implemented CI/CD pipelines using GitHub Actions and Terraform, cutting release cycles from weekly to daily",
-        "Developed React dashboard for monitoring infrastructure metrics in real-time"
-      ],
-      "technologies": ["Go", "React", "Terraform", "AWS", "Docker", "GitHub Actions"]
+      "technologies": ["Python", "Pandas", "SQL", "Excel", "VBA", "Power BI"]
     }
   ],
   "projects": [
     {
-      "name": "OpenMetrics Exporter",
-      "description": "An open-source Prometheus metrics exporter for PostgreSQL with support for custom queries and alerting rules. Used by 200+ teams.",
-      "url": "https://github.com/alexchen-example/openmetrics-exporter",
-      "technologies": ["Python", "PostgreSQL", "Prometheus", "Docker"]
+      "name": "Machine Learning Classification Project",
+      "description": "Built and evaluated supervised learning models using Python, scikit-learn and Pandas. EDIT WITH YOUR REAL PROJECT DETAILS AND METRICS.",
+      "url": "https://github.com/candidate-example/ml-project",
+      "technologies": ["Python", "Pandas", "scikit-learn", "Machine Learning"],
+      "bullet_points": [
+        "Prepared features, trained baseline models and evaluated performance with cross-validation",
+        "Compared model performance and documented trade-offs for business interpretation"
+      ]
     },
     {
-      "name": "JobTracker CLI",
-      "description": "A command-line job application tracker built with Python and SQLite, supporting CSV export and status notifications.",
-      "url": "https://github.com/alexchen-example/jobtracker",
-      "technologies": ["Python", "SQLite", "Typer", "Rich"]
+      "name": "Data Dashboard Project",
+      "description": "Created an analytics dashboard to explore trends and communicate insights. EDIT WITH YOUR REAL PROJECT DETAILS.",
+      "url": "https://github.com/candidate-example/dashboard-project",
+      "technologies": ["SQL", "Power BI", "Python", "Excel"],
+      "bullet_points": [
+        "Designed metrics and visuals for clear stakeholder reporting",
+        "Used SQL/Python to prepare clean datasets for analysis"
+      ]
     }
   ],
-  "certifications": [
-    {
-      "name": "AWS Certified Solutions Architect – Associate",
-      "issuer": "Amazon Web Services",
-      "year": 2021,
-      "url": "https://aws.amazon.com/certification/"
-    }
-  ],
+  "certifications": [],
   "skills": [
-    {"name": "Python", "category": "language", "years_experience": 7},
-    {"name": "Go", "category": "language", "years_experience": 3},
-    {"name": "PostgreSQL", "category": "database", "years_experience": 5},
-    {"name": "Docker", "category": "devops", "years_experience": 4},
-    {"name": "Kubernetes", "category": "devops", "years_experience": 3},
-    {"name": "AWS", "category": "cloud", "years_experience": 4},
-    {"name": "FastAPI", "category": "framework", "years_experience": 3},
-    {"name": "React", "category": "frontend", "years_experience": 2},
-    {"name": "Kafka", "category": "messaging", "years_experience": 2},
-    {"name": "Terraform", "category": "devops", "years_experience": 3}
-  ]
+    {"name": "Python", "category": "language", "years_experience": 2},
+    {"name": "SQL", "category": "data", "years_experience": 2},
+    {"name": "Pandas", "category": "data", "years_experience": 2},
+    {"name": "NumPy", "category": "data", "years_experience": 2},
+    {"name": "scikit-learn", "category": "machine_learning", "years_experience": 1},
+    {"name": "Machine Learning", "category": "machine_learning", "years_experience": 1},
+    {"name": "Power BI", "category": "analytics", "years_experience": 1},
+    {"name": "Excel", "category": "analytics", "years_experience": 3},
+    {"name": "VBA", "category": "automation", "years_experience": 1},
+    {"name": "Git", "category": "tools", "years_experience": 1}
+  ],
+  "max_experience_bullets_per_role": 4,
+  "max_projects": 3
 }

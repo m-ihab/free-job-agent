@@ -1,15 +1,15 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "free-job-agent"
-version = "0.1.0"
-description = "A free, local-first job-search and application assistant"
+version = "0.3.0"
+description = "France/Paris data-AI focused local job-search and application assistant"
 requires-python = ">=3.11"
 dependencies = [
-    "pydantic>=2.0",
-    "typer[all]>=0.9",
+    "pydantic>=1.10",
+    "click>=8.0",
     "rich>=13.0",
     "requests>=2.31",
     "beautifulsoup4>=4.12",
@@ -30,6 +30,7 @@ job-agent = "job_agent.cli.main:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["job_agent*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

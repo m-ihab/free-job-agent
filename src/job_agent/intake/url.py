@@ -2,28 +2,31 @@
 from __future__ import annotations
 
 import requests
-from bs4 import BeautifulSoup
 
 from job_agent.schemas.job import JobListing
+from job_agent.utils.html import strip_html
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (compatible; FreeJobAgent/0.1; +https://github.com/m-ihab/free-job-agent)"
-    )
+    "User-Agent": "Mozilla/5.0 (compatible; FreeJobAgent/0.2; local-first job assistant)"
 }
 
 
+def _extract_visible_text(html: str) -> str:
+    return strip_html(
+        html,
+        blocked_tags={"script", "style", "nav", "footer", "header", "noscript"},
+        separator="\n",
+    )
+
+
 def ingest_url(url: str, timeout: int = 15) -> JobListing:
-    """Fetch a public job page and extract visible text."""
     resp = requests.get(url, headers=HEADERS, timeout=timeout)
     resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-    for tag in soup(["script", "style", "nav", "footer", "header"]):
-        tag.decompose()
-    text = soup.get_text(separator="\n", strip=True)
+    text = _extract_visible_text(resp.text)
     return JobListing(
         source="url",
         source_url=url,
+        apply_url=url,
         raw_text=text.strip(),
         title="[To Be Parsed]",
         company="[To Be Parsed]",

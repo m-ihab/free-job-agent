@@ -1,30 +1,45 @@
 {
   "contact": {
-    "name": "Alex Chen",
-    "email": "alex.chen@example.com",
-    "phone": "+1-555-0100",
-    "location": "San Francisco, CA",
-    "linkedin_url": "https://linkedin.com/in/alexchen-example",
-    "github_url": "https://github.com/alexchen-example",
-    "work_authorization": "US Citizen"
+    "name": "Candidate Data AI Paris",
+    "email": "candidate@example.com",
+    "phone": "+33 6 00 00 00 00",
+    "location": "Paris, France",
+    "linkedin_url": "https://linkedin.com/in/candidate-example",
+    "github_url": "https://github.com/candidate-example",
+    "portfolio_url": "https://candidate.example.com",
+    "work_authorization": "Authorized to work in France / EU - EDIT THIS"
   },
-  "summary": "Senior Software Engineer with 7 years of experience building scalable distributed systems and data pipelines. Expertise in Python, Go, and cloud-native architectures.",
+  "summary": "Data Science / Machine Learning candidate based in Paris, focused on Python, SQL, machine learning, analytics, dashboards, and applied AI projects. EDIT THIS SUMMARY WITH YOUR REAL BACKGROUND.",
   "skills": [
-    {"name": "Python", "category": "language", "years_experience": 7},
-    {"name": "Go", "category": "language", "years_experience": 3},
-    {"name": "PostgreSQL", "category": "database", "years_experience": 5},
-    {"name": "Docker", "category": "devops", "years_experience": 4},
-    {"name": "Kubernetes", "category": "devops", "years_experience": 3},
-    {"name": "AWS", "category": "cloud", "years_experience": 4},
-    {"name": "FastAPI", "category": "framework", "years_experience": 3},
-    {"name": "React", "category": "frontend", "years_experience": 2}
+    {"name": "Python", "category": "language", "years_experience": 2},
+    {"name": "SQL", "category": "data", "years_experience": 2},
+    {"name": "Pandas", "category": "data", "years_experience": 2},
+    {"name": "NumPy", "category": "data", "years_experience": 2},
+    {"name": "scikit-learn", "category": "machine_learning", "years_experience": 1},
+    {"name": "Machine Learning", "category": "machine_learning", "years_experience": 1},
+    {"name": "Power BI", "category": "analytics", "years_experience": 1},
+    {"name": "Excel", "category": "analytics", "years_experience": 3},
+    {"name": "VBA", "category": "automation", "years_experience": 1},
+    {"name": "Git", "category": "tools", "years_experience": 1}
   ],
-  "languages": ["English"],
-  "work_authorizations": ["US Citizen"],
-  "salary_min": 150000,
-  "salary_max": 220000,
-  "target_roles": ["Senior Software Engineer", "Staff Software Engineer", "Backend Engineer", "Platform Engineer"],
-  "target_locations": ["San Francisco, CA", "New York, NY", "Seattle, WA"],
+  "languages": ["French", "English"],
+  "work_authorizations": ["Authorized to work in France / EU - EDIT THIS"],
+  "salary_min": null,
+  "salary_max": null,
+  "target_roles": [
+    "Data Scientist Intern",
+    "Machine Learning Intern",
+    "Data Analyst Intern",
+    "Data Engineer Intern",
+    "AI Intern",
+    "Alternance Data Science",
+    "Stage Data Science",
+    "Junior Data Scientist"
+  ],
+  "target_locations": ["Paris", "Île-de-France", "France", "Remote"],
   "remote_ok": true,
-  "relocation_ok": false
+  "hybrid_ok": true,
+  "onsite_ok": true,
+  "relocation_ok": false,
+  "min_fit_score": 65
 }

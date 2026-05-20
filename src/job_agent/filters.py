@@ -1,18 +1,16 @@
-"""Hard filters that eliminate jobs before LLM processing."""
+"""Hard filters that eliminate or hold jobs before packet generation."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional
 
-from rapidfuzz import fuzz
-
 from job_agent.schemas.candidate import CandidateProfile
 from job_agent.schemas.job import JobListing
+from job_agent.utils import fuzzy
 
 
 @dataclass
 class FilterConfig:
-    """Configuration for hard filters."""
     blocked_companies: list[str] = field(default_factory=list)
     blocked_keywords: list[str] = field(default_factory=list)
     required_keywords: list[str] = field(default_factory=list)
@@ -21,13 +19,20 @@ class FilterConfig:
     remote_only: bool = False
     allowed_locations: list[str] = field(default_factory=list)
     disallowed_job_types: list[str] = field(default_factory=list)
+    max_seniority: Optional[str] = None
     fuzzy_threshold: int = 80
 
 
 @dataclass
 class FilterResult:
     passed: bool
+    decision: str = "pass"  # pass, reject, hold
     reasons: list[str] = field(default_factory=list)
+    risk_flags: list[str] = field(default_factory=list)
+
+
+def _text(job: JobListing) -> str:
+    return f"{job.title} {job.company} {job.location or ''} {job.description} {' '.join(job.requirements)} {' '.join(job.tech_stack)}".lower()
 
 
 def apply_filters(
@@ -35,12 +40,20 @@ def apply_filters(
     config: FilterConfig,
     profile: Optional[CandidateProfile] = None,
 ) -> FilterResult:
-    """Apply all hard filters and return pass/fail with reasons."""
-    reasons: list[str] = []
-    text = f"{job.title} {job.company} {job.description} {' '.join(job.requirements)}".lower()
+    """Apply all hard filters and return pass/fail with reasons.
 
-    for company in config.blocked_companies:
-        if fuzz.partial_ratio(company.lower(), job.company.lower()) >= config.fuzzy_threshold:
+    A failed hard filter should block packet generation unless the user passes
+    an explicit --force flag from the CLI.
+    """
+    reasons: list[str] = []
+    risk_flags: list[str] = []
+    text = _text(job)
+
+    blocked_companies = list(config.blocked_companies)
+    if profile:
+        blocked_companies.extend(profile.excluded_companies)
+    for company in blocked_companies:
+        if fuzzy.partial_ratio(company.lower(), job.company.lower()) >= config.fuzzy_threshold:
             reasons.append(f"Blocked company: {company}")
 
     for kw in config.blocked_keywords:
@@ -51,21 +64,30 @@ def apply_filters(
         if kw.lower() not in text:
             reasons.append(f"Missing required keyword: {kw}")
 
-    if config.min_salary and job.salary_max is not None:
-        if job.salary_max < config.min_salary:
-            reasons.append(f"Salary too low: {job.salary_max} < {config.min_salary}")
+    min_salary = config.min_salary
+    if min_salary is None and profile and profile.salary_min:
+        min_salary = profile.salary_min
+    if min_salary and job.salary_max is not None and job.salary_max < min_salary:
+        reasons.append(f"Salary too low: {job.salary_max} < {min_salary}")
 
     if config.remote_only and not job.remote:
         reasons.append("Job is not remote")
 
-    if config.allowed_locations and not job.remote:
+    allowed_locations = config.allowed_locations or (profile.target_locations if profile else [])
+    remote_ok = profile.remote_ok if profile else False
+    relocation_ok = profile.relocation_ok if profile else False
+    if allowed_locations and not job.remote:
         job_location = (job.location or "").lower()
         loc_match = any(
-            fuzz.partial_ratio(loc.lower(), job_location) >= config.fuzzy_threshold
-            for loc in config.allowed_locations
+            fuzzy.partial_ratio(loc.lower(), job_location) >= config.fuzzy_threshold
+            for loc in allowed_locations
         )
-        if not loc_match:
-            reasons.append(f"Location not in allowed list: {job.location}")
+        if not job.location:
+            risk_flags.append("LOCATION_UNKNOWN")
+        elif not loc_match and not relocation_ok:
+            reasons.append(f"Location not allowed: {job.location or 'unknown'}")
+    elif not job.remote and profile and not remote_ok and not relocation_ok and not profile.target_locations:
+        risk_flags.append("NO_LOCATION_PREFERENCES")
 
     if config.disallowed_job_types and job.job_type:
         if job.job_type.lower() in [t.lower() for t in config.disallowed_job_types]:
@@ -73,10 +95,10 @@ def apply_filters(
 
     if profile:
         auth_keywords = ["sponsorship", "visa", "work authorization", "authorized to work"]
-        for kw in auth_keywords:
-            if kw in text:
-                if not profile.work_authorizations:
-                    reasons.append(f"Job may require work authorization: {kw} mentioned")
-                break
+        if any(kw in text for kw in auth_keywords) and not profile.work_authorizations:
+            risk_flags.append("WORK_AUTHORIZATION_MENTIONED_NO_PROFILE_ANSWER")
 
-    return FilterResult(passed=len(reasons) == 0, reasons=reasons)
+    decision = "pass" if not reasons else "reject"
+    if risk_flags and not reasons:
+        decision = "hold"
+    return FilterResult(passed=len(reasons) == 0, decision=decision, reasons=reasons, risk_flags=risk_flags)

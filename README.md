@@ -1,165 +1,232 @@
-# free-job-agent
+# free-job-agent — France / Paris Data & AI Edition
 
-A completely **free, local-first** job-search and application assistant. No paid APIs, no paid browser services, no cloud costs — runs entirely on your machine.
+A completely **free, local-first** job-search and application assistant focused on **Paris, France, and Europe** for **data science, machine learning, AI, data analyst, data engineer, stage, alternance, and junior data roles**.
 
-## Features
+It runs on your machine, uses SQLite, and never requires paid LLM APIs, paid browser agents, paid scraping platforms, or cloud services.
 
-- **Job intake**: paste text, import local files, fetch public URLs, parse RSS/Atom feeds
-- **Normalization**: extracts tech stack, salary, remote status, requirements, responsibilities from raw text
-- **Deduplication**: SHA-256 fingerprints prevent duplicate jobs in the database
-- **Hard filters**: block companies/keywords, enforce remote-only, salary minimums, location
-- **Fit scoring**: RapidFuzz-based skill matching, title matching, and location scoring
-- **CV tailoring**: selects and orders your most relevant experience from a master CV — never invents facts
-- **Cover letter**: 3-paragraph letter grounded only in your actual profile
-- **QA answers**: matches screening questions to your locked answer bank
-- **Artifact generation**: Markdown, HTML, and PDF output (ReportLab, no cloud)
-- **Application tracker**: all jobs, packets, and events in SQLite
-- **Typer CLI + Rich UI**: clean terminal interface
-- **Safety**: never auto-submits applications — final submit is always manual
+## What it does
 
-## Quick Start
+- **France-first job intake:** paste text, import local files, fetch public URLs, parse RSS/Atom feeds, discover likely career links, search free/read-only APIs, and generate French job-board search URLs.
+- **France Travail API support:** source `francetravail` uses the official France Travail Offres d’emploi API when you configure free credentials.
+- **French board shortcuts:** generates manual search URLs for France Travail, Welcome to the Jungle, HelloWork, Apec, Indeed France, LinkedIn France, Glassdoor France, Stage.fr, JobTeaser, and La bonne alternance.
+- **CAC 40 targeting:** lists career pages for large French companies including BNP Paribas, AXA, Orange, Schneider Electric, Capgemini, L’Oréal, LVMH, Sanofi, TotalEnergies, Thales, Safran, Airbus, and more.
+- **Normalization:** extracts tech stack, salary, remote/hybrid/onsite signals, seniority, French/English language signals, requirements, responsibilities, and benefits.
+- **Fit scoring:** deterministic 0-100 score with notes, confidence, decision, missing requirements, and risk flags.
+- **CV tailoring:** reorders and selects facts from your master CV; it never invents facts.
+- **Cover letter:** concise, role-specific, grounded only in your profile/CV/job posting.
+- **Locked screening answers:** uses `master_qa_profile.json`; unknown factual answers require manual review.
+- **Artifacts:** writes `cv.md`, `cv.html`, `cv.pdf`, `cover_letter.md`, `cover_letter.html`, `cover_letter.pdf`, and `assistant.html`.
+- **Tracking:** jobs, packets, and events are saved in local SQLite.
+- **Manual final submit:** the system opens/creates an assistant page, but it never submits applications automatically.
 
-### 1. Install
+## Why not full auto-apply?
+
+The goal is to stay free, safe, and reliable. Fully autonomous ATS submission normally requires paid browser-agent infrastructure, paid APIs, proxies, CAPTCHA handling, login automation, or fragile scraping. This system automates the useful free parts: search, import, dedupe, score, tailor documents, prepare locked screening answers, and open a local assistant page. You still review and submit manually.
+
+## Install
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-### 2. Initialize
+If you are working in a constrained environment, the project also includes local fallbacks for the command runner, HTTP fetches, and basic HTML extraction so the core workflow can still run without every optional package being installed.
+
+Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+```
+
+## Quick start
 
 ```bash
 job-agent init
+job-agent copy-examples
+job-agent validate-profile
 ```
 
-This creates `~/.job_agent/` with subdirectories for profiles and outputs.
+If this repository contains a `profiles/` folder with the three profile JSON
+files, the CLI uses it automatically and stores runtime data in the local
+ignored `.job_agent/` folder. Otherwise, edit these files in
+`~/.job_agent/profiles/`:
 
-### 3. Set up your profiles
-
-Copy the example files to your profiles directory and customize:
-
-```bash
-cp examples/candidate_profile.json ~/.job_agent/profiles/
-cp examples/master_cv.json ~/.job_agent/profiles/
-cp examples/master_qa_profile.json ~/.job_agent/profiles/
+```text
+candidate_profile.json
+master_cv.json
+master_qa_profile.json
 ```
 
-Edit each file to reflect your actual background.
+The example profile is now a France/Paris data-AI template. Replace all `EDIT THIS` content with your real information.
 
-### 4. Add a job
+You can override locations explicitly with `JOB_AGENT_DATA_DIR` and
+`JOB_AGENT_PROFILES_DIR`.
 
-**Paste mode** (interactive):
+## France / Paris workflow
+
+### 1. See setup instructions
+
 ```bash
-job-agent add paste
+job-agent france-setup
 ```
 
-**From file**:
+### 2. Generate manual search URLs for French job boards
+
 ```bash
-job-agent add file path/to/job.txt
+job-agent france-search-urls --query "data science stage" --location Paris
+job-agent france-search-urls --query "machine learning alternance" --location "Île-de-France"
 ```
 
-**From public URL**:
-```bash
-job-agent add url https://company.com/jobs/engineer
-```
-
-**From RSS feed**:
-```bash
-job-agent add rss https://jobs.example.com/feed.xml --limit 10
-```
-
-### 5. Score and apply
+Open the best URLs, copy promising job URLs, then import them:
 
 ```bash
-job-agent list
-job-agent score <job-id>
+job-agent add url "https://company-or-job-board/job-url"
 job-agent apply <job-id>
+job-agent apply-assist <packet-id>
 ```
 
-The `apply` command generates a full application packet at `~/.job_agent/outputs/<job-id>/`:
-- `cv.pdf` + `cv.html` — tailored CV
-- `cover_letter.pdf` + `cover_letter.html` — tailored cover letter
-- `assistant.html` — local application assistant page with all docs, apply URL, and QA answers
+### 3. Use France Travail API when configured
 
-Review everything, then submit manually.
-
-### 6. Track your applications
+France Travail requires free developer credentials/habilitation. After approval, set:
 
 ```bash
-job-agent status <job-id> applied
-job-agent history <job-id>
+export FRANCE_TRAVAIL_CLIENT_ID="your-client-id"
+export FRANCE_TRAVAIL_CLIENT_SECRET="your-client-secret"
+export FRANCE_TRAVAIL_SCOPE="api_offresdemploiv2 o2dsoffre"
 ```
 
-## Profile Files
+Then search and save:
 
-| File | Purpose |
-|------|---------|
-| `candidate_profile.json` | Your contact info, skills, target roles, salary expectations, work authorization |
-| `master_cv.json` | Your full CV: experience, education, projects, certifications |
-| `master_qa_profile.json` | Locked answers to common screening questions |
-
-See `examples/` for annotated templates.
-
-## CLI Reference
-
-```
-job-agent init                     Initialize data directory
-job-agent add paste                Add job from stdin
-job-agent add file PATH            Add job from text file
-job-agent add url URL              Add job from public URL
-job-agent add rss URL [--limit N]  Add jobs from RSS feed
-job-agent list [--status STATUS]   List all tracked jobs
-job-agent show JOB_ID              Show job details
-job-agent score JOB_ID             Score job against your profile
-job-agent apply JOB_ID             Generate full application packet
-job-agent status JOB_ID STATUS     Update job status
-job-agent history JOB_ID           Show event history
-job-agent packet show JOB_ID       Show latest packet for a job
+```bash
+job-agent search-api francetravail --query "data scientist stage" --location Paris --limit 20 --save
 ```
 
-## Safety Rules
+Run the built-in Paris data/AI query pack:
 
-- **Never invents facts** — CV and cover letter use only content from your master CV and profile
-- **Never answers unknown screening questions** — only matched locked QA entries are used
-- **Never auto-submits** — all application submission is manual
-- **Never bypasses CAPTCHAs** or login walls
-- **No paid services** — all processing is local
-
-## Project Structure
-
+```bash
+job-agent france-hunt --location Paris --limit 10
 ```
-src/job_agent/
-├── cli/          — Typer + Rich CLI
-├── db/           — SQLite database layer
-├── generator/    — CV, cover letter, QA generators
-├── intake/       — paste, file, URL, RSS ingestion
-├── renderer/     — Markdown, HTML, PDF output
-├── schemas/      — Pydantic v2 data models
-├── config.py     — Configuration management
-├── filters.py    — Hard job filters
-├── fingerprint.py — SHA-256 deduplication
-├── normalizer.py  — Raw text → structured job
-├── scorer.py      — Fit scoring
-└── tracker.py     — Application tracking
-examples/         — Template profile files
-tests/            — pytest test suite (98 tests)
+
+This tries queries like `data scientist stage`, `machine learning internship`, `alternance data science`, `junior data scientist`, etc.
+
+### 4. Target CAC 40 / large French companies
+
+```bash
+job-agent france-targets
 ```
+
+Open company career pages, search for `data`, `machine learning`, `AI`, `stage`, `alternance`, then import promising URLs with `job-agent add url`.
+
+## Generic API search
+
+List supported API-style sources:
+
+```bash
+job-agent api-sources
+```
+
+Supported sources include:
+
+```text
+francetravail, arbeitnow, remotive, remoteok, himalayas, greenhouse, lever, ashby
+```
+
+For company ATS boards:
+
+```bash
+job-agent search-api greenhouse --board example-company --query "data" --save
+job-agent search-api lever --board example-company --query "machine learning" --save
+job-agent search-api ashby --board ExampleCompany --query "data" --save
+```
+
+## One-command processing
+
+```bash
+job-agent process file path/to/job.txt --title "Data Scientist Intern" --company "Company" --url "https://company.com/apply"
+```
+
+This does:
+
+```text
+ingest -> normalize -> dedupe -> filter -> score -> generate packet
+```
+
+## CLI reference
+
+```text
+job-agent init
+job-agent copy-examples
+job-agent validate-profile
+job-agent france-setup
+job-agent france-search-urls [--query ...] [--location ...]
+job-agent france-targets [--limit N]
+job-agent france-hunt [--query ...] [--location Paris] [--limit N] [--packets/--no-packets]
+job-agent add paste [--title ...] [--company ...] [--url ...]
+job-agent add file PATH [--title ...] [--company ...] [--url ...]
+job-agent add url URL
+job-agent add rss FEED_URL [--limit N]
+job-agent discover-links URL [--limit N]
+job-agent api-sources
+job-agent search-api SOURCE [--query ...] [--location ...] [--country ...] [--board ...] [--limit N] [--remote-only] [--cache/--no-cache] [--save]
+job-agent hunt SOURCE [--query ...] [--location ...] [--country ...] [--board ...] [--limit N] [--remote-only] [--cache/--no-cache] [--force]
+job-agent list [--status STATUS]
+job-agent show JOB_ID
+job-agent score JOB_ID
+job-agent apply JOB_ID [--force]
+job-agent process file PATH [--title ...] [--company ...] [--url ...] [--force]
+job-agent apply-assist PACKET_ID [--no-open-browser]
+job-agent mark-submitted PACKET_ID [--note ...]
+job-agent status JOB_ID STATUS [--note ...]
+job-agent history JOB_ID
+job-agent packet show JOB_OR_PACKET_ID
+```
+
+## Safety rules
+
+- Never invent experience, education, metrics, certifications, dates, legal facts, visa facts, work authorization, or salary expectations.
+- Never infer sponsorship claims in the cover letter.
+- Never answer unknown screening questions automatically.
+- Never bypass CAPTCHAs, login restrictions, paywalls, platform rate limits, or access controls.
+- Never scrape logged-in LinkedIn/Indeed/Glassdoor/Welcome to the Jungle pages or automate account actions.
+- Never auto-submit applications.
+- Keep every generated artifact traceable with hashes.
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v
+pytest -q
+python -m compileall src
+PYTHONPATH=src python scripts/smoke_test.py
 ```
 
-## Optional: Ollama (local LLM)
+## Project structure
 
-For enhanced normalization and generation, install [Ollama](https://ollama.ai) and enable it in `~/.job_agent/config.json`:
-
-```json
-{
-  "ollama_enabled": true,
-  "ollama_model": "mistral"
-}
+```text
+src/job_agent/
+  cli/main.py             # Standard-library CLI with test shim compatibility
+  db/database.py          # SQLite layer
+  generator/              # CV, cover letter, QA
+  intake/                 # paste, file, URL, RSS, link discovery, APIs, France market helpers
+  renderer/               # markdown, HTML, PDF, assistant page
+  schemas/                # Pydantic-compatible models
+  config.py
+  filters.py
+  fingerprint.py
+  hashutil.py
+  normalizer.py
+  pipeline.py
+  scorer.py
+  tracker.py
+  validators.py
+scripts/
+  smoke_test.py           # end-to-end local sanity check
+examples/
+  candidate_profile.json
+  master_cv.json
+  master_qa_profile.json
+tests/
 ```
-
-The system runs fully deterministically without Ollama — it's purely optional.

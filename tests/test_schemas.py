@@ -15,10 +15,10 @@ def test_candidate_profile_from_example():
     with open(EXAMPLES_DIR / "candidate_profile.json") as f:
         data = json.load(f)
     profile = CandidateProfile(**data)
-    assert profile.contact.name == "Alex Chen"
-    assert profile.contact.email == "alex.chen@example.com"
+    assert profile.contact.name == "Candidate Data AI Paris"
+    assert profile.contact.email == "candidate@example.com"
     assert profile.remote_ok is True
-    assert len(profile.skills) == 8
+    assert len(profile.skills) == 10
     assert any(s.name == "Python" for s in profile.skills)
 
 
@@ -26,11 +26,11 @@ def test_master_cv_from_example():
     with open(EXAMPLES_DIR / "master_cv.json") as f:
         data = json.load(f)
     cv = MasterCV(**data)
-    assert cv.contact.name == "Alex Chen"
-    assert len(cv.experience) == 2
+    assert cv.contact.name == "Candidate Data AI Paris"
+    assert len(cv.experience) == 1
     assert len(cv.education) == 1
     assert len(cv.projects) == 2
-    assert len(cv.certifications) == 1
+    assert len(cv.certifications) == 0
     assert len(cv.skills) > 0
 
 

@@ -1,5 +1,5 @@
 """Tests for the CLI."""
-from typer.testing import CliRunner
+from click.testing import CliRunner
 
 from job_agent.cli.main import app
 
@@ -13,11 +13,10 @@ def test_help():
 
 
 def test_list_no_error(tmp_path, monkeypatch):
-    """list command should succeed (may show empty table)."""
     monkeypatch.setenv("HOME", str(tmp_path))
     result = runner.invoke(app, ["list"])
-    # Should not crash with unhandled exception
-    assert result.exit_code == 0 or "No jobs" in result.output
+    assert result.exit_code == 0
+    assert "No jobs" in result.output
 
 
 def test_init_command(tmp_path, monkeypatch):
@@ -35,4 +34,5 @@ def test_add_subcommand_help():
 def test_status_invalid_status(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     result = runner.invoke(app, ["status", "fakeid", "INVALID_STATUS"])
-    assert result.exit_code != 0 or "Unknown status" in result.output
+    assert result.exit_code != 0
+    assert "Unknown status" in result.output

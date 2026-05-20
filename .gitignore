@@ -20,3 +20,7 @@ outputs/
 .idea/
 .vscode/
 *.log
+.job_agent/
+.smoke_home/
+.smoke_job.txt
+profiles/

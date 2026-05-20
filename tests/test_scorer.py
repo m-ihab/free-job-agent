@@ -1,7 +1,5 @@
 """Tests for the scorer module."""
-import pytest
-
-from job_agent.schemas.candidate import CandidateProfile, Skill
+from job_agent.schemas.candidate import CandidateProfile
 from job_agent.schemas.job import JobListing
 from job_agent.scorer import ScoreBreakdown, score_job
 
@@ -12,49 +10,43 @@ def test_score_breakdown_fields(sample_job, sample_profile):
     assert hasattr(breakdown, "title_score")
     assert hasattr(breakdown, "location_score")
     assert hasattr(breakdown, "total_score")
+    assert hasattr(breakdown, "confidence")
+    assert hasattr(breakdown, "decision")
     assert hasattr(breakdown, "notes")
-    assert 0.0 <= breakdown.total_score <= 1.0
+    assert 0 <= breakdown.total_score <= 100
+    assert 0 <= breakdown.confidence <= 1
 
 
 def test_perfect_skill_match_high_score(sample_profile):
-    """Job that matches all skills should score high."""
     job = JobListing(
-        title="Senior Software Engineer",
+        title="Data Scientist Intern",
         company="ACME",
-        tech_stack=["python", "fastapi", "postgresql", "docker"],
+        tech_stack=["python", "sql", "pandas", "machine learning"],
         remote=True,
     )
     breakdown = score_job(job, sample_profile)
-    assert breakdown.skill_score > 0.7
+    assert breakdown.skill_score > 70
 
 
 def test_no_skill_match_low_score(sample_profile):
-    """Job with completely different stack should score low on skills."""
     job = JobListing(
-        title="iOS Developer",
+        title="Senior DevOps Engineer",
         company="ACME",
-        tech_stack=["swift", "xcode", "objective-c"],
+        tech_stack=["rust", "scala", "kubernetes"],
         remote=True,
     )
     breakdown = score_job(job, sample_profile)
-    assert breakdown.skill_score < 0.3
+    assert breakdown.skill_score < 30
 
 
 def test_remote_job_remote_ok_high_location_score(sample_profile):
-    """Remote job with remote_ok profile should get max location score."""
-    job = JobListing(
-        title="Engineer",
-        company="ACME",
-        remote=True,
-        tech_stack=[],
-    )
+    job = JobListing(title="Engineer", company="ACME", remote=True, tech_stack=[])
     assert sample_profile.remote_ok is True
     breakdown = score_job(job, sample_profile)
-    assert breakdown.location_score == 1.0
+    assert breakdown.location_score == 100
 
 
 def test_non_remote_bad_location_low_score():
-    """Non-remote job in unwanted location should score low."""
     from job_agent.schemas.candidate import ContactInfo
     profile = CandidateProfile(
         contact=ContactInfo(name="Test", email="t@t.com"),
@@ -63,15 +55,9 @@ def test_non_remote_bad_location_low_score():
         remote_ok=False,
         relocation_ok=False,
     )
-    job = JobListing(
-        title="Engineer",
-        company="ACME",
-        remote=False,
-        location="Miami, FL",
-        tech_stack=[],
-    )
+    job = JobListing(title="Engineer", company="ACME", remote=False, location="Miami, FL", tech_stack=[])
     breakdown = score_job(job, profile)
-    assert breakdown.location_score < 0.5
+    assert breakdown.location_score < 50
 
 
 def test_score_notes_are_populated(sample_job, sample_profile):
@@ -81,9 +67,11 @@ def test_score_notes_are_populated(sample_job, sample_profile):
 
 def test_score_total_is_weighted_combination(sample_job, sample_profile):
     breakdown = score_job(sample_job, sample_profile)
-    expected = (
-        breakdown.skill_score * 0.5
-        + breakdown.title_score * 0.3
-        + breakdown.location_score * 0.2
+    expected = round(
+        breakdown.skill_score * 0.42
+        + breakdown.title_score * 0.25
+        + breakdown.location_score * 0.18
+        + breakdown.seniority_score * 0.10
+        + breakdown.salary_score * 0.05
     )
-    assert abs(breakdown.total_score - round(expected, 3)) < 0.001
+    assert breakdown.total_score == expected

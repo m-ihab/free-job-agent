@@ -1,40 +1,85 @@
-"""Typer CLI for free-job-agent."""
+"""Local-first CLI for free-job-agent.
+
+This module intentionally uses the Python standard library for argument
+parsing so the core workflow still works in environments where Click is not
+available. Tests continue to use a tiny local ``click.testing`` shim.
+"""
 from __future__ import annotations
 
-import json
+import argparse
+import shutil
 import sys
+import webbrowser
 from pathlib import Path
-from typing import Optional
 
-import typer
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
+try:  # pragma: no cover - optional pretty output
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+except Exception:  # pragma: no cover
+    class Console:
+        def print(self, *args, **kwargs):
+            print(*[str(a) for a in args])
+
+    class Table:
+        def __init__(self, title: str | None = None, *cols, **kwargs):
+            self.title = title
+            self.cols = list(cols)
+            self.rows: list[tuple[str, ...]] = []
+
+        def add_column(self, name, *args, **kwargs):
+            self.cols.append(name)
+
+        def add_row(self, *values):
+            self.rows.append(tuple(str(v) for v in values))
+
+        def __str__(self):
+            lines = [self.title or ""] if self.title else []
+            if self.cols:
+                lines.append(" | ".join(map(str, self.cols)))
+            lines.extend(" | ".join(row) for row in self.rows)
+            return "\n".join(lines)
+
+    class Panel:
+        def __init__(self, text, title: str | None = None):
+            self.text = text
+            self.title = title
+
+        def __str__(self):
+            return f"{self.title or ''}\n{self.text}"
 
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.fingerprint import set_fingerprint
+from job_agent.intake.discover import discover_job_links
+from job_agent.intake.file import ingest_file
+from job_agent.intake.free_apis import FreeApiError, search_free_api_jobs, supported_source_names
+from job_agent.intake.france_market import (
+    DEFAULT_FRANCE_DATA_AI_QUERIES,
+    board_notes,
+    build_france_search_urls,
+    cac40_targets,
+)
+from job_agent.intake.paste import ingest_paste
+from job_agent.intake.rss import ingest_rss
+from job_agent.intake.url import ingest_url
 from job_agent.normalizer import normalize
+from job_agent.pipeline import add_job_to_tracker, generate_packet_for_job, process_file
 from job_agent.schemas.job import JobStatus
 from job_agent.schemas.packet import PacketStatus
+from job_agent.scorer import score_job
 from job_agent.tracker import ApplicationTracker
-
-app = typer.Typer(
-    name="job-agent",
-    help="Free, local-first job-search and application assistant.",
-    no_args_is_help=True,
-)
-add_app = typer.Typer(help="Add jobs from various sources.", no_args_is_help=True)
-packet_app = typer.Typer(help="Manage application packets.", no_args_is_help=True)
-app.add_typer(add_app, name="add")
-app.add_typer(packet_app, name="packet")
+from job_agent.validators import load_profile_bundle, validate_profile_bundle
 
 console = Console()
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+class CLIError(Exception):
+    def __init__(self, message: str, code: int = 1) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
+
 
 def _load_config() -> AppConfig:
     return AppConfig.load()
@@ -46,447 +91,704 @@ def _get_tracker(config: AppConfig) -> ApplicationTracker:
     return ApplicationTracker(db)
 
 
-def _load_profiles(config: AppConfig) -> tuple:
-    """Load candidate_profile, master_cv, qa_profile.  Returns (profile, cv, qa)."""
-    from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile
-
-    profiles_dir = config.profiles_dir or (config.data_dir / "profiles")
-    profile, master_cv, qa_profile = None, None, None
-
-    cp_path = profiles_dir / "candidate_profile.json"
-    if cp_path.exists():
-        with open(cp_path) as f:
-            profile = CandidateProfile(**json.load(f))
-    else:
-        console.print(
-            f"[yellow]Warning:[/yellow] candidate_profile.json not found at {cp_path}. "
-            "Scoring/generation will be limited."
-        )
-
-    cv_path = profiles_dir / "master_cv.json"
-    if cv_path.exists():
-        with open(cv_path) as f:
-            master_cv = MasterCV(**json.load(f))
-    else:
-        console.print(f"[yellow]Warning:[/yellow] master_cv.json not found at {cv_path}.")
-
-    qa_path = profiles_dir / "master_qa_profile.json"
-    if qa_path.exists():
-        with open(qa_path) as f:
-            qa_profile = QAProfile(**json.load(f))
-    else:
-        console.print(f"[yellow]Warning:[/yellow] master_qa_profile.json not found at {qa_path}.")
-
-    return profile, master_cv, qa_profile
+def _load_profiles(config: AppConfig):
+    try:
+        return load_profile_bundle(config)
+    except Exception as exc:
+        console.print(f"Warning: {exc}")
+        return None, None, None
 
 
-# ---------------------------------------------------------------------------
-# Commands
-# ---------------------------------------------------------------------------
+def _fail(message: str, code: int = 1) -> None:
+    raise CLIError(message, code=code)
 
-@app.command()
-def init() -> None:
-    """Initialize data directory and config."""
-    config = AppConfig()
-    config.ensure_dirs()
-    config.save()
-    console.print(f"[green]Initialized[/green] job-agent data directory at: {config.data_dir}")
-    console.print(
-        f"Place your profile files in: {config.profiles_dir}\n"
-        "  - candidate_profile.json\n"
-        "  - master_cv.json\n"
-        "  - master_qa_profile.json"
+
+def _add_job(job, config: AppConfig) -> None:
+    tracker = _get_tracker(config)
+    job = normalize(job)
+    job = set_fingerprint(job)
+    existing = tracker.db.get_job_by_fingerprint(job.fingerprint)
+    if existing:
+        console.print(f"Duplicate detected. Job already exists: {existing.id}")
+        return
+    tracker.add_job(job)
+    console.print(f"Added job {job.id[:8]} - {job.title} @ {job.company}")
+
+
+def _find_examples_dir(config: AppConfig) -> Path:
+    candidates = [
+        config.examples_dir,
+        Path.cwd() / "examples",
+        Path(__file__).resolve().parents[3] / "examples",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return Path(candidate)
+    raise FileNotFoundError(
+        "Could not find examples directory. Run from the repo root or set examples_dir in config.json."
     )
 
 
-@add_app.command("paste")
-def add_paste() -> None:
-    """Add a job from stdin (paste mode)."""
-    from job_agent.intake.paste import ingest_paste
+def _handle_init(args) -> None:
+    config = AppConfig()
+    config.ensure_dirs()
+    config.save()
+    Database(config.db_path).initialize()  # type: ignore[arg-type]
+    console.print(f"Initialized job-agent data directory at: {config.data_dir}")
+    console.print(f"Place profile files in: {config.profiles_dir}")
 
-    console.print("[bold]Paste job description below. Press Ctrl+D (or Ctrl+Z on Windows) when done:[/bold]")
+
+def _handle_copy_examples(args) -> None:
+    config = AppConfig.load()
+    config.ensure_dirs()
     try:
-        text = sys.stdin.read()
-    except KeyboardInterrupt:
-        raise typer.Exit()
-
-    config = _load_config()
-    tracker = _get_tracker(config)
-
-    job = ingest_paste(text)
-    job = normalize(job)
-    job = set_fingerprint(job)
-
-    existing = tracker.db.get_job_by_fingerprint(job.fingerprint)
-    if existing:
-        console.print(f"[yellow]Duplicate detected.[/yellow] Job already exists: {existing.id}")
-        return
-
-    tracker.add_job(job)
-    console.print(f"[green]Added job[/green] {job.id[:8]} — {job.title} @ {job.company}")
+        src_dir = _find_examples_dir(config)
+    except Exception as exc:
+        _fail(str(exc))
+    for name in ["candidate_profile.json", "master_cv.json", "master_qa_profile.json"]:
+        dst = config.profiles_dir / name  # type: ignore[operator]
+        src = src_dir / name
+        if dst.exists():
+            console.print(f"Exists, not overwriting: {dst}")
+        else:
+            shutil.copyfile(src, dst)
+            console.print(f"Copied: {dst}")
 
 
-@add_app.command("file")
-def add_file(path: Path = typer.Argument(..., help="Path to job description file")) -> None:
-    """Add a job from a text/markdown file."""
-    from job_agent.intake.file import ingest_file
-
-    if not path.exists():
-        console.print(f"[red]File not found:[/red] {path}")
-        raise typer.Exit(1)
-
-    config = _load_config()
-    tracker = _get_tracker(config)
-
-    job = ingest_file(path)
-    job = normalize(job)
-    job = set_fingerprint(job)
-
-    existing = tracker.db.get_job_by_fingerprint(job.fingerprint)
-    if existing:
-        console.print(f"[yellow]Duplicate detected.[/yellow] Job already exists: {existing.id}")
-        return
-
-    tracker.add_job(job)
-    console.print(f"[green]Added job[/green] {job.id[:8]} — {job.title} @ {job.company}")
+def _handle_validate_profile(args) -> None:
+    report = validate_profile_bundle(_load_config())
+    if report.errors:
+        console.print("Profile validation failed")
+        for err in report.errors:
+            console.print(f"  - {err}")
+        _fail("Profile validation failed", code=1)
+    console.print("Profile validation passed")
+    for warning in report.warnings:
+        console.print(f"Warning: {warning}")
 
 
-@add_app.command("url")
-def add_url(url: str = typer.Argument(..., help="URL of job posting")) -> None:
-    """Add a job from a public URL."""
-    from job_agent.intake.url import ingest_url
+def _handle_add_paste(args) -> None:
+    console.print("Paste job description below. Press Ctrl+D (Ctrl+Z on Windows) when done:")
+    text = sys.stdin.read()
+    _add_job(ingest_paste(text, title=args.title or None, company=args.company or None, url=args.url or None), _load_config())
 
-    config = _load_config()
-    tracker = _get_tracker(config)
 
+def _handle_add_file(args) -> None:
+    _add_job(ingest_file(args.path, title=args.title or None, company=args.company or None, url=args.url or None), _load_config())
+
+
+def _handle_add_url(args) -> None:
     try:
-        job = ingest_url(url)
-    except Exception as e:
-        console.print(f"[red]Failed to fetch URL:[/red] {e}")
-        raise typer.Exit(1)
-
-    job = normalize(job)
-    job = set_fingerprint(job)
-
-    existing = tracker.db.get_job_by_fingerprint(job.fingerprint)
-    if existing:
-        console.print(f"[yellow]Duplicate detected.[/yellow] Job already exists: {existing.id}")
-        return
-
-    tracker.add_job(job)
-    console.print(f"[green]Added job[/green] {job.id[:8]} — {job.title} @ {job.company}")
+        job = ingest_url(args.url)
+    except Exception as exc:
+        _fail(f"Failed to fetch URL: {exc}")
+    _add_job(job, _load_config())
 
 
-@add_app.command("rss")
-def add_rss(
-    feed_url: str = typer.Argument(..., help="RSS/Atom feed URL"),
-    limit: Optional[int] = typer.Option(None, "--limit", "-n", help="Max entries to import"),
-) -> None:
-    """Add jobs from an RSS/Atom feed."""
-    from job_agent.intake.rss import ingest_rss
-
+def _handle_add_rss(args) -> None:
     config = _load_config()
     tracker = _get_tracker(config)
-
-    jobs = ingest_rss(feed_url, limit=limit)
+    jobs = ingest_rss(args.feed_url, limit=args.limit)
     added = 0
     for job in jobs:
-        job = normalize(job)
-        job = set_fingerprint(job)
-        existing = tracker.db.get_job_by_fingerprint(job.fingerprint)
-        if existing:
+        job = set_fingerprint(normalize(job))
+        if tracker.db.get_job_by_fingerprint(job.fingerprint):
             continue
         tracker.add_job(job)
         added += 1
+    console.print(f"Imported {added}/{len(jobs)} new jobs from RSS feed.")
 
-    console.print(f"[green]Imported {added}/{len(jobs)} new jobs[/green] from RSS feed.")
+
+def _handle_discover_links(args) -> None:
+    try:
+        links = discover_job_links(args.url, limit=args.limit)
+    except Exception as exc:
+        _fail(f"Failed to discover links: {exc}")
+    if not links:
+        console.print("No likely job links found.")
+        return
+    for link in links:
+        console.print(link)
 
 
-@app.command("list")
-def list_jobs(
-    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status"),
-) -> None:
-    """List tracked jobs."""
+def _handle_search_api(args) -> None:
     config = _load_config()
-    tracker = _get_tracker(config)
-
-    js = None
-    if status:
-        try:
-            js = JobStatus(status.upper())
-        except ValueError:
-            console.print(f"[red]Unknown status:[/red] {status}")
-            raise typer.Exit(1)
-
-    jobs = tracker.list_jobs(status=js)
+    config.ensure_dirs()
+    try:
+        jobs = search_free_api_jobs(
+            args.source,
+            query=args.query,
+            location=args.location,
+            country=args.country,
+            board=args.board,
+            limit=args.limit,
+            page=args.page,
+            remote_only=args.remote_only,
+            use_cache=args.cache,
+            cache_ttl_hours=args.cache_ttl_hours,
+        )
+    except FreeApiError as exc:
+        _fail(f"API search error: {exc}")
+    except Exception as exc:
+        _fail(f"Failed to search source: {exc}")
 
     if not jobs:
-        console.print("[dim]No jobs found.[/dim]")
+        console.print("No jobs found.")
         return
 
-    table = Table(title="Jobs", show_header=True, header_style="bold cyan")
-    table.add_column("ID", style="dim", width=10)
-    table.add_column("Title", min_width=25)
-    table.add_column("Company", min_width=15)
-    table.add_column("Status", min_width=12)
-    table.add_column("Score", justify="right", width=7)
-    table.add_column("Date", width=12)
+    table = Table(title=f"{args.source} results", show_header=True, header_style="bold cyan")
+    for col in ["#", "Title", "Company", "Location", "Remote", "Source"]:
+        table.add_column(col)
+    for idx, job in enumerate(jobs, start=1):
+        table.add_row(
+            str(idx),
+            job.title[:60],
+            job.company[:30],
+            (job.location or "-")[:30],
+            "yes" if job.remote else "no",
+            job.apply_url or job.source_url or "-",
+        )
+    console.print(table)
 
+    if args.save:
+        added = 0
+        duplicates = 0
+        for job in jobs:
+            _, created = add_job_to_tracker(config, job)
+            if created:
+                added += 1
+            else:
+                duplicates += 1
+        console.print(f"Saved {added} new jobs ({duplicates} duplicates skipped).")
+
+
+def _handle_hunt(args) -> None:
+    config = _load_config()
+    config.ensure_dirs()
+    profile, _, _ = _load_profiles(config)
+    if not profile:
+        _fail("Cannot hunt without valid profile files. Run job-agent copy-examples and validate-profile first.")
+    try:
+        jobs = search_free_api_jobs(
+            args.source,
+            query=args.query,
+            location=args.location,
+            country=args.country,
+            board=args.board,
+            limit=args.limit,
+            page=args.page,
+            remote_only=args.remote_only,
+            use_cache=args.cache,
+            cache_ttl_hours=args.cache_ttl_hours,
+        )
+    except FreeApiError as exc:
+        _fail(f"API search error: {exc}")
+    except Exception as exc:
+        _fail(f"Failed to search source: {exc}")
+
+    if not jobs:
+        console.print("No jobs found.")
+        return
+
+    prepared = 0
+    skipped = 0
+    failed: list[str] = []
     for job in jobs:
-        score_str = f"{job.fit_score:.2f}" if job.fit_score is not None else "—"
-        date_str = job.created_at[:10]
+        tracked_job, created = add_job_to_tracker(config, job)
+        if not created:
+            skipped += 1
+            continue
+        try:
+            generate_packet_for_job(config, tracked_job.id, force=args.force)
+            prepared += 1
+        except Exception as exc:
+            failed.append(f"{tracked_job.title} @ {tracked_job.company}: {exc}")
+    console.print(
+        Panel(
+            f"Imported and prepared packets: {prepared}\nDuplicates skipped: {skipped}\nFailures: {len(failed)}\n\n"
+            "Open a packet with: job-agent apply-assist <packet-id>\n"
+            "Final application submission is still manual.",
+            title="Hunt complete",
+        )
+    )
+    for item in failed[:10]:
+        console.print(f"Skipped: {item}")
+
+
+def _handle_api_sources(args) -> None:
+    console.print("Supported sources: " + ", ".join(supported_source_names()))
+    console.print("France priority source: francetravail (free credentials required).")
+    console.print("All sources are read-only here; final submission remains manual.")
+
+
+def _handle_france_setup(args) -> None:
+    setup_text = (
+        "1. Request free France Travail API access for 'API Offres d’emploi'.\n"
+        "2. Set these environment variables after approval:\n"
+        "   FRANCE_TRAVAIL_CLIENT_ID=...\n"
+        "   FRANCE_TRAVAIL_CLIENT_SECRET=...\n"
+        "   FRANCE_TRAVAIL_SCOPE='api_offresdemploiv2 o2dsoffre'\n"
+        "3. Run: job-agent search-api francetravail --query 'data scientist stage' --location Paris --save\n"
+        "4. For Welcome to the Jungle, LinkedIn, Indeed, Glassdoor, HelloWork, Apec, Stage.fr: use france-search-urls, then add promising URLs with job-agent add url.\n\n"
+        "This tool does not scrape logged-in boards and does not auto-submit applications."
+    )
+    console.print(Panel(setup_text, title="France/Paris setup"))
+
+
+def _handle_france_search_urls(args) -> None:
+    rows = build_france_search_urls(args.query, args.location)
+    notes = board_notes()
+    table = Table(title=f"France search URLs: {args.query} / {args.location}", show_header=True, header_style="bold cyan")
+    for col in ["Board", "URL", "Note"]:
+        table.add_column(col)
+    for key, name, url in rows:
+        table.add_row(name, url, notes.get(key, ""))
+    console.print(table)
+
+
+def _handle_france_targets(args) -> None:
+    table = Table(title="France CAC 40 / large-company targets", show_header=True, header_style="bold cyan")
+    for col in ["Company", "Sector", "Careers URL", "Search hint"]:
+        table.add_column(col)
+    for target in cac40_targets(limit=args.limit):
+        table.add_row(target.name, target.sector, target.careers_url, target.search_hint)
+    console.print(table)
+
+
+def _handle_france_hunt(args) -> None:
+    config = _load_config()
+    config.ensure_dirs()
+    profile, _, _ = _load_profiles(config)
+    if not profile and args.packets:
+        _fail("Cannot generate packets without valid profile files. Run copy-examples, edit them, then validate-profile.")
+    queries = [args.query] if args.query.strip() else DEFAULT_FRANCE_DATA_AI_QUERIES
+    imported = duplicates = prepared = 0
+    failures: list[str] = []
+    for query in queries:
+        try:
+            jobs = search_free_api_jobs(
+                "francetravail",
+                query=query,
+                location=args.location,
+                limit=args.limit,
+                use_cache=args.cache,
+                cache_ttl_hours=6.0,
+            )
+        except FreeApiError as exc:
+            console.print(f"France Travail not available for query '{query}': {exc}")
+            console.print("Run job-agent france-setup, or use job-agent france-search-urls for manual sources.")
+            continue
+        except Exception as exc:
+            failures.append(f"{query}: {exc}")
+            continue
+        for job in jobs:
+            tracked_job, created = add_job_to_tracker(config, job)
+            if not created:
+                duplicates += 1
+                continue
+            imported += 1
+            if args.packets:
+                try:
+                    generate_packet_for_job(config, tracked_job.id, force=args.force)
+                    prepared += 1
+                except Exception as exc:
+                    failures.append(f"{tracked_job.title} @ {tracked_job.company}: {exc}")
+    console.print(
+        Panel(
+            f"Imported: {imported}\nDuplicates: {duplicates}\nPackets prepared: {prepared}\nFailures: {len(failures)}\n\n"
+            "Manual fallback: job-agent france-search-urls --query 'data science stage' --location Paris",
+            title="France hunt complete",
+        )
+    )
+    for item in failures[:10]:
+        console.print(f"Skipped: {item}")
+
+
+def _handle_list(args) -> None:
+    config = _load_config()
+    tracker = _get_tracker(config)
+    status = None
+    if args.status:
+        try:
+            status = JobStatus(args.status.upper())
+        except ValueError:
+            _fail(f"Unknown status: {args.status}")
+    jobs = tracker.list_jobs(status=status)
+    if not jobs:
+        console.print("No jobs found.")
+        return
+    table = Table(title="Jobs", show_header=True, header_style="bold cyan")
+    for col in ["ID", "Title", "Company", "Status", "Score", "Decision", "Date"]:
+        table.add_column(col)
+    for job in jobs:
         table.add_row(
             job.id[:8],
             job.title,
             job.company,
             job.status.value,
-            score_str,
-            date_str,
+            str(job.fit_score if job.fit_score is not None else "-"),
+            job.fit_decision or "-",
+            job.created_at[:10],
         )
-
     console.print(table)
 
 
-@app.command()
-def show(job_id: str = typer.Argument(..., help="Job ID (or prefix)")) -> None:
-    """Show details for a job."""
-    config = _load_config()
-    tracker = _get_tracker(config)
-
-    job = tracker.get_job(job_id)
+def _handle_show(args) -> None:
+    tracker = _get_tracker(_load_config())
+    job = tracker.get_job(args.job_id)
     if not job:
-        # Try prefix match
-        all_jobs = tracker.list_jobs()
-        matches = [j for j in all_jobs if j.id.startswith(job_id)]
-        if len(matches) == 1:
-            job = matches[0]
-        elif len(matches) > 1:
-            console.print(f"[yellow]Ambiguous prefix:[/yellow] {len(matches)} jobs match.")
-            return
-        else:
-            console.print(f"[red]Job not found:[/red] {job_id}")
-            raise typer.Exit(1)
-
-    console.print(Panel(
-        f"[bold]{job.title}[/bold] @ {job.company}\n"
-        f"Status: {job.status.value}  |  Score: {job.fit_score or '—'}\n"
-        f"Location: {job.location or '—'}  |  Remote: {job.remote}\n"
-        f"Source: {job.source}  |  Created: {job.created_at[:10]}\n\n"
-        f"[bold]Description:[/bold]\n{job.description[:500]}{'...' if len(job.description) > 500 else ''}\n\n"
-        f"[bold]Tech Stack:[/bold] {', '.join(job.tech_stack) or '—'}\n"
-        f"[bold]Apply URL:[/bold] {job.apply_url or '—'}",
-        title=f"Job {job.id[:8]}",
-    ))
+        _fail(f"Job not found: {args.job_id}")
+    console.print(
+        Panel(
+            f"{job.title} @ {job.company}\n"
+            f"Status: {job.status.value} | Score: {job.fit_score if job.fit_score is not None else '-'} | Decision: {job.fit_decision or '-'}\n"
+            f"Location: {job.location or '-'} | Remote: {job.remote} | Work mode: {job.work_mode or '-'}\n"
+            f"Source: {job.source} | Created: {job.created_at[:10]}\n\n"
+            f"Description:\n{job.description[:700]}{'...' if len(job.description) > 700 else ''}\n\n"
+            f"Tech Stack: {', '.join(job.tech_stack) or '-'}\n"
+            f"Apply URL: {job.apply_url or '-'}",
+            title=f"Job {job.id[:8]}",
+        )
+    )
 
 
-@app.command()
-def score(job_id: str = typer.Argument(..., help="Job ID")) -> None:
-    """Score a job against your candidate profile."""
-    from job_agent.scorer import score_job
-
+def _handle_score(args) -> None:
     config = _load_config()
     tracker = _get_tracker(config)
     profile, _, _ = _load_profiles(config)
-
     if not profile:
-        console.print("[red]Cannot score without a candidate profile.[/red]")
-        raise typer.Exit(1)
-
-    job = tracker.get_job(job_id)
+        _fail("Cannot score without candidate_profile.json.")
+    job = tracker.get_job(args.job_id)
     if not job:
-        console.print(f"[red]Job not found:[/red] {job_id}")
-        raise typer.Exit(1)
-
+        _fail(f"Job not found: {args.job_id}")
     breakdown = score_job(job, profile)
     job.fit_score = breakdown.total_score
+    job.fit_confidence = breakdown.confidence
+    job.fit_decision = breakdown.decision
     job.fit_notes = breakdown.notes
+    job.missing_requirements = breakdown.missing_requirements
+    job.risk_flags = sorted(set(job.risk_flags + breakdown.risk_flags))
     tracker.db.save_job(job)
-    tracker.update_status(job_id, JobStatus.SCORED)
+    tracker.update_status(job.id, JobStatus.SCORED)
+    console.print(
+        Panel(
+            f"Total Score: {breakdown.total_score}/100\n"
+            f"Decision: {breakdown.decision} | Confidence: {breakdown.confidence:.2f}\n"
+            f"Skill: {breakdown.skill_score}/100 | Title: {breakdown.title_score}/100 | Location: {breakdown.location_score}/100\n\n"
+            + "\n".join(f"  - {note}" for note in breakdown.notes),
+            title=f"Score: {job.title[:40]}",
+        )
+    )
 
-    console.print(Panel(
-        f"[bold]Total Score:[/bold] {breakdown.total_score:.2f}\n"
-        f"  Skill:    {breakdown.skill_score:.2f}\n"
-        f"  Title:    {breakdown.title_score:.2f}\n"
-        f"  Location: {breakdown.location_score:.2f}\n\n"
-        + "\n".join(f"  • {n}" for n in breakdown.notes),
-        title=f"Score: {job.title[:40]}",
-    ))
 
-
-@app.command()
-def apply(job_id: str = typer.Argument(..., help="Job ID")) -> None:
-    """Generate a full application packet for a job."""
-    from job_agent.filters import FilterConfig, apply_filters
-    from job_agent.generator.cover_letter import generate_cover_letter
-    from job_agent.generator.cv import tailor_cv
-    from job_agent.generator.qa import answer_screening_questions
-    from job_agent.renderer.html_render import render_html
-    from job_agent.renderer.pdf_render import render_pdf
-    from job_agent.schemas.packet import ApplicationPacket
-    from job_agent.scorer import score_job
-    import datetime
-
+def _handle_apply(args) -> None:
     config = _load_config()
     config.ensure_dirs()
-    tracker = _get_tracker(config)
-    profile, master_cv, qa_profile = _load_profiles(config)
-
-    job = tracker.get_job(job_id)
-    if not job:
-        console.print(f"[red]Job not found:[/red] {job_id}")
-        raise typer.Exit(1)
-
-    # Normalize + fingerprint
-    job = normalize(job)
-    job = set_fingerprint(job)
-
-    # Filter check
-    filter_cfg = FilterConfig()
-    if profile:
-        filter_result = apply_filters(job, filter_cfg, profile)
-        if not filter_result.passed:
-            console.print("[yellow]Warning:[/yellow] Job failed filters:")
-            for r in filter_result.reasons:
-                console.print(f"  • {r}")
-
-    # Score
-    if profile:
-        breakdown = score_job(job, profile)
-        job.fit_score = breakdown.total_score
-        job.fit_notes = breakdown.notes
-    tracker.db.save_job(job)
-
-    if not master_cv:
-        console.print("[red]Cannot generate packet without master_cv.json[/red]")
-        raise typer.Exit(1)
-    if not profile:
-        console.print("[red]Cannot generate packet without candidate_profile.json[/red]")
-        raise typer.Exit(1)
-
-    # Generate content
-    cv_md = tailor_cv(job, master_cv, profile)
-    letter_md = generate_cover_letter(job, master_cv, profile)
-
-    qa_answers: dict[str, str] = {}
-    if qa_profile:
-        qa_answers = answer_screening_questions([], qa_profile, profile)
-
-    cv_html = render_html(cv_md, title=f"CV — {job.title}")
-    letter_html = render_html(letter_md, title=f"Cover Letter — {job.title}")
-
-    # Write files
-    out_dir = config.outputs_dir / job.id[:8]  # type: ignore[operator]
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    cv_pdf_path = render_pdf(cv_md, out_dir / "cv.pdf", title="Tailored CV")
-    letter_pdf_path = render_pdf(letter_md, out_dir / "cover_letter.pdf", title="Cover Letter")
-
-    # Build assistant page
-    assistant_html = render_html(
-        f"# Application Assistant\n\n"
-        f"**Job:** {job.title} @ {job.company}\n\n"
-        f"**Score:** {job.fit_score or '—'}\n\n"
-        f"**CV PDF:** {cv_pdf_path}\n\n"
-        f"**Cover Letter PDF:** {letter_pdf_path}\n\n"
-        f"**Apply URL:** {job.apply_url or 'N/A'}\n",
-        title="Application Assistant",
-    )
-    assistant_path = out_dir / "assistant.html"
-    assistant_path.write_text(assistant_html, encoding="utf-8")
-
-    packet = ApplicationPacket(
-        job_id=job.id,
-        tailored_cv_md=cv_md,
-        tailored_cv_html=cv_html,
-        tailored_cv_pdf_path=str(cv_pdf_path),
-        cover_letter_md=letter_md,
-        cover_letter_html=letter_html,
-        cover_letter_pdf_path=str(letter_pdf_path),
-        qa_answers=qa_answers,
-        assistant_page_html=assistant_html,
-        status=PacketStatus.READY,
-    )
-    tracker.save_packet(packet)
-    tracker.update_status(job.id, JobStatus.PACKET_READY)
-
-    console.print(Panel(
-        f"[green]Packet generated![/green]\n"
-        f"  CV PDF:          {cv_pdf_path}\n"
-        f"  Cover Letter:    {letter_pdf_path}\n"
-        f"  Assistant page:  {assistant_path}\n\n"
-        f"[bold yellow]⚠  Review all documents before submitting.[/bold yellow]\n"
-        f"[bold yellow]   This tool NEVER auto-submits applications.[/bold yellow]",
-        title=f"Packet for {job.title[:40]}",
-    ))
-
-
-@app.command()
-def status(
-    job_id: str = typer.Argument(..., help="Job ID"),
-    new_status: str = typer.Argument(..., help="New status"),
-    note: str = typer.Option("", "--note", "-n", help="Optional note"),
-) -> None:
-    """Update the status of a job."""
-    config = _load_config()
-    tracker = _get_tracker(config)
-
     try:
-        js = JobStatus(new_status.upper())
-    except ValueError:
-        valid = [s.value for s in JobStatus]
-        console.print(f"[red]Unknown status:[/red] {new_status}. Valid: {valid}")
-        raise typer.Exit(1)
-
-    tracker.update_status(job_id, js, note=note)
-    console.print(f"[green]Updated[/green] {job_id[:8]} → {js.value}")
-
-
-@app.command()
-def history(job_id: str = typer.Argument(..., help="Job ID")) -> None:
-    """Show event history for a job."""
-    config = _load_config()
-    tracker = _get_tracker(config)
-
-    events = tracker.get_history(job_id)
-    if not events:
-        console.print("[dim]No events found.[/dim]")
-        return
-
-    table = Table(title=f"History: {job_id[:8]}", show_header=True)
-    table.add_column("#", width=4)
-    table.add_column("Type", min_width=20)
-    table.add_column("Data")
-    table.add_column("At", width=22)
-
-    for ev in events:
-        table.add_row(
-            str(ev["id"]),
-            ev["event_type"],
-            str(ev["event_data"]),
-            ev["created_at"][:19],
+        packet = generate_packet_for_job(config, args.job_id, force=args.force)
+    except Exception as exc:
+        _fail(f"Cannot generate packet: {exc}")
+    console.print(
+        Panel(
+            f"Packet generated\n"
+            f"Packet ID: {packet.id}\nStatus: {packet.status.value}\n"
+            f"CV PDF: {packet.tailored_cv_pdf_path}\nCover Letter: {packet.cover_letter_pdf_path}\n"
+            f"Assistant: {next((a.path for a in packet.artifacts if a.kind == 'assistant_html'), '-')}\n\n"
+            "Review everything manually before submitting.",
+            title="Application Packet",
         )
+    )
 
+
+def _handle_process_file(args) -> None:
+    try:
+        job, packet, created = process_file(
+            _load_config(),
+            args.path,
+            title=args.title or None,
+            company=args.company or None,
+            url=args.url or None,
+            force=args.force,
+        )
+    except Exception as exc:
+        _fail(f"Processing failed: {exc}")
+    if not created:
+        console.print(f"Duplicate detected: existing job {job.id[:8]}")
+        return
+    assert packet is not None
+    console.print(f"Processed {job.title} @ {job.company} | score={packet.fit_score}/100 | packet={packet.id}")
+
+
+def _handle_status(args) -> None:
+    tracker = _get_tracker(_load_config())
+    try:
+        status = JobStatus(args.new_status.upper())
+    except ValueError:
+        valid = [status.value for status in JobStatus]
+        _fail(f"Unknown status: {args.new_status}. Valid: {valid}")
+    try:
+        tracker.update_status(args.job_id, status, note=args.note)
+    except ValueError as exc:
+        _fail(str(exc))
+    console.print(f"Updated {args.job_id[:8]} -> {status.value}")
+
+
+def _handle_history(args) -> None:
+    tracker = _get_tracker(_load_config())
+    events = tracker.get_history(args.job_id)
+    if not events:
+        console.print("No events found.")
+        return
+    table = Table(title=f"History: {args.job_id[:8]}", show_header=True)
+    for col in ["#", "Type", "Data", "At"]:
+        table.add_column(col)
+    for event in events:
+        table.add_row(str(event["id"]), event["event_type"], str(event["event_data"]), event["created_at"][:19])
     console.print(table)
 
 
-@packet_app.command("show")
-def packet_show(job_id: str = typer.Argument(..., help="Job ID")) -> None:
-    """Show the latest application packet for a job."""
-    config = _load_config()
-    tracker = _get_tracker(config)
+def _handle_apply_assist(args) -> None:
+    tracker = _get_tracker(_load_config())
+    packet = tracker.db.resolve_packet(args.packet_id)
+    if not packet:
+        _fail(f"Packet not found: {args.packet_id}")
+    job = tracker.get_job(packet.job_id)
+    packet.status = PacketStatus.ASSISTED_APPLY_OPENED
+    tracker.db.save_packet(packet)
+    if job:
+        job.status = JobStatus.ASSISTED_APPLY_OPENED
+        tracker.db.save_job(job)
+    tracker.db.log_event(job.id if job else None, "ASSISTED_APPLY_OPENED", {"packet_id": packet.id}, packet_id=packet.id)
+    assistant = next((artifact for artifact in packet.artifacts if artifact.kind == "assistant_html"), None)
+    if assistant:
+        console.print(f"Assistant page: {assistant.path}")
+        if args.open_browser:
+            webbrowser.open(Path(assistant.path).resolve().as_uri())
+    if job and job.apply_url:
+        console.print(f"Apply URL: {job.apply_url}")
+        if args.open_browser:
+            webbrowser.open(job.apply_url)
 
-    packets = tracker.db.get_packets_for_job(job_id)
-    if not packets:
-        console.print("[dim]No packets found for this job.[/dim]")
+
+def _handle_mark_submitted(args) -> None:
+    tracker = _get_tracker(_load_config())
+    packet = tracker.db.resolve_packet(args.packet_id)
+    if not packet:
+        _fail(f"Packet not found: {args.packet_id}")
+    packet.status = PacketStatus.MANUALLY_SUBMITTED
+    tracker.db.save_packet(packet)
+    job = tracker.get_job(packet.job_id)
+    if job:
+        job.status = JobStatus.MANUALLY_SUBMITTED
+        tracker.db.save_job(job)
+    tracker.db.log_event(packet.job_id, "MANUALLY_SUBMITTED", {"packet_id": packet.id, "note": args.note}, packet_id=packet.id)
+    console.print(f"Marked manually submitted: {packet.id}")
+
+
+def _handle_packet_show(args) -> None:
+    tracker = _get_tracker(_load_config())
+    packet = tracker.db.resolve_packet(args.job_or_packet_id)
+    if packet is None:
+        job = tracker.get_job(args.job_or_packet_id)
+        if job:
+            packets = tracker.db.get_packets_for_job(job.id)
+            packet = packets[0] if packets else None
+    if not packet:
+        console.print("No packet found.")
         return
+    artifacts = "\n".join(f"  - {artifact.kind}: {artifact.path}" for artifact in packet.artifacts)
+    console.print(
+        Panel(
+            f"Packet ID: {packet.id}\nVersion: {packet.version}\nStatus: {packet.status.value}\nFit: {packet.fit_score}\n"
+            f"CV PDF: {packet.tailored_cv_pdf_path or '-'}\nLetter: {packet.cover_letter_pdf_path or '-'}\nArtifacts:\n{artifacts}",
+            title="Packet",
+        )
+    )
 
-    p = packets[0]
-    console.print(Panel(
-        f"Packet ID: {p.id}\n"
-        f"Version:   {p.version}\n"
-        f"Status:    {p.status.value}\n"
-        f"CV PDF:    {p.tailored_cv_pdf_path or '—'}\n"
-        f"Letter:    {p.cover_letter_pdf_path or '—'}\n"
-        f"Created:   {p.created_at[:19]}",
-        title=f"Packet for job {job_id[:8]}",
-    ))
+
+class LocalCLIApp:
+    prog = "job-agent"
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser(prog=self.prog, description="Free, local-first job-search and application assistant.")
+        sub = parser.add_subparsers(dest="command")
+        sub.required = True
+
+        init_p = sub.add_parser("init", help="Initialize data directory and config.")
+        init_p.set_defaults(handler=_handle_init)
+
+        copy_p = sub.add_parser("copy-examples", help="Copy example profile files.")
+        copy_p.set_defaults(handler=_handle_copy_examples)
+
+        validate_p = sub.add_parser("validate-profile", help="Validate candidate profile files.")
+        validate_p.set_defaults(handler=_handle_validate_profile)
+
+        add_p = sub.add_parser("add", help="Add jobs from various sources.")
+        add_sub = add_p.add_subparsers(dest="add_command")
+        add_sub.required = True
+
+        add_paste = add_sub.add_parser("paste", help="Add a job from stdin paste mode.")
+        add_paste.add_argument("--title", default="")
+        add_paste.add_argument("--company", default="")
+        add_paste.add_argument("--url", default="")
+        add_paste.set_defaults(handler=_handle_add_paste)
+
+        add_file = add_sub.add_parser("file", help="Add a job from a text/markdown file.")
+        add_file.add_argument("path", type=Path)
+        add_file.add_argument("--title", default="")
+        add_file.add_argument("--company", default="")
+        add_file.add_argument("--url", default="")
+        add_file.set_defaults(handler=_handle_add_file)
+
+        add_url = add_sub.add_parser("url", help="Add a job from a public URL.")
+        add_url.add_argument("url")
+        add_url.set_defaults(handler=_handle_add_url)
+
+        add_rss = add_sub.add_parser("rss", help="Add jobs from an RSS/Atom feed.")
+        add_rss.add_argument("feed_url")
+        add_rss.add_argument("--limit", "-n", type=int, default=None)
+        add_rss.set_defaults(handler=_handle_add_rss)
+
+        discover_p = sub.add_parser("discover-links", help="Print likely job/application links.")
+        discover_p.add_argument("url")
+        discover_p.add_argument("--limit", type=int, default=50)
+        discover_p.set_defaults(handler=_handle_discover_links)
+
+        search_p = sub.add_parser("search-api", help="Search free/read-only public job APIs.")
+        self._add_search_args(search_p)
+        search_p.add_argument("--save", action="store_true")
+        search_p.set_defaults(handler=_handle_search_api)
+
+        hunt_p = sub.add_parser("hunt", help="Search, import, score, and prepare local packets.")
+        self._add_search_args(hunt_p, default_limit=5)
+        hunt_p.add_argument("--force", action="store_true")
+        hunt_p.set_defaults(handler=_handle_hunt)
+
+        api_p = sub.add_parser("api-sources", help="List supported free/read-only public job API sources.")
+        api_p.set_defaults(handler=_handle_api_sources)
+
+        fs_p = sub.add_parser("france-setup", help="Show France workflow setup instructions.")
+        fs_p.set_defaults(handler=_handle_france_setup)
+
+        urls_p = sub.add_parser("france-search-urls", help="Print safe manual search URLs for French job boards.")
+        urls_p.add_argument("--query", "-q", default="data science stage")
+        urls_p.add_argument("--location", "-l", default="Paris")
+        urls_p.set_defaults(handler=_handle_france_search_urls)
+
+        targets_p = sub.add_parser("france-targets", help="List CAC 40 / large French company career pages.")
+        targets_p.add_argument("--limit", type=int, default=40)
+        targets_p.set_defaults(handler=_handle_france_targets)
+
+        fh_p = sub.add_parser("france-hunt", help="France/Paris data-AI hunt using France Travail when configured.")
+        fh_p.add_argument("--query", "-q", default="")
+        fh_p.add_argument("--location", "-l", default="Paris")
+        fh_p.add_argument("--limit", "-n", type=int, default=10)
+        fh_p.add_argument("--packets", dest="packets", action="store_true")
+        fh_p.add_argument("--no-packets", dest="packets", action="store_false")
+        fh_p.set_defaults(packets=True)
+        fh_p.add_argument("--cache", dest="cache", action="store_true")
+        fh_p.add_argument("--no-cache", dest="cache", action="store_false")
+        fh_p.set_defaults(cache=True)
+        fh_p.add_argument("--force", action="store_true")
+        fh_p.set_defaults(handler=_handle_france_hunt)
+
+        list_p = sub.add_parser("list", help="List tracked jobs.")
+        list_p.add_argument("--status", "-s", default="")
+        list_p.set_defaults(handler=_handle_list)
+
+        show_p = sub.add_parser("show", help="Show details for a job.")
+        show_p.add_argument("job_id")
+        show_p.set_defaults(handler=_handle_show)
+
+        score_p = sub.add_parser("score", help="Score a job against your candidate profile.")
+        score_p.add_argument("job_id")
+        score_p.set_defaults(handler=_handle_score)
+
+        apply_p = sub.add_parser("apply", help="Generate a full local application packet.")
+        apply_p.add_argument("job_id")
+        apply_p.add_argument("--force", action="store_true")
+        apply_p.set_defaults(handler=_handle_apply)
+
+        process_p = sub.add_parser("process", help="One-command job processing.")
+        process_sub = process_p.add_subparsers(dest="process_command")
+        process_sub.required = True
+        process_file_p = process_sub.add_parser("file", help="Process a job description file end to end.")
+        process_file_p.add_argument("path", type=Path)
+        process_file_p.add_argument("--title", default="")
+        process_file_p.add_argument("--company", default="")
+        process_file_p.add_argument("--url", default="")
+        process_file_p.add_argument("--force", action="store_true")
+        process_file_p.set_defaults(handler=_handle_process_file)
+
+        status_p = sub.add_parser("status", help="Update the status of a job.")
+        status_p.add_argument("job_id")
+        status_p.add_argument("new_status")
+        status_p.add_argument("--note", "-n", default="")
+        status_p.set_defaults(handler=_handle_status)
+
+        history_p = sub.add_parser("history", help="Show event history for a job.")
+        history_p.add_argument("job_id")
+        history_p.set_defaults(handler=_handle_history)
+
+        assist_p = sub.add_parser("apply-assist", help="Open the local assistant page and apply URL.")
+        assist_p.add_argument("packet_id")
+        assist_p.add_argument("--open-browser", dest="open_browser", action="store_true")
+        assist_p.add_argument("--no-open-browser", dest="open_browser", action="store_false")
+        assist_p.set_defaults(open_browser=True, handler=_handle_apply_assist)
+
+        submitted_p = sub.add_parser("mark-submitted", help="Mark an application packet as manually submitted.")
+        submitted_p.add_argument("packet_id")
+        submitted_p.add_argument("--note", "-n", default="")
+        submitted_p.set_defaults(handler=_handle_mark_submitted)
+
+        packet_p = sub.add_parser("packet", help="Manage application packets.")
+        packet_sub = packet_p.add_subparsers(dest="packet_command")
+        packet_sub.required = True
+        packet_show = packet_sub.add_parser("show", help="Show a packet by job or packet id.")
+        packet_show.add_argument("job_or_packet_id")
+        packet_show.set_defaults(handler=_handle_packet_show)
+
+        return parser
+
+    def _add_search_args(self, parser: argparse.ArgumentParser, default_limit: int = 10) -> None:
+        parser.add_argument("source")
+        parser.add_argument("--query", "-q", default="")
+        parser.add_argument("--location", "-l", default="")
+        parser.add_argument("--country", default="")
+        parser.add_argument("--board", default="")
+        parser.add_argument("--limit", "-n", type=int, default=default_limit)
+        parser.add_argument("--page", type=int, default=1)
+        parser.add_argument("--remote-only", action="store_true")
+        parser.add_argument("--cache", dest="cache", action="store_true")
+        parser.add_argument("--no-cache", dest="cache", action="store_false")
+        parser.set_defaults(cache=True)
+        parser.add_argument("--cache-ttl-hours", type=float, default=6.0)
+
+    def invoke(self, argv: list[str] | None = None) -> int:
+        parser = self.build_parser()
+        argv = list(argv or [])
+        try:
+            args = parser.parse_args(argv)
+        except SystemExit as exc:
+            return int(exc.code or 0)
+
+        handler = getattr(args, "handler", None)
+        if handler is None:
+            parser.print_help()
+            return 1
+        try:
+            handler(args)
+            return 0
+        except CLIError as exc:
+            console.print(exc.message)
+            return exc.code
+
+    def __call__(self) -> None:  # pragma: no cover
+        raise SystemExit(self.invoke(sys.argv[1:]))
+
+
+app = LocalCLIApp()
+
+
+if __name__ == "__main__":  # pragma: no cover
+    app()
