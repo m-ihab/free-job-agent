@@ -51,11 +51,18 @@ except Exception:  # pragma: no cover
 
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
+from job_agent.enrichment import EnrichOptions, enrich_job
 from job_agent.exporters.internship_workbook import export_applied_internships
 from job_agent.fingerprint import set_fingerprint
 from job_agent.intake.discover import discover_job_links
 from job_agent.intake.file import ingest_file
-from job_agent.intake.free_apis import FreeApiError, search_free_api_jobs, supported_source_names
+from job_agent.intake.free_apis import (
+    FreeApiError,
+    KEYWORD_ONLY_SOURCES,
+    search_all_free_sources,
+    search_free_api_jobs,
+    supported_source_names,
+)
 from job_agent.intake.france_market import (
     DEFAULT_FRANCE_DATA_AI_QUERIES,
     board_notes,
@@ -322,8 +329,44 @@ def _handle_hunt(args) -> None:
 
 def _handle_api_sources(args) -> None:
     console.print("Supported sources: " + ", ".join(supported_source_names()))
+    console.print("Keyword-only sources (no board/credentials): " + ", ".join(KEYWORD_ONLY_SOURCES))
     console.print("France priority source: francetravail (free credentials required).")
     console.print("All sources are read-only here; final submission remains manual.")
+
+
+def _handle_multi_search(args) -> None:
+    config = _load_config()
+    config.ensure_dirs()
+    sources = [s.strip() for s in (args.sources or "").split(",") if s.strip()] or None
+    result = search_all_free_sources(
+        query=args.query,
+        location=args.location,
+        country=args.country,
+        limit_per_source=args.limit,
+        sources=sources,
+        remote_only=args.remote_only,
+        internships_only=args.internships_only,
+        use_cache=args.cache,
+    )
+    table = Table(title=f"Multi-source results for '{args.query}'", show_header=True, header_style="bold cyan")
+    for col in ["#", "Source", "Title", "Company", "Location"]:
+        table.add_column(col)
+    for idx, job in enumerate(result["jobs"], start=1):
+        table.add_row(str(idx), job.source.replace("api:", ""), job.title[:60], job.company[:30], (job.location or "-")[:30])
+    console.print(table)
+    summary_lines = [f"{src}: {count}" for src, count in result["per_source"].items()]
+    if result["errors"]:
+        summary_lines.append("Errors: " + "; ".join(f"{k}={v[:80]}" for k, v in result["errors"].items()))
+    console.print(Panel("\n".join(summary_lines) or "No sources returned data.", title="Per-source counts"))
+    if args.save and result["jobs"]:
+        added = duplicates = 0
+        for job in result["jobs"]:
+            _, created = add_job_to_tracker(config, job)
+            if created:
+                added += 1
+            else:
+                duplicates += 1
+        console.print(f"Saved {added} new jobs ({duplicates} duplicates skipped).")
 
 
 def _handle_ui(args) -> None:
@@ -335,17 +378,148 @@ def _handle_ui(args) -> None:
 def _handle_france_setup(args) -> None:
     setup_text = (
         "Important: your normal candidate login is not an API client id/secret.\n"
-        "1. Request free France Travail API access for 'API Offres d’emploi'.\n"
+        "1. Request free France Travail API access for 'API Offres d'emploi'.\n"
         "2. Set these environment variables after approval:\n"
         "   FRANCE_TRAVAIL_CLIENT_ID=...\n"
         "   FRANCE_TRAVAIL_CLIENT_SECRET=...\n"
         "   FRANCE_TRAVAIL_SCOPE='api_offresdemploiv2 o2dsoffre'\n"
         "3. Run: job-agent search-api francetravail --query 'data scientist stage' --location Paris --save --internships-only\n"
         "4. Export your submitted internship tracker with: job-agent export internships\n"
-        "5. For Welcome to the Jungle, LinkedIn, Indeed, Glassdoor, HelloWork, Apec, Stage.fr: use france-search-urls, then add promising URLs with job-agent add url.\n\n"
+        "5. For Welcome to the Jungle, LinkedIn, Indeed, Glassdoor, HelloWork, Apec, Stage.fr: use france-search-urls, then add promising URLs with job-agent add url.\n"
+        "6. For a guided profile setup, run: job-agent setup-wizard\n\n"
         "This tool does not scrape logged-in boards and does not auto-submit applications."
     )
     console.print(Panel(setup_text, title="France/Paris setup"))
+
+
+_WIZARD_STEPS = [
+    ("school", "School / university", "DSTI School of Engineering"),
+    ("program", "Program / degree", "Applied MSc in Data Science & AI"),
+    ("availability", "Earliest internship start date", "ASAP, end-of-studies 6-month stage"),
+    ("duration", "Preferred internship duration", "6 months"),
+    ("alternance_rhythm", "Alternance rhythm if relevant", "3 weeks company / 1 week school"),
+    ("french_level", "French level (A1/A2/B1/B2/C1/C2)", "A2 (targeting B1)"),
+    ("english_level", "English level (A1/A2/B1/B2/C1/C2/Fluent)", "Fluent"),
+    ("work_auth", "Work authorization status in France", "Manual completion required before application submission."),
+    ("visa_sponsorship", "Do you need visa sponsorship?", "Manual completion required before application submission."),
+    ("convention", "Can your school provide a convention de stage?", "Manual completion required before application submission."),
+    ("relocation", "Open to relocation outside Paris?", "No"),
+    ("remote_preference", "Remote / hybrid / onsite preference", "Hybrid in Paris; remote within France OK"),
+]
+
+
+def _handle_setup_wizard(args) -> None:
+    config = _load_config()
+    config.ensure_dirs()
+    interactive = sys.stdin.isatty() and not args.non_interactive
+    console.print(Panel(
+        "Stage/alternance profile wizard — press Enter to accept the suggested value, or type a custom one. "
+        "Sensitive answers stay locked behind manual review.",
+        title="Setup wizard",
+    ))
+    answers: dict[str, str] = {}
+    for key, label, default in _WIZARD_STEPS:
+        if interactive:
+            console.print(f"{label} [{default}]:")
+            line = sys.stdin.readline().strip()
+            answers[key] = line or default
+        else:
+            answers[key] = default
+
+    qa_path = config.profiles_dir / "master_qa_profile.json"  # type: ignore[operator]
+    try:
+        existing = json.loads(qa_path.read_text(encoding="utf-8")) if qa_path.exists() else {"entries": [], "hold_if_missing": True}
+    except Exception:
+        existing = {"entries": [], "hold_if_missing": True}
+
+    def _replace_or_append(entry_id: str, patterns: list[str], answer: str, category: str, jurisdiction: str | None = None, sensitive: bool = False) -> None:
+        for item in existing.get("entries", []):
+            if item.get("id") == entry_id:
+                item["question_patterns"] = patterns
+                item["answer"] = answer
+                item["category"] = category
+                item["locked"] = True
+                item["sensitive"] = sensitive
+                if jurisdiction:
+                    item["jurisdiction"] = jurisdiction
+                return
+        existing.setdefault("entries", []).append({
+            "id": entry_id,
+            "question_patterns": patterns,
+            "answer": answer,
+            "category": category,
+            "jurisdiction": jurisdiction or "FR",
+            "locked": True,
+            "sensitive": sensitive,
+        })
+
+    _replace_or_append("work_authorization_france", [
+        "are you authorized to work in france",
+        "êtes-vous autorisé à travailler en france",
+        "autorisation de travail",
+        "droit de travailler en france",
+    ], answers["work_auth"], "work_authorization", sensitive=True)
+    _replace_or_append("visa_sponsorship_france", [
+        "do you require visa sponsorship",
+        "will you require sponsorship",
+        "avez-vous besoin d'un visa",
+        "sponsorship visa",
+    ], answers["visa_sponsorship"], "work_authorization", sensitive=True)
+    _replace_or_append("internship_agreement_france", [
+        "convention de stage",
+        "can you provide an internship agreement",
+        "avez-vous une convention de stage",
+    ], answers["convention"], "internship_agreement", sensitive=True)
+    _replace_or_append("availability_france", [
+        "availability",
+        "date de disponibilité",
+        "start date",
+        "quand pouvez-vous commencer",
+    ], answers["availability"], "availability")
+    _replace_or_append("internship_duration", [
+        "internship duration",
+        "durée du stage",
+        "duration",
+    ], answers["duration"], "availability")
+    _replace_or_append("alternance_rhythm", [
+        "alternance rhythm",
+        "rythme alternance",
+        "rythme de l'alternance",
+    ], answers["alternance_rhythm"], "availability")
+    _replace_or_append("languages_fr_en", [
+        "languages",
+        "langues",
+        "french level",
+        "english level",
+        "niveau de français",
+        "niveau d'anglais",
+    ], f"French: {answers['french_level']}. English: {answers['english_level']}. Arabic: Native.", "languages")
+    _replace_or_append("school_program", [
+        "school",
+        "university",
+        "école",
+        "université",
+    ], f"{answers['program']} at {answers['school']}", "education")
+    _replace_or_append("relocation_preference", [
+        "relocation",
+        "are you willing to relocate",
+        "déménagement",
+    ], answers["relocation"], "preferences")
+    _replace_or_append("remote_preference", [
+        "remote",
+        "hybrid",
+        "télétravail",
+        "work preference",
+    ], answers["remote_preference"], "preferences")
+
+    existing.setdefault("hold_if_missing", True)
+    qa_path.parent.mkdir(parents=True, exist_ok=True)
+    qa_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    console.print(Panel(
+        f"Wrote {qa_path}\n"
+        f"Captured: {len(answers)} answers. Sensitive answers (visa, work auth, convention) remain locked for manual review.",
+        title="Setup wizard complete",
+    ))
 
 
 def _handle_export_internships(args) -> None:
@@ -360,6 +534,63 @@ def _handle_export_internships(args) -> None:
             title="Internship export complete",
         )
     )
+
+
+def _build_enrich_options(args) -> EnrichOptions:
+    flags = [
+        args.rome,
+        args.anotea,
+        args.training,
+        args.labour_market,
+        args.territory,
+        args.employer,
+        args.other,
+    ]
+    if not any(flags):
+        return EnrichOptions()
+    return EnrichOptions(
+        rome=args.rome,
+        anotea=args.anotea,
+        training=args.training,
+        labour_market=args.labour_market,
+        territory=args.territory,
+        employer=args.employer,
+        other=args.other,
+    )
+
+
+def _handle_enrich(args) -> None:
+    config = _load_config()
+    config.ensure_dirs()
+    options = _build_enrich_options(args)
+    tracker = _get_tracker(config)
+
+    job_ids: list[str] = []
+    if args.job_id:
+        job_ids = [args.job_id]
+    elif args.status:
+        try:
+            status = JobStatus(args.status.upper())
+        except ValueError:
+            _fail(f"Unknown status: {args.status}")
+        job_ids = [job.id for job in tracker.list_jobs(status=status, limit=args.limit)]
+    else:
+        _fail("Provide a job id or --status to enrich multiple jobs.")
+
+    if not job_ids:
+        console.print("No jobs found for enrichment.")
+        return
+
+    for job_id in job_ids:
+        report = enrich_job(config, job_id, options)
+        sources = report.get("sources", {})
+        ok = sum(1 for value in sources.values() if str(value).startswith("ok"))
+        console.print(
+            Panel(
+                f"Job: {job_id}\nEndpoints ok: {ok}/{len(sources)}",
+                title="Enrichment complete",
+            )
+        )
 
 
 def _handle_france_search_urls(args) -> None:
@@ -438,6 +669,7 @@ def _handle_france_hunt(args) -> None:
                 query=query,
                 location=args.location,
                 limit=args.limit,
+                internships_only=args.internships_only,
                 use_cache=args.cache,
                 cache_ttl_hours=6.0,
             )
@@ -734,6 +966,20 @@ class LocalCLIApp:
         api_p = sub.add_parser("api-sources", help="List supported free/read-only public job API sources.")
         api_p.set_defaults(handler=_handle_api_sources)
 
+        multi_p = sub.add_parser("multi-search", help="Search several free/public APIs at once and dedupe results.")
+        multi_p.add_argument("--query", "-q", default="data scientist")
+        multi_p.add_argument("--location", "-l", default="")
+        multi_p.add_argument("--country", default="")
+        multi_p.add_argument("--limit", "-n", type=int, default=8, help="Results per source.")
+        multi_p.add_argument("--sources", default="", help="Comma-separated source list; default uses all keyword-only sources.")
+        multi_p.add_argument("--remote-only", action="store_true")
+        multi_p.add_argument("--internships-only", action="store_true")
+        multi_p.add_argument("--cache", dest="cache", action="store_true")
+        multi_p.add_argument("--no-cache", dest="cache", action="store_false")
+        multi_p.set_defaults(cache=True)
+        multi_p.add_argument("--save", action="store_true", help="Save deduped results to the local tracker.")
+        multi_p.set_defaults(handler=_handle_multi_search)
+
         ui_p = sub.add_parser("ui", help="Run the local web dashboard.")
         ui_p.add_argument("--host", default="127.0.0.1")
         ui_p.add_argument("--port", type=int, default=8765)
@@ -743,6 +989,10 @@ class LocalCLIApp:
         fs_p = sub.add_parser("france-setup", help="Show France workflow setup instructions.")
         fs_p.set_defaults(handler=_handle_france_setup)
 
+        wizard_p = sub.add_parser("setup-wizard", help="Interactive wizard to set stage/alternance fields in your QA profile.")
+        wizard_p.add_argument("--non-interactive", action="store_true", help="Use default answers without prompting (useful for tests).")
+        wizard_p.set_defaults(handler=_handle_setup_wizard)
+
         export_p = sub.add_parser("export", help="Export tracked internships to the A24 workbook.")
         export_sub = export_p.add_subparsers(dest="export_command")
         export_sub.required = True
@@ -750,6 +1000,19 @@ class LocalCLIApp:
         internships_export.add_argument("--workbook", type=Path, default=None, help="Optional workbook path. Defaults to profiles/Internship Search Tracking File A24.xlsx.")
         internships_export.add_argument("--sheet", default=None, help="Optional workbook sheet name.")
         internships_export.set_defaults(handler=_handle_export_internships)
+
+        enrich_p = sub.add_parser("enrich", help="Enrich tracked jobs with France Travail APIs.")
+        enrich_p.add_argument("job_id", nargs="?", default="")
+        enrich_p.add_argument("--status", default="", help="Enrich jobs by status when job_id is omitted.")
+        enrich_p.add_argument("--limit", type=int, default=10)
+        enrich_p.add_argument("--rome", action="store_true", help="Use ROME 4.0 endpoints.")
+        enrich_p.add_argument("--anotea", action="store_true", help="Use Anotea employer reviews.")
+        enrich_p.add_argument("--training", action="store_true", help="Use Open Training endpoints.")
+        enrich_p.add_argument("--labour-market", dest="labour_market", action="store_true", help="Use labour market endpoints.")
+        enrich_p.add_argument("--territory", action="store_true", help="Use territory endpoints.")
+        enrich_p.add_argument("--employer", action="store_true", help="Use employer summary endpoints.")
+        enrich_p.add_argument("--other", action="store_true", help="Use remaining France Travail endpoints.")
+        enrich_p.set_defaults(handler=_handle_enrich)
 
         urls_p = sub.add_parser("france-search-urls", help="Print safe manual search URLs for French job boards.")
         urls_p.add_argument("--query", "-q", default="data science stage")

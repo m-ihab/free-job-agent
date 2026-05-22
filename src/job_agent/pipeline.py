@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 from job_agent.config import AppConfig
@@ -101,21 +100,17 @@ def _write_pdf(markdown: str, path: Path, kind: str, title: str) -> DocumentArti
     return DocumentArtifact(kind=kind, path=str(path), sha256=sha256_file(path))
 
 
-def _write_cv_pdf(cv_md: str, cv_tex_path: Path, cv_pdf_path: Path, fallback_pdf: Path | None = None) -> tuple[DocumentArtifact, str | None]:
+def _write_cv_pdf(cv_md: str, cv_tex_path: Path, cv_pdf_path: Path) -> tuple[DocumentArtifact, str | None]:
     try:
         compile_latex_to_pdf(cv_tex_path, cv_pdf_path)
         return DocumentArtifact(kind="cv_pdf", path=str(cv_pdf_path), sha256=sha256_file(cv_pdf_path)), None
     except LatexCompileError as exc:
-        if fallback_pdf and fallback_pdf.exists():
-            shutil.copyfile(fallback_pdf, cv_pdf_path)
-            warning = (
-                "LaTeX CV PDF fallback used: copied profiles/CV.pdf because cv.tex could not be compiled. "
-                "This PDF preserves your main.tex visual format but is not role-tailored; install MiKTeX or TeX Live and rerun with --force for a tailored LaTeX PDF. "
-                f"Compiler issue: {exc}"
-            )
-        else:
-            render_pdf(cv_md, cv_pdf_path, title="Tailored CV")
-            warning = f"LaTeX CV PDF fallback used: {exc}"
+        render_pdf(cv_md, cv_pdf_path, title="Tailored CV")
+        warning = (
+            "LaTeX CV PDF fallback used: generated a role-tailored plain PDF because cv.tex could not be compiled. "
+            "Set JOB_AGENT_LATEX_COMPILER or run from a terminal where pdflatex is available, then regenerate the packet to get the exact main.tex layout. "
+            f"Compiler issue: {exc}"
+        )
         return (
             DocumentArtifact(kind="cv_pdf", path=str(cv_pdf_path), sha256=sha256_file(cv_pdf_path)),
             warning,
@@ -171,8 +166,7 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
     artifacts.append(_write_text(cv_tex_path, cv_tex))
     copy_latex_assets(config.profiles_dir, out_dir)
     artifacts.append(_write_text(cv_html_path, cv_html))
-    fallback_cv_pdf = (config.profiles_dir / "CV.pdf") if config.profiles_dir else None  # type: ignore[operator]
-    cv_pdf_artifact, latex_warning = _write_cv_pdf(cv_md, cv_tex_path, cv_pdf_path, fallback_cv_pdf)
+    cv_pdf_artifact, latex_warning = _write_cv_pdf(cv_md, cv_tex_path, cv_pdf_path)
     artifacts.append(cv_pdf_artifact)
     artifacts.append(_write_text(letter_md_path, letter_md))
     artifacts.append(_write_text(letter_html_path, letter_html))

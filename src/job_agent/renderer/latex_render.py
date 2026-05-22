@@ -1,4 +1,21 @@
-"""Render tailored CV content to LaTeX and optionally compile it."""
+"""Render tailored CV content to LaTeX and optionally compile it.
+
+The strategy is conservative: when the user provides a master ``main.tex``, the
+renderer preserves its curated design, narrative, and styling. It only swaps in
+role-specific text where it materially helps the application:
+
+- ``\\mysummary``: keep the master text and add a short closing sentence that
+  names the target role/company and the top matching skills.
+- ``\\expone/\\exptwo/\\expthree``: re-rank bullets by relevance to the job so
+  the most relevant points appear first. Bullets are not invented.
+- ``\\projone`` (and ``projtwo``/``projthree`` if present): pick the most
+  relevant project from ``master_cv.json``.
+- Skills, education, languages, and other curated narrative blocks stay as the
+  user wrote them in ``main.tex`` so the CV reads naturally.
+
+Both the English and French branches of an ``\\ifthenelse{\\equal{\\cvlang}{en}}``
+block are tailored consistently.
+"""
 from __future__ import annotations
 
 from calendar import month_name
@@ -14,6 +31,9 @@ from job_agent.schemas.job import JobListing
 
 class LatexCompileError(RuntimeError):
     """Raised when a LaTeX compiler exists but cannot build the PDF."""
+
+
+_FRENCH_HINT_RE = re.compile(r"[éèêëàâäîïôöùûüç]|stage|alternance|stagiaire", re.IGNORECASE)
 
 
 def _escape_latex(text: str) -> str:
@@ -89,17 +109,6 @@ def _cventry(date: str, title: str, org: str, location: str, details: str) -> st
     )
 
 
-def _education_body(education, job: JobListing) -> str:
-    date = ""
-    if education.start_year or education.end_year:
-        date = f"{education.start_year or ''} -- {education.end_year or 'Present'}"
-    title = education.degree
-    if education.field:
-        title = f"{title} in {education.field}"
-    details = _latex_itemize(education.notes)
-    return _cventry(date, title, education.institution, education.location or "", details)
-
-
 def _experience_body(exp: WorkExperience, job: JobListing) -> str:
     bullets = _rank_texts(exp.bullet_points, job, limit=4)
     if exp.technologies:
@@ -120,27 +129,80 @@ def _skill_score(skill: Skill, job: JobListing) -> int:
     return _keyword_score(skill.name, job)
 
 
-def _skill_names(skills: list[Skill], categories: set[str], job: JobListing) -> str:
-    selected = [skill for skill in skills if (skill.category or "").casefold() in categories]
-    ranked = sorted(selected, key=lambda skill: (_skill_score(skill, job), skill.name.casefold()), reverse=True)
-    return ", ".join(_inline_latex(skill.name) for skill in ranked)
+def _job_focus_terms(job: JobListing, master_cv: MasterCV, limit: int = 4) -> list[str]:
+    """Pick the top skills/tech that overlap between the job and the candidate."""
+    job_text = " ".join(job.tech_stack + job.requirements + job.responsibilities + [job.title]).casefold()
+    terms: list[str] = []
+    seen: set[str] = set()
+    for skill in sorted(master_cv.skills, key=lambda s: _skill_score(s, job), reverse=True):
+        name = skill.name.strip()
+        key = name.casefold()
+        if name and key in job_text and key not in seen:
+            terms.append(name)
+            seen.add(key)
+        if len(terms) >= limit:
+            break
+    if len(terms) < limit:
+        for raw in job.tech_stack + job.requirements:
+            cleaned = raw.strip(" .,:;")
+            key = cleaned.casefold()
+            if 2 <= len(cleaned) <= 40 and key not in seen:
+                terms.append(cleaned)
+                seen.add(key)
+            if len(terms) >= limit:
+                break
+    return terms
 
 
-def _language_line(profile: CandidateProfile) -> str:
-    parts = []
-    for language in profile.languages:
-        if " - " in language:
-            name, level = language.split(" - ", 1)
-        else:
-            name, level = language, ""
-        if level:
-            parts.append(rf"\textbf{{{_inline_latex(name)}}} -- {_inline_latex(level)}")
-        else:
-            parts.append(_inline_latex(name))
-    return r" \quad|\quad ".join(parts)
+def _is_french(text: str) -> bool:
+    return bool(text and _FRENCH_HINT_RE.search(text))
+
+
+def _tailored_summary(
+    job: JobListing,
+    master_cv: MasterCV,
+    profile: CandidateProfile,
+    *,
+    original_body: str,
+    french: bool,
+) -> str:
+    """Return a tailored summary that preserves the master narrative.
+
+    Returns a string of valid LaTeX. The curated body is preserved verbatim so
+    existing escapes like ``\\&`` stay intact, and only the appended closing
+    sentence (plain text from job/profile data) is LaTeX-escaped.
+    """
+    body = original_body.strip()
+    if not body:
+        body = _escape_latex((profile.summary or master_cv.summary or "").strip())
+    body = re.sub(r"\s+", " ", body).strip()
+    base = body[:-1] if body.endswith(".") else body
+    focus = _job_focus_terms(job, master_cv, limit=4)
+    role = job.title.strip() if job.title else ""
+    company = job.company.strip() if job.company else ""
+    if not (role and company):
+        return base + "."
+    if french:
+        tail = f" Candidature ciblée pour le poste de {role} chez {company}"
+        if focus:
+            tail += f", avec un accent sur {', '.join(focus)}"
+    else:
+        tail = f" Targeting the {role} role at {company}"
+        if focus:
+            tail += f", with strong emphasis on {', '.join(focus)}"
+    tail += "."
+    return base + "." + _escape_latex(tail)
 
 
 def _replace_newcommand_body(source: str, command_name: str, body: str) -> str:
+    """Replace the body of the first occurrence of ``\\newcommand{\\command_name}``.
+
+    Only the first occurrence is replaced. The user's ``main.tex`` typically
+    defines content commands twice — once in the English ``\\ifthenelse``
+    branch, once in the French branch — and the French branch should keep its
+    curated translation. To update both branches with different bodies, use
+    ``_replace_newcommand_branch_bodies``.
+    """
     marker = rf"\newcommand{{\{command_name}}}"
     marker_start = source.find(marker)
     if marker_start < 0:
@@ -164,6 +226,63 @@ def _replace_newcommand_body(source: str, command_name: str, body: str) -> str:
                 return source[: body_start + 1] + "\n" + body.rstrip() + "\n    " + source[index:]
         index += 1
     return source
+
+
+def _iter_newcommand_bodies(source: str, command_name: str):
+    """Yield ``(start, end, body)`` for every occurrence of the named command."""
+    pattern_prefix = rf"\newcommand{{\{command_name}}}"
+    cursor = 0
+    while True:
+        marker_start = source.find(pattern_prefix, cursor)
+        if marker_start < 0:
+            return
+        body_start = source.find("{", marker_start + len(pattern_prefix))
+        if body_start < 0:
+            return
+        depth = 0
+        index = body_start
+        while index < len(source):
+            char = source[index]
+            if char == "\\":
+                index += 2
+                continue
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    body = source[body_start + 1 : index]
+                    yield (body_start + 1, index, body)
+                    cursor = index + 1
+                    break
+            index += 1
+        else:
+            return
+
+
+def _replace_newcommand_branch_bodies(source: str, command_name: str, new_bodies: list[str]) -> str:
+    """Replace each occurrence of a command with the body at the same index.
+
+    If there are more occurrences than provided bodies, the last body is
+    reused. If a body is empty, the original is kept untouched.
+    """
+    if not new_bodies:
+        return source
+    positions = list(_iter_newcommand_bodies(source, command_name))
+    if not positions:
+        return source
+    result_parts: list[str] = []
+    cursor = 0
+    for index, (start, end, _) in enumerate(positions):
+        body_index = min(index, len(new_bodies) - 1)
+        body = new_bodies[body_index]
+        if not body.strip():
+            continue
+        result_parts.append(source[cursor:start])
+        result_parts.append("\n" + body.rstrip() + "\n    ")
+        cursor = end
+    result_parts.append(source[cursor:])
+    return "".join(result_parts)
 
 
 def _replace_line_command(source: str, pattern: str, replacement: str) -> str:
@@ -192,8 +311,16 @@ def render_moderncv_template(
     master_cv: MasterCV,
     profile: CandidateProfile,
 ) -> str:
-    """Render a tailored CV by preserving the user's moderncv template."""
+    """Render a tailored CV by preserving the user's moderncv template.
+
+    Only role-specific text is rewritten. The master template's design,
+    section ordering, language toggle, photo, font, and curated narrative
+    skill blocks stay intact.
+    """
     source = template_path.read_text(encoding="utf-8")
+    header_comment = "% Tailored by free-job-agent for " + _inline_latex(f"{job.title} at {job.company}") + "\n"
+    source = header_comment + source
+
     contact = master_cv.contact
     names = contact.name.split()
     first_name = names[0] if names else contact.name
@@ -204,7 +331,11 @@ def render_moderncv_template(
     source = _replace_line_command(source, r"^\\phone\[mobile\]\{.*?\}$", rf"\phone[mobile]{{{_inline_latex(contact.phone or '')}}}")
     source = _replace_line_command(source, r"^\\email\{.*?\}$", rf"\email{{{_inline_latex(contact.email)}}}")
     if contact.linkedin_url:
-        source = _replace_line_command(source, r"^\\social\[linkedin\]\{.*?\}$", rf"\social[linkedin]{{{_inline_latex(_linkedin_handle(contact.linkedin_url))}}}")
+        source = _replace_line_command(
+            source,
+            r"^\\social\[linkedin\]\{.*?\}$",
+            rf"\social[linkedin]{{{_inline_latex(_linkedin_handle(contact.linkedin_url))}}}",
+        )
     if contact.github_url:
         github_command = rf"\social[github]{{{_inline_latex(_github_handle(contact.github_url))}}}"
         if re.search(r"^%?\s*\\social\[github\]\{.*?\}$", source, flags=re.MULTILINE):
@@ -212,30 +343,36 @@ def render_moderncv_template(
         else:
             source = source.replace(r"\social[linkedin]", github_command + "\n" + r"\social[linkedin]", 1)
 
-    relevant_skill_names = [skill.name for skill in sorted(master_cv.skills, key=lambda skill: _skill_score(skill, job), reverse=True) if _skill_score(skill, job) > 0]
-    summary = profile.summary or master_cv.summary
-    if relevant_skill_names:
-        summary = f"{summary} Most relevant for this role: {', '.join(relevant_skill_names[:6])}."
-    source = _replace_newcommand_body(source, "mysummary", _inline_latex(summary))
+    # Summary: keep curated narrative, add one closing sentence.
+    summary_branches = list(_iter_newcommand_bodies(source, "mysummary"))
+    if summary_branches:
+        new_summaries: list[str] = []
+        for _, _, body in summary_branches:
+            french = _is_french(body)
+            new_summaries.append(_tailored_summary(job, master_cv, profile, original_body=body, french=french))
+        source = _replace_newcommand_branch_bodies(source, "mysummary", new_summaries)
 
-    for command_name, education in zip(["eduone", "edutwo"], master_cv.education):
-        source = _replace_newcommand_body(source, command_name, _education_body(education, job))
+    # Experience: only rewrite if master_cv.json has data; otherwise keep original.
+    for command_name, experience in zip(["expone", "exptwo", "expthree", "expfour", "expfive"], master_cv.experience):
+        if _has_command(source, command_name):
+            source = _replace_newcommand_body(source, command_name, _experience_body(experience, job))
 
-    for command_name, experience in zip(["expone", "exptwo", "expthree"], master_cv.experience):
-        source = _replace_newcommand_body(source, command_name, _experience_body(experience, job))
+    # Projects: pick most-relevant projects from master_cv if available.
+    if master_cv.projects:
+        ranked_projects = sorted(
+            master_cv.projects,
+            key=lambda project: _keyword_score(project.description + " " + " ".join(project.technologies) + " " + project.name, job),
+            reverse=True,
+        )
+        for command_name, project in zip(["projone", "projtwo", "projthree"], ranked_projects):
+            if _has_command(source, command_name):
+                source = _replace_newcommand_body(source, command_name, _project_body(project, job))
 
-    for command_name, project in zip(["projone"], sorted(master_cv.projects, key=lambda project: _keyword_score(project.description + " " + " ".join(project.technologies), job), reverse=True)):
-        source = _replace_newcommand_body(source, command_name, _project_body(project, job))
-
-    skills = master_cv.skills or profile.skills
-    source = _replace_newcommand_body(source, "skillsml", _skill_names(skills, {"machine_learning"}, job))
-    source = _replace_newcommand_body(source, "skillsdata", _skill_names(skills, {"data", "data_engineering"}, job))
-    source = _replace_newcommand_body(source, "skillsprog", _skill_names(skills, {"programming"}, job))
-    source = _replace_newcommand_body(source, "skillscloud", _skill_names(skills, {"cloud", "platforms"}, job))
-    source = _replace_newcommand_body(source, "skillstools", _skill_names(skills, {"tools", "analytics", "automation"}, job))
-    if profile.languages:
-        source = _replace_newcommand_body(source, "skillslang", _language_line(profile))
     return source
+
+
+def _has_command(source: str, command_name: str) -> bool:
+    return rf"\newcommand{{\{command_name}}}" in source
 
 
 def render_latex_source(
@@ -247,7 +384,14 @@ def render_latex_source(
     master_cv: MasterCV | None = None,
     profile: CandidateProfile | None = None,
 ) -> str:
-    """Convert the generated CV markdown into editable LaTeX source."""
+    """Convert the generated CV markdown into editable LaTeX source.
+
+    When a ``main.tex`` template is provided alongside the job and profile
+    data, ``render_moderncv_template`` is used so the CV preserves the user's
+    curated design and only role-relevant text is updated. Otherwise this
+    falls back to a minimal article-class document built from the Markdown so
+    the workflow still produces a valid ``cv.tex`` and PDF.
+    """
     if template_path and template_path.exists() and job and master_cv and profile:
         return render_moderncv_template(template_path, job=job, master_cv=master_cv, profile=profile)
 
@@ -324,8 +468,24 @@ def copy_latex_assets(source_dir: Path | str | None, output_dir: Path | str) -> 
     return copied
 
 
+def _safe_existing_file(path: Path) -> bool:
+    try:
+        return path.exists() and path.is_file()
+    except OSError:
+        return False
+
+
 def available_latex_compiler() -> str | None:
     """Return the best available LaTeX compiler executable."""
+    configured = os.environ.get("JOB_AGENT_LATEX_COMPILER", "").strip()
+    if configured:
+        configured_path = Path(configured)
+        if _safe_existing_file(configured_path):
+            return str(configured_path)
+        found_configured = shutil.which(configured)
+        if found_configured:
+            return found_configured
+
     for command in ["latexmk", "pdflatex", "xelatex", "lualatex"]:
         found = shutil.which(command)
         if found:
@@ -338,9 +498,9 @@ def available_latex_compiler() -> str | None:
     for root in common_roots:
         if not str(root):
             continue
-        for command in ["latexmk.exe", "pdflatex.exe", "xelatex.exe", "lualatex.exe"]:
+        for command in ["pdflatex.exe", "xelatex.exe", "lualatex.exe", "latexmk.exe"]:
             candidate = root / command
-            if candidate.exists():
+            if _safe_existing_file(candidate):
                 return str(candidate)
     return None
 

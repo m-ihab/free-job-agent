@@ -125,7 +125,7 @@ FRENCH_SEARCH_BOARDS: list[SearchBoard] = [
         "france-travail-web",
         "France Travail web search",
         "https://candidat.francetravail.fr/offres/recherche?motsCles={q}&lieux=75D",
-        "Manual fallback when API credentials are not configured.",
+        "Manual web search fallback; use API search for imported France Travail jobs.",
     ),
     SearchBoard(
         "welcome-to-the-jungle",

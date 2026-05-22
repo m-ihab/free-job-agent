@@ -42,8 +42,22 @@ Implementation style:
 
 France-first priorities:
 1. Improve France Travail field mapping and contract/location filters.
-2. Add a profile setup wizard for French stage/alternance fields: convention de stage, visa/work authorization, school, availability, rhythm, French/English levels.
-3. Add richer CV bullet tagging for data/AI roles.
-4. Add CAC 40 company-board slug mapping only where public ATS endpoints are stable and safe.
-5. Add CSV export and weekly stats.
-6. Add optional local Ollama polishing with strict validation, never as a requirement.
+2. Add richer CV bullet tagging for data/AI roles (done — bullets are reordered by job-relevance keywords).
+3. Add CAC 40 company-board slug mapping only where public ATS endpoints are stable and safe.
+
+Recently shipped:
+- Multi-source aggregated search (Remotive, Remote OK, Himalayas, Arbeitnow, Jobicy, The Muse) with per-source error isolation.
+- Free company ATS connectors: Recruitee, SmartRecruiters, Workable, Personio (board-slug based, no credentials).
+- Analytics module: funnel, weekly throughput, top companies/sources/locations, score distribution.
+- CSV export of tracked jobs.
+- Insights dashboard tab with funnel + weekly bars + rank lists.
+- Profile setup wizard (`job-agent setup-wizard`) for stage/alternance fields.
+- Conservative LaTeX renderer: preserves user's `main.tex` curated narrative; only summary closing sentence + experience bullet ordering + top project change per role.
+- Optional Ollama bullet/paragraph polish with strict number/overlap/length validation.
+- Keyboard shortcuts and color-coded score badges in the UI.
+
+Open ideas worth exploring (not yet built):
+- Per-job "preview CV" inline in the dashboard.
+- Email/Slack notification when a high-score job is imported.
+- Diff view between packet versions.
+- Auto-tagging of jobs by ROME / O*NET categories using local TF-IDF.

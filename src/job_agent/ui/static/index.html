@@ -11,6 +11,7 @@
       <div>
         <p class="eyebrow">Local job-search cockpit</p>
         <h1>Paris Data Career Copilot</h1>
+        <p class="hero-sub muted" id="heroSub">Local-first. Free. France-focused. Press <kbd>?</kbd> for shortcuts.</p>
       </div>
       <div class="status-strip" id="statusStrip"></div>
     </header>
@@ -18,8 +19,9 @@
     <nav class="tabs" aria-label="Main sections">
       <button class="tab active" data-tab="search">Search</button>
       <button class="tab" data-tab="jobs">Jobs</button>
+      <button class="tab" data-tab="insights">Insights</button>
       <button class="tab" data-tab="add">Add Job</button>
-      <button class="tab" data-tab="profile">Profile & API</button>
+      <button class="tab" data-tab="profile">Profile &amp; API</button>
     </nav>
 
     <main>
@@ -27,9 +29,12 @@
         <div class="section-header">
           <div>
             <h2>1-click search</h2>
-            <p>Choose the market, language, and depth, then run API search or curated board links.</p>
+            <p>Choose market, language, and depth. Run France Travail, multi-source, or curated board links.</p>
           </div>
-          <button class="primary" id="oneClickBtn">1-click hunt</button>
+          <div class="action-row">
+            <button class="primary" id="oneClickBtn" title="France Travail + curated board links">1-click hunt</button>
+            <button class="primary-soft" id="multiSearchBtn" title="Search all keyword-only sources at once">Multi-source</button>
+          </div>
         </div>
 
         <form class="control-grid" id="searchForm">
@@ -86,6 +91,7 @@
 
         <div class="metric-grid" id="searchMetrics"></div>
         <div class="notice hidden" id="searchNotice"></div>
+        <div id="multiSourceResults" class="results-stack"></div>
         <div id="manualResults" class="results-stack"></div>
         <div id="apiResults" class="results-stack"></div>
       </section>
@@ -97,13 +103,93 @@
             <p>Review, optimize, open packets, and move applications forward.</p>
           </div>
           <div class="toolbar">
-            <select id="statusFilter">
+            <select id="statusFilter" title="Filter by status">
               <option value="">All statuses</option>
             </select>
+            <a id="exportCsvBtn" href="/api/export-csv" class="button-link" download>Export CSV</a>
             <button id="jobsRefreshBtn">Refresh</button>
           </div>
         </div>
-        <div id="jobsTableWrap" class="table-wrap"></div>
+        <div class="job-filters">
+          <label>
+            Search jobs
+            <input id="jobsSearchInput" placeholder="Company, title, skills..." />
+          </label>
+          <label>
+            Sort by
+            <select id="jobsSortSelect">
+              <option value="score">Score</option>
+              <option value="recent">Recent</option>
+              <option value="company">Company</option>
+            </select>
+          </label>
+          <label class="check-row"><input id="filterRemote" type="checkbox" /> Remote only</label>
+          <label class="check-row"><input id="filterInternship" type="checkbox" /> Internship only</label>
+          <label class="check-row"><input id="filterEnriched" type="checkbox" /> Enriched only</label>
+        </div>
+
+        <div class="jobs-actions">
+          <label class="check-row"><input id="selectAllJobs" type="checkbox" /> Select all</label>
+          <button id="enrichSelectedBtn" class="primary">Enrich selected</button>
+          <button id="packetSelectedBtn">Generate packets</button>
+          <button id="enrichVisibleBtn">Enrich visible</button>
+          <button id="clearSelectionBtn">Clear selection</button>
+          <span id="selectionCount" class="muted"></span>
+        </div>
+
+        <div class="metric-grid" id="jobsMetrics"></div>
+        <div class="split">
+          <div id="jobsTableWrap" class="table-wrap"></div>
+          <aside class="panel" id="enrichmentPanel">
+            <h3>Job details</h3>
+            <div id="enrichmentDetails" class="muted">Click a job to see details, enrichment, and a preview of the tailored docs.</div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="tab-insights" class="tab-panel">
+        <div class="section-header">
+          <div>
+            <h2>Insights &amp; pipeline</h2>
+            <p>How your applications are progressing this season — all calculated locally.</p>
+          </div>
+          <button id="insightsRefreshBtn">Refresh</button>
+        </div>
+
+        <div class="metric-grid" id="insightsMetrics"></div>
+
+        <div class="split">
+          <section class="panel">
+            <h3>Funnel</h3>
+            <div id="funnelView" class="funnel"></div>
+          </section>
+          <section class="panel">
+            <h3>Weekly activity (last 8 weeks)</h3>
+            <div id="weeklyView" class="weekly"></div>
+          </section>
+        </div>
+
+        <div class="split">
+          <section class="panel">
+            <h3>Top companies</h3>
+            <ol id="topCompaniesView" class="rank-list"></ol>
+          </section>
+          <section class="panel">
+            <h3>Top sources</h3>
+            <ol id="topSourcesView" class="rank-list"></ol>
+          </section>
+        </div>
+
+        <div class="split">
+          <section class="panel">
+            <h3>Top locations</h3>
+            <ol id="topLocationsView" class="rank-list"></ol>
+          </section>
+          <section class="panel">
+            <h3>Score distribution</h3>
+            <div id="scoreDistView" class="score-dist"></div>
+          </section>
+        </div>
       </section>
 
       <section id="tab-add" class="tab-panel">
@@ -184,13 +270,34 @@
             <dl class="path-list" id="pathList"></dl>
             <div id="profileMessages"></div>
             <div class="notice hidden" id="profileNotice"></div>
+            <div class="api-readiness">
+              <h4>France Travail readiness</h4>
+              <div id="apiReadiness"></div>
+            </div>
           </section>
         </div>
       </section>
     </main>
 
+    <div id="shortcutsHelp" class="shortcuts-modal hidden" role="dialog" aria-modal="true">
+      <div class="shortcuts-card">
+        <div class="shortcuts-header">
+          <h3>Keyboard shortcuts</h3>
+          <button id="closeShortcuts" aria-label="Close">&times;</button>
+        </div>
+        <dl class="shortcuts-list">
+          <dt><kbd>?</kbd></dt><dd>Show this help</dd>
+          <dt><kbd>1</kbd>-<kbd>5</kbd></dt><dd>Switch tabs</dd>
+          <dt><kbd>/</kbd></dt><dd>Focus job search</dd>
+          <dt><kbd>g</kbd> <kbd>h</kbd></dt><dd>1-click hunt</dd>
+          <dt><kbd>g</kbd> <kbd>m</kbd></dt><dd>Multi-source search</dd>
+          <dt><kbd>r</kbd></dt><dd>Refresh jobs</dd>
+          <dt><kbd>Esc</kbd></dt><dd>Close dialogs</dd>
+        </dl>
+      </div>
+    </div>
+
     <div id="toast" class="toast hidden" role="status"></div>
     <script src="/static/app.js"></script>
   </body>
 </html>
-

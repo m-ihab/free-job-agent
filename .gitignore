@@ -24,7 +24,11 @@ outputs/
 .smoke_home/
 .smoke_job.txt
 .env.local
+.france_travail.endpoints.local.json
 profiles/
 jobs/
 france_urls.json
 france_urls.txt
+UsersmihabDocumentstmppytest/
+.claude/
+

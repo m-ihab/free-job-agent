@@ -12,10 +12,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from job_agent.analytics import compute_stats, jobs_to_csv
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
-from job_agent.intake.free_apis import FreeApiError, search_free_api_jobs, supported_source_names
+from job_agent.enrichment import EnrichOptions, enrich_job
 from job_agent.exporters.internship_workbook import export_applied_internships
+from job_agent.intake.free_apis import (
+    FreeApiError,
+    KEYWORD_ONLY_SOURCES,
+    search_all_free_sources,
+    search_free_api_jobs,
+    supported_source_names,
+)
 from job_agent.pipeline import add_job_to_tracker, add_text_job, add_url_job, generate_packet_for_job
 from job_agent.schemas.job import JobStatus
 from job_agent.timeutil import utc_now
@@ -89,7 +97,11 @@ def _list_jobs(config: AppConfig, status: str = "") -> list[dict]:
     tracker = _tracker(config)
     status_filter = JobStatus(status) if status else None
     jobs = tracker.list_jobs(status=status_filter)
-    return [job_to_dict(job, _latest_packet_for_job(tracker.db, job.id)) for job in jobs]
+    results: list[dict] = []
+    for job in jobs:
+        enrichment = tracker.db.get_enrichment(job.id)
+        results.append(job_to_dict(job, _latest_packet_for_job(tracker.db, job.id), enrichment=enrichment))
+    return results
 
 
 def _search_links(payload: dict) -> dict:
@@ -125,6 +137,72 @@ def _save_jobs(config: AppConfig, jobs, *, prepare_packets: bool, force_packets:
             packet = _latest_packet_for_job(tracker.db, tracked.id)
         saved.append(job_to_dict(tracked, packet))
     return {"jobs": saved, "imported": imported, "duplicates": duplicates, "prepared": prepared, "failures": failures}
+
+
+def _enrich_batch(config: AppConfig, payload: dict) -> dict:
+    job_ids = payload.get("job_ids") or []
+    results: list[dict] = []
+    options = EnrichOptions(
+        rome=bool(payload.get("rome", True)),
+        anotea=bool(payload.get("anotea", True)),
+        training=bool(payload.get("training", True)),
+        labour_market=bool(payload.get("labour_market", True)),
+        territory=bool(payload.get("territory", True)),
+        employer=bool(payload.get("employer", True)),
+        other=bool(payload.get("other", True)),
+    )
+    for job_id in job_ids:
+        try:
+            report = enrich_job(config, str(job_id), options)
+            results.append({"job_id": job_id, "ok": True, "sources": report.get("sources")})
+        except Exception as exc:
+            results.append({"job_id": job_id, "ok": False, "error": str(exc)})
+    return {"count": len(results), "results": results}
+
+
+def _multi_source_search(config: AppConfig, payload: dict) -> dict:
+    query = str(payload.get("query") or "")
+    location = str(payload.get("location") or "")
+    limit_per_source = _safe_int(payload.get("limit_per_source"), 8, maximum=30)
+    sources_raw = payload.get("sources")
+    if isinstance(sources_raw, str):
+        sources = [s.strip() for s in sources_raw.split(",") if s.strip()]
+    elif isinstance(sources_raw, list):
+        sources = [str(s).strip() for s in sources_raw if str(s).strip()]
+    else:
+        sources = list(KEYWORD_ONLY_SOURCES)
+    save = bool(payload.get("save", True))
+    prepare_packets = bool(payload.get("prepare_packets", False))
+    force_packets = bool(payload.get("force_packets", False))
+    internships_only = bool(payload.get("internships_only", False))
+    remote_only = bool(payload.get("remote_only", False))
+    aggregate = search_all_free_sources(
+        query=query,
+        location=location,
+        limit_per_source=limit_per_source,
+        sources=sources,
+        remote_only=remote_only,
+        internships_only=internships_only,
+        use_cache=True,
+        cache_ttl_hours=6.0,
+    )
+    if save:
+        save_result = _save_jobs(config, aggregate["jobs"], prepare_packets=prepare_packets, force_packets=force_packets)
+    else:
+        save_result = {
+            "jobs": [job_to_dict(job) for job in aggregate["jobs"]],
+            "imported": 0,
+            "duplicates": 0,
+            "prepared": 0,
+            "failures": [],
+        }
+    save_result.update({
+        "per_source": aggregate["per_source"],
+        "errors": aggregate["errors"],
+        "found": len(aggregate["jobs"]),
+        "sources": sources,
+    })
+    return save_result
 
 
 def _api_search(config: AppConfig, payload: dict) -> dict:
@@ -271,6 +349,25 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             db.initialize()
             packets = db.get_packets_for_job(job_id) if job_id else db.list_packets()
             return self._send_json({"packets": [packet_to_dict(packet) for packet in packets]})
+        if parsed.path == "/api/stats":
+            config = self._config()
+            db = Database(config.db_path)  # type: ignore[arg-type]
+            db.initialize()
+            return self._send_json(compute_stats(db))
+        if parsed.path == "/api/export-csv":
+            config = self._config()
+            db = Database(config.db_path)  # type: ignore[arg-type]
+            db.initialize()
+            csv_text = jobs_to_csv(db.list_jobs(limit=None))
+            body = csv_text.encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="job-agent-jobs.csv"')
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return None
         if parsed.path == "/file":
             query = parse_qs(parsed.query)
             raw_path = (query.get("path") or [""])[0]
@@ -286,6 +383,8 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 return self._send_json(_search_links(payload))
             if parsed.path == "/api/api-search":
                 return self._send_json(_api_search(config, payload))
+            if parsed.path == "/api/multi-search":
+                return self._send_json(_multi_source_search(config, payload))
             if parsed.path == "/api/one-click-hunt":
                 return self._send_json(_one_click_hunt(config, payload))
             if parsed.path == "/api/add-url":
@@ -315,6 +414,23 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                     return self._send_error_json("job_id is required.")
                 packet = generate_packet_for_job(config, job_id, force=bool(payload.get("force", False)))
                 return self._send_json({"packet": packet_to_dict(packet)})
+            if parsed.path == "/api/enrich":
+                job_id = str(payload.get("job_id") or "")
+                if not job_id:
+                    return self._send_error_json("job_id is required.")
+                options = EnrichOptions(
+                    rome=bool(payload.get("rome", True)),
+                    anotea=bool(payload.get("anotea", True)),
+                    training=bool(payload.get("training", True)),
+                    labour_market=bool(payload.get("labour_market", True)),
+                    territory=bool(payload.get("territory", True)),
+                    employer=bool(payload.get("employer", True)),
+                    other=bool(payload.get("other", True)),
+                )
+                report = enrich_job(config, job_id, options)
+                return self._send_json({"report": report})
+            if parsed.path == "/api/enrich-batch":
+                return self._send_json(_enrich_batch(config, payload))
             if parsed.path == "/api/export-internships":
                 return self._send_json(_export_internships(config, payload))
             if parsed.path == "/api/status":

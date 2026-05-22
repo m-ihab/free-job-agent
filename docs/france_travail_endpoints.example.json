@@ -1,0 +1,32 @@
+{
+  "_note": "Copy this file to .france_travail.endpoints.local.json and fill endpoint paths from the France Travail portal. Endpoints auto-enable when a non-empty path is provided.",
+  "base_url": "https://api.francetravail.io",
+  "endpoints": {
+    "job_offers": {
+      "path": "/partenaire/offresdemploi/v2/offres/search",
+      "rate_per_sec": 10,
+      "params": {
+        "motsCles": "{title}",
+        "departement": "{department}",
+        "range": "{range}"
+      }
+    },
+    "anotea": {"path": "", "rate_per_sec": 8, "params": {}},
+    "living_environment": {"path": "", "rate_per_sec": 2, "params": {}},
+    "my_job_events": {"path": "", "rate_per_sec": 10, "params": {}},
+    "open_training": {"path": "", "rate_per_sec": 10, "params": {}},
+    "agency_repository": {"path": "", "rate_per_sec": 1, "params": {}},
+    "training_leavers": {"path": "", "rate_per_sec": 10, "params": {}},
+    "territory_info": {"path": "", "rate_per_sec": 10, "params": {}},
+    "labour_market": {"path": "", "rate_per_sec": 10, "params": {}},
+    "access_to_employment": {"path": "", "rate_per_sec": 10, "params": {}},
+    "rome_skills": {"path": "", "rate_per_sec": 1, "params": {}},
+    "rome_contexts": {"path": "", "rate_per_sec": 1, "params": {}},
+    "rome_job_descriptions": {"path": "", "rate_per_sec": 1, "params": {}},
+    "rome_crafts": {"path": "", "rate_per_sec": 1, "params": {}},
+    "check_offer_jcmo": {"path": "", "rate_per_sec": 10, "params": {}},
+    "right_box": {"path": "", "rate_per_sec": 2, "params": {}},
+    "romeo": {"path": "", "rate_per_sec": 3, "params": {}},
+    "summary_employer_pages": {"path": "", "rate_per_sec": 50, "params": {}}
+  }
+}

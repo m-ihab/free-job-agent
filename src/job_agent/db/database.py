@@ -117,6 +117,13 @@ class Database:
                     FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE,
                     FOREIGN KEY(packet_id) REFERENCES packets(id) ON DELETE SET NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS enrichments (
+                    job_id TEXT PRIMARY KEY,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+                );
             """)
 
     # ---- Job methods ----
@@ -318,3 +325,30 @@ class Database:
             d["event_data"] = json.loads(d.pop("event_data_json"))
             result.append(d)
         return result
+
+    # ---- Enrichment methods ----
+
+    def save_enrichment(self, job_id: str, payload: dict) -> None:
+        values = {
+            "job_id": job_id,
+            "payload_json": json.dumps(payload, ensure_ascii=False),
+            "updated_at": utc_now(),
+        }
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO enrichments (job_id, payload_json, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(job_id) DO UPDATE SET payload_json=excluded.payload_json, updated_at=excluded.updated_at",
+                (values["job_id"], values["payload_json"], values["updated_at"]),
+            )
+
+    def get_enrichment(self, job_id: str) -> Optional[dict]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT payload_json, updated_at FROM enrichments WHERE job_id = ?", (job_id,)).fetchone()
+        if not row:
+            return None
+        try:
+            payload = json.loads(row["payload_json"])
+        except Exception:
+            return None
+        payload["updated_at"] = row["updated_at"]
+        return payload

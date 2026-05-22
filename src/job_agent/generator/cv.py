@@ -1,6 +1,7 @@
 """Tailor a CV as Markdown to a specific job listing."""
 from __future__ import annotations
 
+from job_agent.polish import PolishOptions, polish_bullets
 from job_agent.schemas.candidate import CandidateProfile, MasterCV, WorkExperience, Project
 from job_agent.schemas.job import JobListing
 from job_agent.utils import fuzzy
@@ -87,6 +88,7 @@ def tailor_cv(job: JobListing, master_cv: MasterCV, profile: CandidateProfile) -
             lines.append(f"**{cat.title()}:** {', '.join(sorted(set(names), key=str.lower))}")
         lines.append("")
 
+    polish_opts = PolishOptions.from_env()
     if master_cv.experience:
         lines.append("## Experience")
         lines.append("")
@@ -98,7 +100,8 @@ def tailor_cv(job: JobListing, master_cv: MasterCV, profile: CandidateProfile) -
             lines.append(f"*{exp.start_date} – {end}*")
             lines.append("")
             max_bullets = getattr(master_cv, "max_experience_bullets_per_role", 4) or 4
-            for bp in _rank_bullets(exp.bullet_points, job, max_bullets):
+            bullets = _rank_bullets(exp.bullet_points, job, max_bullets)
+            for bp in polish_bullets(bullets, polish_opts):
                 lines.append(f"- {bp}")
             if exp.technologies:
                 lines.append(f"**Technologies:** {', '.join(exp.technologies)}")
@@ -112,7 +115,7 @@ def tailor_cv(job: JobListing, master_cv: MasterCV, profile: CandidateProfile) -
             url_part = f" ([link]({proj.url}))" if proj.url else ""
             lines.append(f"### {proj.name}{url_part}")
             lines.append(proj.description)
-            for bp in _rank_bullets(proj.bullet_points, job, 2):
+            for bp in polish_bullets(_rank_bullets(proj.bullet_points, job, 2), polish_opts):
                 lines.append(f"- {bp}")
             if proj.technologies:
                 lines.append(f"**Technologies:** {', '.join(proj.technologies)}")

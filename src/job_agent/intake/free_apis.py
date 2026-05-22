@@ -7,18 +7,18 @@ create accounts, log in, bypass access controls, or submit applications.
 """
 from __future__ import annotations
 
-import hashlib
 import html as html_lib
 import json
 import os
 import re
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
 import requests
 
+from job_agent.intake.api_cache import read_cached_json, write_cached_json
+from job_agent.intake.france_travail_auth import france_travail_env, france_travail_token
 from job_agent.intake.url import HEADERS
 from job_agent.intake.internships import is_internship_listing
 from job_agent.normalizer import normalize
@@ -66,9 +66,15 @@ SUPPORTED_SOURCES: dict[str, SourceInfo] = {
     "remoteok": SourceInfo("remoteok", "Remote OK public JSON feed"),
     "himalayas": SourceInfo("himalayas", "Himalayas remote jobs public JSON API"),
     "arbeitnow": SourceInfo("arbeitnow", "Arbeitnow free Europe/remote job board API"),
+    "jobicy": SourceInfo("jobicy", "Jobicy remote jobs JSON feed"),
+    "themuse": SourceInfo("themuse", "The Muse public jobs API"),
     "greenhouse": SourceInfo("greenhouse", "Greenhouse public Job Board API", True, "Greenhouse board token"),
     "lever": SourceInfo("lever", "Lever public Postings API", True, "Lever site slug"),
     "ashby": SourceInfo("ashby", "Ashby public Job Postings API", True, "Ashby job board name"),
+    "recruitee": SourceInfo("recruitee", "Recruitee public company offers API", True, "Recruitee company slug"),
+    "smartrecruiters": SourceInfo("smartrecruiters", "SmartRecruiters public postings API", True, "SmartRecruiters company slug"),
+    "workable": SourceInfo("workable", "Workable public account jobs API", True, "Workable account slug"),
+    "personio": SourceInfo("personio", "Personio public XML jobs feed", True, "Personio company slug (subdomain)"),
     "francetravail": SourceInfo(
         "francetravail",
         "France Travail Offres d'emploi API; free habilitation credentials required",
@@ -88,6 +94,12 @@ _SOURCE_ALIASES = {
     "poleemploi": "francetravail",
     "pôle emploi": "francetravail",
     "pole-emploi": "francetravail",
+    "the-muse": "themuse",
+    "the_muse": "themuse",
+    "muse": "themuse",
+    "smart-recruiters": "smartrecruiters",
+    "smart_recruiters": "smartrecruiters",
+    "sr": "smartrecruiters",
 }
 
 
@@ -108,40 +120,6 @@ def _bounded_limit(limit: int) -> int:
     return max(1, min(int(limit or 20), MAX_LIMIT))
 
 
-def _cache_dir() -> Path:
-    return Path(os.environ.get("JOB_AGENT_API_CACHE_DIR") or (Path.home() / ".job_agent" / "api_cache"))
-
-
-def _cache_key(url: str, params: dict[str, Any] | None) -> str:
-    payload = json.dumps({"url": url, "params": params or {}}, sort_keys=True, default=str)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest() + ".json"
-
-
-def _read_cached_json(url: str, params: dict[str, Any] | None, ttl_hours: float) -> Any | None:
-    if ttl_hours <= 0:
-        return None
-    path = _cache_dir() / _cache_key(url, params)
-    if not path.exists():
-        return None
-    if time.time() - path.stat().st_mtime > ttl_hours * 3600:
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-
-
-def _write_cached_json(url: str, params: dict[str, Any] | None, payload: Any) -> None:
-    try:
-        cache_dir = _cache_dir()
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        path = cache_dir / _cache_key(url, params)
-        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    except Exception:
-        # Cache failures should never break job search.
-        return
-
-
 def _get_json(
     url: str,
     *,
@@ -153,15 +131,26 @@ def _get_json(
 ) -> Any:
     clean_params = {k: v for k, v in (params or {}).items() if v not in (None, "")}
     if use_cache:
-        cached = _read_cached_json(url, clean_params, cache_ttl_hours)
+        cached = read_cached_json(url, clean_params, cache_ttl_hours)
         if cached is not None:
             return cached
     headers = {**HEADERS, **(extra_headers or {})}
     response = requests.get(url, params=clean_params, headers=headers, timeout=timeout)
     response.raise_for_status()
-    payload = response.json()
+    status_code = getattr(response, "status_code", None)
+    content = getattr(response, "content", b"content")
+    if status_code == 204 or content == b"":
+        return {}
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        content_type = response.headers.get("Content-Type", "unknown")
+        raise FreeApiError(
+            f"API returned a non-JSON response (HTTP {response.status_code}, Content-Type: {content_type}). "
+            "Check the API base URL, endpoint path, credentials, and scopes."
+        ) from exc
     if use_cache:
-        _write_cached_json(url, clean_params, payload)
+        write_cached_json(url, clean_params, payload)
     return payload
 
 
@@ -533,46 +522,269 @@ def _fetch_ashby(search: FreeApiSearch) -> list[JobListing]:
     return _post_filter(jobs, search)
 
 
-def _france_travail_env(name: str, default: str = "") -> str:
-    return os.environ.get(name, default).strip()
+def _fetch_jobicy(search: FreeApiSearch) -> list[JobListing]:
+    params: dict[str, Any] = {"count": _bounded_limit(search.limit)}
+    location_key = (search.location or search.country or "").strip().casefold()
+    geo_map = {
+        "france": "france",
+        "paris": "france",
+        "europe": "europe",
+        "united kingdom": "uk",
+        "uk": "uk",
+        "usa": "usa",
+        "united states": "usa",
+        "germany": "germany",
+        "spain": "spain",
+        "italy": "italy",
+        "netherlands": "netherlands",
+        "anywhere": "anywhere",
+        "worldwide": "anywhere",
+        "remote": "anywhere",
+    }
+    geo = geo_map.get(location_key)
+    if geo:
+        params["geo"] = geo
+    if search.query:
+        params["tag"] = search.query
+    data = _fetch_json(search, "https://jobicy.com/api/v2/remote-jobs", params=params)
+    items = data.get("jobs", []) if isinstance(data, dict) else []
+    jobs: list[JobListing] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        desc = _strip_html(item.get("jobDescription") or item.get("jobExcerpt") or "")
+        tags = _string_list(item.get("jobIndustry")) + _string_list(item.get("jobType"))
+        location = item.get("jobGeo") or "Remote"
+        url = item.get("url") or item.get("jobUrl")
+        jobs.append(_make_job(
+            source="api:jobicy",
+            source_url=url,
+            apply_url=url,
+            raw_text=_join_nonempty(item.get("jobTitle"), item.get("companyName"), location, desc, " ".join(tags)),
+            title=item.get("jobTitle") or "[To Be Parsed]",
+            company=item.get("companyName") or "[To Be Parsed]",
+            location=location,
+            remote=True,
+            work_mode="remote",
+            job_type=", ".join(_string_list(item.get("jobType"))) or None,
+            description=desc,
+            tech_stack=tags,
+            posted_date=item.get("pubDate"),
+        ))
+    return _post_filter(jobs, search)
 
 
-def _france_travail_token(search: FreeApiSearch) -> str:
-    client_id = _france_travail_env("FRANCE_TRAVAIL_CLIENT_ID")
-    client_secret = _france_travail_env("FRANCE_TRAVAIL_CLIENT_SECRET")
-    scope = _france_travail_env("FRANCE_TRAVAIL_SCOPE", "api_offresdemploiv2 o2dsoffre")
-    token_url = _france_travail_env(
-        "FRANCE_TRAVAIL_TOKEN_URL",
-        "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire",
-    )
-    if not client_id or not client_secret:
+def _fetch_themuse(search: FreeApiSearch) -> list[JobListing]:
+    params: dict[str, Any] = {"page": max(0, (search.page or 1) - 1)}
+    if search.query:
+        params["category"] = search.query
+    if search.location:
+        params["location"] = search.location
+    data = _fetch_json(search, "https://www.themuse.com/api/public/jobs", params=params)
+    items = data.get("results", []) if isinstance(data, dict) else []
+    jobs: list[JobListing] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        desc = _strip_html(item.get("contents") or "")
+        company_info = item.get("company") or {}
+        company = company_info.get("name") if isinstance(company_info, dict) else None
+        locations = _string_list([loc.get("name") for loc in (item.get("locations") or []) if isinstance(loc, dict)])
+        cats = _string_list([cat.get("name") for cat in (item.get("categories") or []) if isinstance(cat, dict)])
+        tags = _string_list([tag.get("name") for tag in (item.get("tags") or []) if isinstance(tag, dict)])
+        location = ", ".join(locations) or None
+        url = (item.get("refs") or {}).get("landing_page") if isinstance(item.get("refs"), dict) else None
+        remote = bool(locations) and any("remote" in (loc or "").lower() for loc in locations)
+        jobs.append(_make_job(
+            source="api:themuse",
+            source_url=url,
+            apply_url=url,
+            raw_text=_join_nonempty(item.get("name"), company, location, desc, " ".join(cats + tags)),
+            title=item.get("name") or "[To Be Parsed]",
+            company=company or "[To Be Parsed]",
+            location=location,
+            remote=remote,
+            work_mode="remote" if remote else None,
+            job_type=item.get("type"),
+            description=desc,
+            tech_stack=cats + tags,
+            posted_date=item.get("publication_date"),
+        ))
+    return _post_filter(jobs, search)
+
+
+def _fetch_recruitee(search: FreeApiSearch) -> list[JobListing]:
+    if not search.board:
         raise FreeApiError(
-            "francetravail requires free France Travail API credentials. Set "
-            "FRANCE_TRAVAIL_CLIENT_ID and FRANCE_TRAVAIL_CLIENT_SECRET after requesting access."
+            "recruitee requires --board with the company slug. Example: recruitee --board mycompany"
         )
-    cache_params = {"client_id": client_id, "scope": scope, "kind": "oauth_token"}
-    if search.use_cache:
-        cached = _read_cached_json(token_url, cache_params, min(search.cache_ttl_hours, 0.75))
-        if isinstance(cached, dict) and cached.get("access_token"):
-            return str(cached["access_token"])
-    response = requests.post(
-        token_url,
-        data={
-            "grant_type": "client_credentials",
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "scope": scope,
-        },
-        timeout=search.timeout,
+    data = _fetch_json(search, f"https://{search.board}.recruitee.com/api/offers/")
+    items = data.get("offers", []) if isinstance(data, dict) else []
+    jobs: list[JobListing] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        desc = _strip_html(item.get("description") or item.get("requirements") or "")
+        tags = _string_list(item.get("tags"))
+        location = item.get("location") or _first_nonempty(item.get("city"), item.get("country"))
+        url = item.get("careers_url") or item.get("url")
+        jobs.append(_make_job(
+            source="api:recruitee",
+            source_url=url,
+            apply_url=url,
+            raw_text=_join_nonempty(item.get("title"), search.board, location, desc, " ".join(tags)),
+            title=item.get("title") or "[To Be Parsed]",
+            company=search.board,
+            location=location,
+            remote=str(item.get("remote") or "").lower() in {"true", "yes"} or "remote" in (str(location or "").lower()),
+            work_mode=item.get("employment_type_code"),
+            job_type=item.get("employment_type"),
+            description=desc,
+            tech_stack=tags + _string_list(item.get("department")),
+            posted_date=item.get("created_at") or item.get("published_at"),
+        ))
+    return _post_filter(jobs, search)
+
+
+def _fetch_smartrecruiters(search: FreeApiSearch) -> list[JobListing]:
+    if not search.board:
+        raise FreeApiError(
+            "smartrecruiters requires --board with the company slug. Example: smartrecruiters --board examplecompany"
+        )
+    params: dict[str, Any] = {"limit": min(_bounded_limit(search.limit), 100)}
+    if search.query:
+        params["q"] = search.query
+    if search.location:
+        params["city"] = search.location
+    data = _fetch_json(
+        search,
+        f"https://api.smartrecruiters.com/v1/companies/{search.board}/postings",
+        params=params,
     )
+    items = data.get("content", []) if isinstance(data, dict) else []
+    jobs: list[JobListing] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        location_info = item.get("location") or {}
+        location = ""
+        if isinstance(location_info, dict):
+            location = ", ".join(p for p in [location_info.get("city"), location_info.get("region"), location_info.get("country")] if p)
+        url = (item.get("ref") or {}).get("postingUrl") if isinstance(item.get("ref"), dict) else None
+        if not url:
+            url = item.get("ad", {}).get("url") if isinstance(item.get("ad"), dict) else None
+        desc = _strip_html((item.get("jobAd") or {}).get("sections", {}).get("jobDescription", {}).get("text") if isinstance(item.get("jobAd"), dict) else "")
+        if not desc:
+            desc = _strip_html(item.get("description") or "")
+        department = (item.get("department") or {}).get("label") if isinstance(item.get("department"), dict) else None
+        function = (item.get("function") or {}).get("label") if isinstance(item.get("function"), dict) else None
+        jobs.append(_make_job(
+            source="api:smartrecruiters",
+            source_url=url,
+            apply_url=url,
+            raw_text=_join_nonempty(item.get("name"), search.board, location, desc, department, function),
+            title=item.get("name") or "[To Be Parsed]",
+            company=search.board,
+            location=location or None,
+            remote="remote" in (location.lower() + " " + (desc or "").lower()),
+            description=desc,
+            tech_stack=[t for t in [department, function] if t],
+            posted_date=item.get("releasedDate") or item.get("createdOn"),
+        ))
+    return _post_filter(jobs, search)
+
+
+def _fetch_workable(search: FreeApiSearch) -> list[JobListing]:
+    if not search.board:
+        raise FreeApiError(
+            "workable requires --board with the account slug. Example: workable --board examplecompany"
+        )
+    data = _fetch_json(
+        search,
+        f"https://apply.workable.com/api/v1/accounts/{search.board}/jobs",
+        params={"limit": _bounded_limit(search.limit)},
+    )
+    items = data.get("results", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+    jobs: list[JobListing] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        location_info = item.get("location") or {}
+        location = ""
+        if isinstance(location_info, dict):
+            location = ", ".join(p for p in [location_info.get("city"), location_info.get("region"), location_info.get("country")] if p)
+        url = item.get("url") or item.get("application_url")
+        desc = _strip_html(item.get("description") or "")
+        department = item.get("department")
+        jobs.append(_make_job(
+            source="api:workable",
+            source_url=url,
+            apply_url=url,
+            raw_text=_join_nonempty(item.get("title"), search.board, location, desc, department),
+            title=item.get("title") or "[To Be Parsed]",
+            company=search.board,
+            location=location or None,
+            remote=bool(item.get("remote")) or "remote" in (location.lower() + " " + (desc or "").lower()),
+            description=desc,
+            tech_stack=[d for d in [department] if d],
+            posted_date=item.get("published"),
+        ))
+    return _post_filter(jobs, search)
+
+
+def _fetch_personio(search: FreeApiSearch) -> list[JobListing]:
+    if not search.board:
+        raise FreeApiError(
+            "personio requires --board with the company subdomain. Example: personio --board examplecompany"
+        )
+    url = f"https://{search.board}.jobs.personio.com/xml"
+    clean_params = {}  # noqa: F841
+    headers = {**HEADERS, "Accept": "application/xml,text/xml,*/*"}
+    response = requests.get(url, headers=headers, timeout=search.timeout)
     response.raise_for_status()
-    payload = response.json()
-    token = payload.get("access_token")
-    if not token:
-        raise FreeApiError("France Travail OAuth response did not contain access_token")
-    if search.use_cache:
-        _write_cached_json(token_url, cache_params, {"access_token": token})
-    return str(token)
+    xml_text = response.text
+    # Lightweight XML parsing (Personio feeds are small).
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise FreeApiError(f"Personio XML parse error for {search.board}: {exc}")
+    positions = list(root.iter("position"))
+    jobs: list[JobListing] = []
+    for position in positions[: _bounded_limit(search.limit)]:
+        def _field(tag: str) -> str:
+            el = position.find(tag)
+            return (el.text or "").strip() if el is not None and el.text else ""
+        title = _field("name") or "[To Be Parsed]"
+        location = _field("office") or _field("city")
+        department = _field("department")
+        recruiting_category = _field("recruitingCategory")
+        employment_type = _field("employmentType")
+        desc_parts: list[str] = []
+        for jd in position.iter("jobDescriptions"):
+            for d in jd.iter("jobDescription"):
+                name = d.find("name")
+                value = d.find("value")
+                if name is not None and value is not None and value.text:
+                    desc_parts.append((name.text or "").strip() + ": " + _strip_html(value.text))
+        desc = "\n\n".join(desc_parts)
+        post_id = _field("id")
+        public_url = f"https://{search.board}.jobs.personio.com/job/{post_id}" if post_id else None
+        jobs.append(_make_job(
+            source="api:personio",
+            source_url=public_url,
+            apply_url=public_url,
+            raw_text=_join_nonempty(title, search.board, location, desc, department, recruiting_category),
+            title=title,
+            company=search.board,
+            location=location or None,
+            remote="remote" in (location.lower() + " " + (desc or "").lower()),
+            job_type=employment_type or None,
+            description=desc,
+            tech_stack=[t for t in [department, recruiting_category] if t],
+            posted_date=_field("createdAt"),
+        ))
+    return _post_filter(jobs, search)
 
 
 def _france_location_params(search: FreeApiSearch) -> dict[str, Any]:
@@ -604,8 +816,14 @@ def _france_travail_apply_url(item: dict[str, Any]) -> str | None:
 
 
 def _fetch_francetravail(search: FreeApiSearch) -> list[JobListing]:
-    token = _france_travail_token(search)
-    base_url = _france_travail_env("FRANCE_TRAVAIL_API_BASE_URL", "https://api.francetravail.io")
+    try:
+        token = france_travail_token(timeout=search.timeout, use_cache=search.use_cache, cache_ttl_hours=search.cache_ttl_hours)
+    except ValueError as exc:
+        raise FreeApiError(
+            "francetravail requires free France Travail API credentials. Set "
+            "FRANCE_TRAVAIL_CLIENT_ID and FRANCE_TRAVAIL_CLIENT_SECRET after requesting access."
+        ) from exc
+    base_url = france_travail_env("FRANCE_TRAVAIL_API_BASE_URL", "https://api.francetravail.io")
     url = base_url.rstrip("/") + "/partenaire/offresdemploi/v2/offres/search"
     per_page = min(_bounded_limit(search.limit), 50)
     start = max(0, (max(1, search.page) - 1) * per_page)
@@ -696,9 +914,15 @@ _FETCHERS: dict[str, Callable[[FreeApiSearch], list[JobListing]]] = {
     "remoteok": _fetch_remoteok,
     "himalayas": _fetch_himalayas,
     "arbeitnow": _fetch_arbeitnow,
+    "jobicy": _fetch_jobicy,
+    "themuse": _fetch_themuse,
     "greenhouse": _fetch_greenhouse,
     "lever": _fetch_lever,
     "ashby": _fetch_ashby,
+    "recruitee": _fetch_recruitee,
+    "smartrecruiters": _fetch_smartrecruiters,
+    "workable": _fetch_workable,
+    "personio": _fetch_personio,
     "francetravail": _fetch_francetravail,
 }
 
@@ -743,3 +967,73 @@ def search_free_api_jobs(
         cache_ttl_hours=cache_ttl_hours,
     )
     return _FETCHERS[canonical](search)
+
+
+# Sources that work without board configuration and don't require credentials.
+KEYWORD_ONLY_SOURCES: tuple[str, ...] = (
+    "remotive",
+    "remoteok",
+    "himalayas",
+    "arbeitnow",
+    "jobicy",
+    "themuse",
+)
+
+
+def search_all_free_sources(
+    *,
+    query: str = "",
+    location: str = "",
+    country: str = "",
+    limit_per_source: int = 10,
+    remote_only: bool = False,
+    internships_only: bool = False,
+    sources: list[str] | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    use_cache: bool = True,
+    cache_ttl_hours: float = DEFAULT_CACHE_TTL_HOURS,
+) -> dict[str, Any]:
+    """Search several keyword-only public APIs in one shot.
+
+    Returns a dict containing ``jobs`` (combined deduplicated list),
+    ``per_source`` (per-source counts), and ``errors`` (per-source error
+    messages). Failures in any single source don't break the rest.
+    """
+    chosen = sources or list(KEYWORD_ONLY_SOURCES)
+    seen_keys: set[str] = set()
+    combined: list[JobListing] = []
+    per_source: dict[str, int] = {}
+    errors: dict[str, str] = {}
+    for source in chosen:
+        try:
+            results = search_free_api_jobs(
+                source,
+                query=query,
+                location=location,
+                country=country,
+                limit=limit_per_source,
+                remote_only=remote_only,
+                internships_only=internships_only,
+                timeout=timeout,
+                use_cache=use_cache,
+                cache_ttl_hours=cache_ttl_hours,
+            )
+        except FreeApiError as exc:
+            errors[source] = str(exc)
+            per_source[source] = 0
+            continue
+        except Exception as exc:
+            errors[source] = f"{type(exc).__name__}: {exc}"
+            per_source[source] = 0
+            continue
+        per_source[source] = len(results)
+        for job in results:
+            key = (
+                (job.apply_url or job.source_url or "").strip().casefold()
+                or (job.title.casefold() + "|" + job.company.casefold())
+            )
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            combined.append(job)
+    return {"jobs": combined, "per_source": per_source, "errors": errors}

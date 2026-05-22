@@ -1,40 +1,84 @@
-# free-job-agent — France / Paris Data & AI Edition
+# free-job-agent — Paris Data Career Copilot
 
-A completely **free, local-first** job-search and application assistant focused on **Paris, France, and Europe** for **data science, machine learning, AI, data analyst, data engineer, stage, alternance, and junior data roles**.
+A completely **free, local-first** job-search and application copilot focused
+on **Paris, France, and Europe** for **data science, machine learning, AI,
+data analyst, data engineer, stage, alternance, and junior data roles**.
 
-It runs on your machine, uses SQLite, and never requires paid LLM APIs, paid browser agents, paid scraping platforms, or cloud services.
+Runs on your machine, uses SQLite, never requires paid LLM APIs, paid browser
+agents, paid scraping platforms, or cloud services. Your candidate data and
+application history stay local.
+
+## TL;DR
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+job-agent init
+job-agent copy-examples
+job-agent setup-wizard          # optional: fill stage/alternance fields
+job-agent validate-profile
+job-agent ui                    # opens http://127.0.0.1:8765
+```
+
+The dashboard gives you 1-click hunt, multi-source search across free public
+APIs, tracked-jobs board, insights & funnel, CSV export, and one-click packet
+generation that fills your `profiles/main.tex` with role-tailored text.
 
 ## What it does
 
-- **France-first job intake:** paste text, import local files, fetch public URLs, parse RSS/Atom feeds, discover likely career links, search free/read-only APIs, and generate French job-board search URLs.
-- **France Travail API support:** source `francetravail` uses the official France Travail Offres d’emploi API when you configure free credentials.
-- **Internship tracking workbook:** exports submitted internship applications into `profiles/Internship Search Tracking File A24.xlsx` with the columns you requested.
-- **French board shortcuts:** generates manual search URLs for France Travail, Welcome to the Jungle, HelloWork, Apec, Indeed France, LinkedIn France, Glassdoor France, Stage.fr, JobTeaser, and La bonne alternance.
-- **CAC 40 targeting:** lists career pages for large French companies including BNP Paribas, AXA, Orange, Schneider Electric, Capgemini, L’Oréal, LVMH, Sanofi, TotalEnergies, Thales, Safran, Airbus, and more.
-- **Normalization:** extracts tech stack, salary, remote/hybrid/onsite signals, seniority, French/English language signals, requirements, responsibilities, and benefits.
-- **Fit scoring:** deterministic 0-100 score with notes, confidence, decision, missing requirements, and risk flags.
-- **CV tailoring:** reorders and selects facts from your master CV; it never invents facts.
-- **Cover letter:** concise, role-specific, grounded only in your profile/CV/job posting.
-- **Locked screening answers:** uses `master_qa_profile.json`; unknown factual answers require manual review.
-- **Artifacts:** writes `cv.md`, `cv.tex`, `cv.html`, `cv.pdf`, `cover_letter.md`, `cover_letter.html`, `cover_letter.pdf`, and `assistant.html`.
-- **Tracking:** jobs, packets, and events are saved in local SQLite.
-- **Manual final submit:** the system opens/creates an assistant page, but it never submits applications automatically.
+- **France-first job intake:** paste text, import local files, fetch public
+  URLs, parse RSS/Atom feeds, discover likely career links, search free/
+  read-only APIs, and generate French job-board search URLs.
+- **France Travail API:** when you set free credentials, the dashboard pulls
+  data straight from the official Offres d'emploi API.
+- **Multi-source search:** one button to query Remotive, Remote OK, Himalayas,
+  Arbeitnow, Jobicy, and The Muse at once, deduplicating results.
+- **Company ATS feeds:** Greenhouse, Lever, Ashby, Recruitee, SmartRecruiters,
+  Workable, Personio — all free and credential-free, just point at the
+  company slug.
+- **Internship tracking workbook:** exports submitted internship applications
+  into `profiles/Internship Search Tracking File A24.xlsx`.
+- **French board shortcuts:** generates manual search URLs for France Travail,
+  Welcome to the Jungle, HelloWork, Apec, Indeed France, LinkedIn France,
+  Glassdoor France, Stage.fr, JobTeaser, and La bonne alternance.
+- **CAC 40 targeting:** lists career pages for large French companies
+  including BNP Paribas, AXA, Orange, Schneider Electric, Capgemini, L'Oréal,
+  LVMH, Sanofi, TotalEnergies, Thales, Safran, Airbus, and more.
+- **Normalization & scoring:** extracts tech stack, salary, remote/hybrid,
+  seniority, language signals, requirements, responsibilities, and benefits;
+  deterministic 0-100 fit score with notes, confidence, decision, missing
+  requirements, and risk flags.
+- **Tailored LaTeX CV:** uses your `profiles/main.tex`. The template's design,
+  layout, photo, language toggle, and curated skills narrative are preserved;
+  only role-relevant text (summary closer, experience-bullet ordering, top
+  project) is updated per job.
+- **Cover letter:** concise, role-specific, grounded only in your profile,
+  CV, and the job posting — never invents sponsorship or visa facts.
+- **Locked screening answers:** uses `master_qa_profile.json`; unknown
+  factual answers require manual review.
+- **Artifacts per job:** `cv.md`, `cv.tex`, `cv.html`, `cv.pdf`,
+  `cover_letter.md`, `cover_letter.html`, `cover_letter.pdf`, and
+  `assistant.html`.
+- **Insights & analytics:** local funnel, weekly throughput, top companies,
+  sources, locations, and score distribution.
+- **CSV export** of the tracked-jobs table.
+- **Optional local LLM polish:** opt-in Ollama support that lightly polishes
+  bullets and paragraphs under strict validation (no invented facts, numbers
+  preserved verbatim, bounded length). Off by default.
+- **Manual final submit:** the system opens/creates a local assistant page;
+  it never submits applications automatically.
 
 ## Why not full auto-apply?
 
-The goal is to stay free, safe, and reliable. Fully autonomous ATS submission normally requires paid browser-agent infrastructure, paid APIs, proxies, CAPTCHA handling, login automation, or fragile scraping. This system automates the useful free parts: search, import, dedupe, score, tailor documents, prepare locked screening answers, and open a local assistant page. You still review and submit manually.
+The goal is to stay free, safe, and reliable. Fully autonomous ATS submission
+requires paid browser-agent infrastructure, paid APIs, proxies, CAPTCHA
+handling, login automation, or fragile scraping. This system automates the
+useful free parts: search, import, dedupe, score, tailor documents, prepare
+locked screening answers, and open a local assistant page. You still review
+and submit manually.
 
 ## Install
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-If you are working in a constrained environment, the project also includes local fallbacks for the command runner, HTTP fetches, and basic HTML extraction so the core workflow can still run without every optional package being installed.
-
-Windows PowerShell:
 
 ```powershell
 python -m venv .venv
@@ -42,71 +86,107 @@ python -m venv .venv
 pip install -e ".[dev]"
 ```
 
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+The core workflow includes local fallbacks for the command runner, HTTP
+fetches, and basic HTML extraction so it still runs without every optional
+package being installed.
+
 ## Quick start
 
 ```bash
-job-agent init
-job-agent copy-examples
-job-agent validate-profile
+job-agent init                  # create local data dirs
+job-agent copy-examples         # seed profile files
+job-agent setup-wizard          # optional: stage/alternance Q&A
+job-agent validate-profile      # check profile files are ready
+job-agent ui                    # local dashboard on http://127.0.0.1:8765
 ```
 
-Run the local dashboard:
+The setup wizard updates `master_qa_profile.json` with the stage/alternance
+fields most French employers ask for: school/program, availability,
+convention de stage, French/English level, visa/work-authorization (sensitive
+fields stay locked for manual completion).
 
-```powershell
-job-agent ui
-```
-
-Then open:
-
-```text
-http://127.0.0.1:8765
-```
-
-The dashboard gives you one-click search controls, language selection, curated
-job-board links, France Travail API search when configured, job tracking,
-URL/text import, packet generation, profile readiness, and the suggested app
-description for France Travail API access.
-
-You can also export submitted internship applications into the Excel tracker
-from the CLI or the dashboard.
-
-If this repository contains a `profiles/` folder with the three profile JSON
-files, the CLI uses it automatically and stores runtime data in the local
-ignored `.job_agent/` folder. Otherwise, edit these files in
-`~/.job_agent/profiles/`:
+If a `profiles/` folder exists next to the repo root, the CLI uses it
+automatically and stores runtime data in the local ignored `.job_agent/`
+folder. Otherwise edit these files in `~/.job_agent/profiles/`:
 
 ```text
 candidate_profile.json
 master_cv.json
 master_qa_profile.json
+main.tex                # your LaTeX CV template
+me.jpg                  # photo referenced by main.tex
 ```
 
-The example profile is now a France/Paris data-AI template. Replace all `EDIT THIS` content with your real information.
-
-You can override locations explicitly with `JOB_AGENT_DATA_DIR` and
+Override locations explicitly with `JOB_AGENT_DATA_DIR` and
 `JOB_AGENT_PROFILES_DIR`.
+
+## Dashboard
+
+```powershell
+job-agent ui
+```
+
+Tabs:
+
+- **Search:** 1-click hunt (France Travail + curated board links),
+  multi-source search across free public APIs, deep API search, and a clean
+  link builder.
+- **Jobs:** filter, sort, search, batch enrich, batch packet generation,
+  CSV export, color-coded score badges, inline job detail panel.
+- **Insights:** application funnel, 8-week activity bars, top companies/
+  sources/locations, score distribution.
+- **Add Job:** paste a URL or job description.
+- **Profile & API:** profile validation, LaTeX/Ollama readiness, France
+  Travail API request text (copy/paste-ready), internship workbook export.
+
+Keyboard shortcuts (press `?` in the dashboard):
+
+```text
+?   Show shortcuts help
+1-5 Switch tabs
+/   Focus job search
+g h 1-click hunt
+g m Multi-source search
+r   Refresh jobs
+Esc Close dialogs
+```
 
 ## LaTeX CV output
 
-Every generated application packet includes an editable `cv.tex` next to
-`cv.md`, `cv.html`, and `cv.pdf`. When `profiles/main.tex` exists, the app
-preserves that `moderncv` template, keeps the same layout/photo/style, and
-replaces only the CV content macros with job-tailored text from your profile
-data. Local LaTeX assets such as `me.jpg` and `.sty` files are copied beside
-the generated `cv.tex`.
+Every generated packet includes an editable `cv.tex` next to `cv.md`,
+`cv.html`, and `cv.pdf`. The renderer is conservative: when
+`profiles/main.tex` exists, the template's `moderncv` design, language
+toggle, photo, and curated skills narrative are preserved. Only the parts
+that should change per job are rewritten:
 
-If a LaTeX compiler is installed on `PATH`, `cv.pdf` is built from `cv.tex`.
-Supported compilers are `latexmk`, `pdflatex`, `xelatex`, or `lualatex`.
+- **`\mysummary`**: keep the master narrative; append one short sentence that
+  names the target role/company and the top matching skills. Updated in both
+  the English and French branches of the language toggle.
+- **`\expone / \exptwo / \expthree`**: bullets re-ranked so the most relevant
+  ones appear first (no facts invented, no metrics added).
+- **`\projone`**: most relevant project from `master_cv.json` for this role.
+- **Skills sections**: untouched. Your curated `Classification/Regression,
+  Time-Series Forecasting…` text stays as-is so the CV reads naturally.
 
-The app now also checks the common MiKTeX install locations on Windows, so if
-`pdflatex --version` works in PowerShell, the dashboard should normally report
-LaTeX as ready after a refresh.
+If a LaTeX compiler is on `PATH`, `cv.pdf` is built from `cv.tex` using
+`latexmk`, `pdflatex`, `xelatex`, or `lualatex`. On Windows, common MiKTeX
+install locations are checked automatically, so if `pdflatex --version` works
+in PowerShell the dashboard should report LaTeX as ready after a refresh.
+
+If no compiler is installed, the app writes `cv.tex`, generates a fallback
+PDF from Markdown, and adds `latex_warning.txt` to the packet folder.
 
 On Windows, install one of:
 
 ```text
-MiKTeX: https://miktex.org/download
-TeX Live: https://tug.org/texlive/windows.html
+MiKTeX:    https://miktex.org/download
+TeX Live:  https://tug.org/texlive/windows.html
 ```
 
 After installing, restart PowerShell and verify:
@@ -115,14 +195,11 @@ After installing, restart PowerShell and verify:
 pdflatex --version
 ```
 
-Then rerun packet generation:
+Then re-generate the packet:
 
 ```powershell
 job-agent apply <job-id> --force
 ```
-
-If no compiler is installed, the app still writes `cv.tex`, creates a fallback
-PDF, and writes `latex_warning.txt` in the packet folder.
 
 ## France / Paris workflow
 
@@ -137,22 +214,12 @@ job-agent france-setup
 ```bash
 job-agent france-search-urls --query "data science stage" --location Paris
 job-agent france-search-urls --query "machine learning alternance" --location "Île-de-France"
-```
-
-The default output is a plain list with full, copyable URLs. It uses recommended
-boards by default and expands queries in English first, then French. You can
-control both:
-
-```powershell
-job-agent france-search-urls --query "data scientist" --location Paris --language english --limit 8
 job-agent france-search-urls --query "data scientist" --location Paris --language french --limit 8
-job-agent france-search-urls --query "data scientist" --location Paris --boards all --limit 8
-job-agent france-search-urls --query "data scientist" --location Paris --limit 8 --output france_urls.txt
 job-agent france-search-urls --query "data scientist" --location Paris --format table
 job-agent france-search-urls --query "data scientist" --location Paris --format json --output france_urls.json
 ```
 
-Open the best URLs, copy promising job URLs, then import them:
+Open promising URLs, copy job URLs, then import them:
 
 ```bash
 job-agent add url "https://company-or-job-board/job-url"
@@ -163,31 +230,7 @@ job-agent apply-assist <packet-id>
 ### 3. Use France Travail API when configured
 
 France Travail requires free developer credentials/habilitation for the API.
-Your normal candidate login is separate and is not used by this CLI. After
-approval, set:
-
-```bash
-export FRANCE_TRAVAIL_CLIENT_ID="your-client-id"
-export FRANCE_TRAVAIL_CLIENT_SECRET="your-client-secret"
-export FRANCE_TRAVAIL_SCOPE="api_offresdemploiv2 o2dsoffre"
-```
-
-Or put them in a local, git-ignored file at the repo root:
-
-```text
-.env.local
-```
-
-With contents:
-
-```text
-FRANCE_TRAVAIL_CLIENT_ID=your-client-id
-FRANCE_TRAVAIL_CLIENT_SECRET=your-client-secret
-FRANCE_TRAVAIL_SCOPE=api_offresdemploiv2 o2dsoffre
-```
-
-The app auto-loads `.env.local` when it starts.
-Windows PowerShell:
+Your normal candidate login is separate. After approval, set:
 
 ```powershell
 [Environment]::SetEnvironmentVariable("FRANCE_TRAVAIL_CLIENT_ID", "your-client-id", "User")
@@ -195,75 +238,108 @@ Windows PowerShell:
 [Environment]::SetEnvironmentVariable("FRANCE_TRAVAIL_SCOPE", "api_offresdemploiv2 o2dsoffre", "User")
 ```
 
-Restart PowerShell after saving user environment variables.
-
-Suggested France Travail API application details:
+Or put them in a git-ignored `.env.local` at the repo root:
 
 ```text
-App name: Paris Data Career Copilot
-URL: https://github.com/m-ihab/free-job-agent
-Description: A local-first career copilot for data science, AI, and analytics roles in France. It searches public job data, tracks opportunities, scores fit against my profile, and prepares tailored CV and cover-letter packets for manual review and submission.
+FRANCE_TRAVAIL_CLIENT_ID=your-client-id
+FRANCE_TRAVAIL_CLIENT_SECRET=your-client-secret
+FRANCE_TRAVAIL_SCOPE=api_offresdemploiv2 o2dsoffre
 ```
 
-For portfolio value, keep private application data local and use the GitHub
-repository or a later GitHub Pages demo page as the public project URL.
+The app auto-loads `.env.local` when it starts. If your portal does not show a
+scope, leave `FRANCE_TRAVAIL_SCOPE` blank — fallback scope logic runs.
 
-Then search and save:
+### 4. (Optional) Configure France Travail enrichment endpoints
 
-```bash
-job-agent search-api francetravail --query "data scientist stage" --location Paris --limit 20 --save
-```
+To use ROME 4.0, Anotea, Open Training, Labour Market, etc., copy
+`docs/france_travail_endpoints.example.json` to
+`.france_travail.endpoints.local.json` at the repo root and fill the paths
+from your developer portal. This file is git-ignored.
 
-Run the built-in Paris data/AI query pack:
-
-```bash
-job-agent france-hunt --location Paris --limit 10
-```
-
-This tries queries like `data scientist stage`, `machine learning internship`, `alternance data science`, `junior data scientist`, etc.
-
-To keep France Travail search results internship-only, add `--internships-only`:
+Then:
 
 ```powershell
-job-agent search-api francetravail --query "data scientist stage" --location Paris --save --internships-only
-job-agent france-hunt --location Paris --limit 10 --internships-only
+job-agent enrich <job-id>
 ```
 
-To fill the Excel tracker with the internships you already marked as applied:
+Without this file, only the core job-offer search works — enrichment is
+skipped safely.
 
-```powershell
-job-agent export internships
-```
-
-### 4. Target CAC 40 / large French companies
+### 5. Target CAC 40 / large French companies
 
 ```bash
 job-agent france-targets
 ```
 
-Open company career pages, search for `data`, `machine learning`, `AI`, `stage`, `alternance`, then import promising URLs with `job-agent add url`.
+Open the career page, search for `data`/`stage`/`alternance`, import promising
+URLs with `job-agent add url`.
+
+### 6. Run the built-in Paris data/AI query pack
+
+```bash
+job-agent france-hunt --location Paris --limit 10
+job-agent france-hunt --location Paris --limit 10 --internships-only
+```
+
+Tries queries like `data scientist stage`, `machine learning internship`,
+`alternance data science`, `junior data scientist`, etc.
+
+## Multi-source search (no credentials, no boards needed)
+
+```bash
+job-agent multi-search --query "data scientist" --location Paris --limit 8 --save
+```
+
+Hits Remotive, Remote OK, Himalayas, Arbeitnow, Jobicy, and The Muse at once
+and dedupes by URL. Each source can fail without breaking the others.
 
 ## Generic API search
-
-List supported API-style sources:
 
 ```bash
 job-agent api-sources
 ```
 
-Supported sources include:
+Supported sources:
 
 ```text
-francetravail, arbeitnow, remotive, remoteok, himalayas, greenhouse, lever, ashby
+arbeitnow, ashby, francetravail, greenhouse, himalayas, jobicy, lever,
+personio, recruitee, remoteok, remotive, smartrecruiters, themuse, workable
 ```
 
-For company ATS boards:
+For company ATS boards, pass the slug:
 
 ```bash
 job-agent search-api greenhouse --board example-company --query "data" --save
 job-agent search-api lever --board example-company --query "machine learning" --save
 job-agent search-api ashby --board ExampleCompany --query "data" --save
+job-agent search-api recruitee --board examplecompany --query "data" --save
+job-agent search-api smartrecruiters --board examplecompany --query "data" --save
+job-agent search-api workable --board examplecompany --query "data" --save
+job-agent search-api personio --board examplecompany --query "data" --save
 ```
+
+## Optional Ollama polishing (opt-in)
+
+If you have [Ollama](https://ollama.com/) running locally, you can enable a
+strict polishing step for CV bullets:
+
+```powershell
+$env:JOB_AGENT_USE_OLLAMA = "1"
+$env:JOB_AGENT_OLLAMA_MODEL = "llama3.2:3b"   # or any local model
+job-agent apply <job-id> --force
+```
+
+Guarantees:
+
+- All numbers from the original bullet must appear in the polished version
+  (no new numbers, no removed numbers).
+- Bag-of-words overlap ≥ 55% — drastic drift is rejected.
+- Polished text can't be more than 1.4× the original length.
+- If any check fails (or Ollama is unreachable), the **original bullet is
+  used unchanged**. Polishing never blocks the pipeline.
+
+Disable by unsetting `JOB_AGENT_USE_OLLAMA`. The pipeline is identical with or
+without Ollama; this is purely a finishing touch.
 
 ## One-command processing
 
@@ -271,23 +347,21 @@ job-agent search-api ashby --board ExampleCompany --query "data" --save
 job-agent process file path/to/job.txt --title "Data Scientist Intern" --company "Company" --url "https://company.com/apply"
 ```
 
-This does:
-
-```text
-ingest -> normalize -> dedupe -> filter -> score -> generate packet
-```
+Does: `ingest -> normalize -> dedupe -> filter -> score -> generate packet`.
 
 ## CLI reference
 
 ```text
 job-agent init
 job-agent copy-examples
+job-agent setup-wizard [--non-interactive]
 job-agent validate-profile
 job-agent ui [--host 127.0.0.1] [--port 8765] [--no-open]
 job-agent france-setup
 job-agent france-search-urls [--query ...] [--location ...] [--language english|french|both] [--boards recommended|all] [--format list|table|json] [--output PATH]
 job-agent france-targets [--limit N]
-job-agent france-hunt [--query ...] [--location Paris] [--limit N] [--packets/--no-packets]
+job-agent france-hunt [--query ...] [--location Paris] [--limit N] [--packets/--no-packets] [--internships-only]
+job-agent enrich <job-id> [--rome] [--anotea] [--training] [--labour-market] [--territory] [--employer]
 job-agent export internships [--workbook PATH] [--sheet NAME]
 job-agent add paste [--title ...] [--company ...] [--url ...]
 job-agent add file PATH [--title ...] [--company ...] [--url ...]
@@ -295,6 +369,7 @@ job-agent add url URL
 job-agent add rss FEED_URL [--limit N]
 job-agent discover-links URL [--limit N]
 job-agent api-sources
+job-agent multi-search [--query ...] [--location ...] [--sources a,b,c] [--limit N] [--save] [--remote-only] [--internships-only]
 job-agent search-api SOURCE [--query ...] [--location ...] [--country ...] [--board ...] [--limit N] [--remote-only] [--cache/--no-cache] [--save]
 job-agent hunt SOURCE [--query ...] [--location ...] [--country ...] [--board ...] [--limit N] [--remote-only] [--cache/--no-cache] [--force]
 job-agent list [--status STATUS]
@@ -311,11 +386,14 @@ job-agent packet show JOB_OR_PACKET_ID
 
 ## Safety rules
 
-- Never invent experience, education, metrics, certifications, dates, legal facts, visa facts, work authorization, or salary expectations.
+- Never invent experience, education, metrics, certifications, dates, legal
+  facts, visa facts, work authorization, or salary expectations.
 - Never infer sponsorship claims in the cover letter.
 - Never answer unknown screening questions automatically.
-- Never bypass CAPTCHAs, login restrictions, paywalls, platform rate limits, or access controls.
-- Never scrape logged-in LinkedIn/Indeed/Glassdoor/Welcome to the Jungle pages or automate account actions.
+- Never bypass CAPTCHAs, login restrictions, paywalls, platform rate limits,
+  or access controls.
+- Never scrape logged-in LinkedIn / Indeed / Glassdoor / Welcome to the
+  Jungle pages or automate account actions.
 - Never auto-submit applications.
 - Keep every generated artifact traceable with hashes.
 
@@ -332,12 +410,15 @@ PYTHONPATH=src python scripts/smoke_test.py
 
 ```text
 src/job_agent/
-  cli/main.py             # Standard-library CLI with test shim compatibility
+  analytics.py            # local stats, CSV export
+  polish.py               # optional Ollama bullet polish (strict)
+  cli/main.py             # standard-library CLI
   db/database.py          # SQLite layer
   generator/              # CV, cover letter, QA
   intake/                 # paste, file, URL, RSS, link discovery, APIs, France market helpers
-  renderer/               # markdown, HTML, PDF, assistant page
+  renderer/               # markdown, HTML, PDF, LaTeX, assistant page
   schemas/                # Pydantic-compatible models
+  ui/                     # local web dashboard
   config.py
   filters.py
   fingerprint.py
@@ -349,6 +430,7 @@ src/job_agent/
   validators.py
 scripts/
   smoke_test.py           # end-to-end local sanity check
+  preview_cv.py           # render a sample cv.tex for quick inspection
 examples/
   candidate_profile.json
   master_cv.json

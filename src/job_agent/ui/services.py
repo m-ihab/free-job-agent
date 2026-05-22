@@ -13,6 +13,8 @@ from typing import Any
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.intake.france_market import board_notes, build_france_search_urls, expand_france_search_queries
+from job_agent.intake.france_travail_endpoints import load_endpoint_base_url, load_endpoint_registry
+from job_agent.polish import PolishOptions, is_ollama_enabled_and_reachable
 from job_agent.renderer.latex_render import available_latex_compiler
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.schemas.packet import ApplicationPacket
@@ -48,6 +50,14 @@ def profile_status(config: AppConfig | None = None) -> dict[str, Any]:
     config = config or configured_app()
     report = validate_profile_bundle(config)
     compiler = latex_compiler()
+    env_path = Path(os.environ.get("JOB_AGENT_ENV_FILE", "") or Path.cwd() / ".env.local").expanduser()
+    endpoints_path = Path(os.environ.get("FRANCE_TRAVAIL_ENDPOINTS_FILE", "") or Path.cwd() / ".france_travail.endpoints.local.json").expanduser()
+    registry = load_endpoint_registry()
+    endpoint_total = len(registry)
+    endpoint_configured = sum(1 for spec in registry.values() if spec.path)
+    endpoint_enabled = sum(1 for spec in registry.values() if spec.enabled and spec.path)
+    polish_options = PolishOptions.from_env()
+    ollama_ready = polish_options.enabled and is_ollama_enabled_and_reachable(polish_options)
     return {
         "valid": not report.errors,
         "errors": report.errors,
@@ -56,8 +66,20 @@ def profile_status(config: AppConfig | None = None) -> dict[str, Any]:
         "data_dir": str(config.data_dir),
         "outputs_dir": str(config.outputs_dir),
         "france_travail_configured": is_france_travail_configured(),
+        "env_local_present": env_path.exists(),
+        "endpoints_file_present": endpoints_path.exists(),
+        "endpoints_file": str(endpoints_path) if endpoints_path.exists() else "",
+        "endpoints_summary": {
+            "total": endpoint_total,
+            "configured": endpoint_configured,
+            "enabled": endpoint_enabled,
+            "base_url": load_endpoint_base_url(),
+        },
         "latex_compiler": compiler,
         "latex_ready": compiler is not None,
+        "ollama_enabled": polish_options.enabled,
+        "ollama_ready": ollama_ready,
+        "ollama_model": polish_options.model if polish_options.enabled else "",
         "app_name": APP_NAME,
         "app_description": APP_DESCRIPTION,
         "app_url": APP_URL_PLACEHOLDER,
@@ -83,7 +105,10 @@ def build_manual_search_groups(
     return groups
 
 
-def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None) -> dict[str, Any]:
+def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None, enrichment: dict | None = None) -> dict[str, Any]:
+    enrichment = enrichment or {}
+    enrichment_sources = enrichment.get("sources") or {}
+    anotea = enrichment.get("anotea") or {}
     return {
         "id": job.id,
         "short_id": job.id[:8],
@@ -108,6 +133,13 @@ def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None)
         "cv_pdf": latest_packet.tailored_cv_pdf_path if latest_packet else "",
         "cover_letter_pdf": latest_packet.cover_letter_pdf_path if latest_packet else "",
         "assistant_page": next((artifact.path for artifact in latest_packet.artifacts if artifact.kind == "assistant_html"), "") if latest_packet else "",
+        "enriched": bool(enrichment_sources),
+        "enrichment_updated_at": enrichment.get("updated_at") or "",
+        "enrichment_sources": enrichment_sources,
+        "anotea_rating": anotea.get("rating"),
+        "rome_skills": (enrichment.get("rome_skills") or [])[:10],
+        "training_recommendations": (enrichment.get("training_recommendations") or [])[:8],
+        "labour_market_signals": (enrichment.get("labour_market_signals") or [])[:8],
     }
 
 

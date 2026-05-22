@@ -41,3 +41,12 @@ class ApplicationTracker:
         if not job:
             return []
         return self.db.get_events(job.id)
+
+    def save_enrichment(self, job_id: str, payload: dict) -> None:
+        self.db.save_enrichment(job_id, payload)
+
+    def get_enrichment(self, job_id: str) -> Optional[dict]:
+        job = self.db.resolve_job(job_id)
+        if not job:
+            return None
+        return self.db.get_enrichment(job.id)
