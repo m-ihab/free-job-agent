@@ -51,6 +51,7 @@ except Exception:  # pragma: no cover
 
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
+from job_agent.exporters.internship_workbook import export_applied_internships
 from job_agent.fingerprint import set_fingerprint
 from job_agent.intake.discover import discover_job_links
 from job_agent.intake.file import ingest_file
@@ -226,6 +227,7 @@ def _handle_search_api(args) -> None:
             limit=args.limit,
             page=args.page,
             remote_only=args.remote_only,
+            internships_only=args.internships_only,
             use_cache=args.cache,
             cache_ttl_hours=args.cache_ttl_hours,
         )
@@ -280,6 +282,7 @@ def _handle_hunt(args) -> None:
             limit=args.limit,
             page=args.page,
             remote_only=args.remote_only,
+            internships_only=args.internships_only,
             use_cache=args.cache,
             cache_ttl_hours=args.cache_ttl_hours,
         )
@@ -337,11 +340,26 @@ def _handle_france_setup(args) -> None:
         "   FRANCE_TRAVAIL_CLIENT_ID=...\n"
         "   FRANCE_TRAVAIL_CLIENT_SECRET=...\n"
         "   FRANCE_TRAVAIL_SCOPE='api_offresdemploiv2 o2dsoffre'\n"
-        "3. Run: job-agent search-api francetravail --query 'data scientist stage' --location Paris --save\n"
-        "4. For Welcome to the Jungle, LinkedIn, Indeed, Glassdoor, HelloWork, Apec, Stage.fr: use france-search-urls, then add promising URLs with job-agent add url.\n\n"
+        "3. Run: job-agent search-api francetravail --query 'data scientist stage' --location Paris --save --internships-only\n"
+        "4. Export your submitted internship tracker with: job-agent export internships\n"
+        "5. For Welcome to the Jungle, LinkedIn, Indeed, Glassdoor, HelloWork, Apec, Stage.fr: use france-search-urls, then add promising URLs with job-agent add url.\n\n"
         "This tool does not scrape logged-in boards and does not auto-submit applications."
     )
     console.print(Panel(setup_text, title="France/Paris setup"))
+
+
+def _handle_export_internships(args) -> None:
+    config = _load_config()
+    try:
+        workbook_path, count = export_applied_internships(config, workbook_path=args.workbook, sheet_name=args.sheet)
+    except Exception as exc:
+        _fail(f"Failed to export internship workbook: {exc}")
+    console.print(
+        Panel(
+            f"Exported {count} applied internship(s)\nWorkbook: {workbook_path}",
+            title="Internship export complete",
+        )
+    )
 
 
 def _handle_france_search_urls(args) -> None:
@@ -725,6 +743,14 @@ class LocalCLIApp:
         fs_p = sub.add_parser("france-setup", help="Show France workflow setup instructions.")
         fs_p.set_defaults(handler=_handle_france_setup)
 
+        export_p = sub.add_parser("export", help="Export tracked internships to the A24 workbook.")
+        export_sub = export_p.add_subparsers(dest="export_command")
+        export_sub.required = True
+        internships_export = export_sub.add_parser("internships", help="Fill the internship tracking workbook with submitted internships.")
+        internships_export.add_argument("--workbook", type=Path, default=None, help="Optional workbook path. Defaults to profiles/Internship Search Tracking File A24.xlsx.")
+        internships_export.add_argument("--sheet", default=None, help="Optional workbook sheet name.")
+        internships_export.set_defaults(handler=_handle_export_internships)
+
         urls_p = sub.add_parser("france-search-urls", help="Print safe manual search URLs for French job boards.")
         urls_p.add_argument("--query", "-q", default="data science stage")
         urls_p.add_argument("--location", "-l", default="Paris")
@@ -746,6 +772,7 @@ class LocalCLIApp:
         fh_p.add_argument("--limit", "-n", type=int, default=10)
         fh_p.add_argument("--limit-queries", type=int, default=24)
         fh_p.add_argument("--language", choices=["english", "french", "both"], default="both")
+        fh_p.add_argument("--internships-only", action="store_true", help="Keep only internship-like listings from the API results.")
         fh_p.add_argument("--packets", dest="packets", action="store_true")
         fh_p.add_argument("--no-packets", dest="packets", action="store_false")
         fh_p.set_defaults(packets=True)
@@ -822,6 +849,7 @@ class LocalCLIApp:
         parser.add_argument("--limit", "-n", type=int, default=default_limit)
         parser.add_argument("--page", type=int, default=1)
         parser.add_argument("--remote-only", action="store_true")
+        parser.add_argument("--internships-only", action="store_true")
         parser.add_argument("--cache", dest="cache", action="store_true")
         parser.add_argument("--no-cache", dest="cache", action="store_false")
         parser.set_defaults(cache=True)

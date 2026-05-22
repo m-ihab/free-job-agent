@@ -8,6 +8,7 @@ It runs on your machine, uses SQLite, and never requires paid LLM APIs, paid bro
 
 - **France-first job intake:** paste text, import local files, fetch public URLs, parse RSS/Atom feeds, discover likely career links, search free/read-only APIs, and generate French job-board search URLs.
 - **France Travail API support:** source `francetravail` uses the official France Travail Offres d’emploi API when you configure free credentials.
+- **Internship tracking workbook:** exports submitted internship applications into `profiles/Internship Search Tracking File A24.xlsx` with the columns you requested.
 - **French board shortcuts:** generates manual search URLs for France Travail, Welcome to the Jungle, HelloWork, Apec, Indeed France, LinkedIn France, Glassdoor France, Stage.fr, JobTeaser, and La bonne alternance.
 - **CAC 40 targeting:** lists career pages for large French companies including BNP Paribas, AXA, Orange, Schneider Electric, Capgemini, L’Oréal, LVMH, Sanofi, TotalEnergies, Thales, Safran, Airbus, and more.
 - **Normalization:** extracts tech stack, salary, remote/hybrid/onsite signals, seniority, French/English language signals, requirements, responsibilities, and benefits.
@@ -66,6 +67,9 @@ job-board links, France Travail API search when configured, job tracking,
 URL/text import, packet generation, profile readiness, and the suggested app
 description for France Travail API access.
 
+You can also export submitted internship applications into the Excel tracker
+from the CLI or the dashboard.
+
 If this repository contains a `profiles/` folder with the three profile JSON
 files, the CLI uses it automatically and stores runtime data in the local
 ignored `.job_agent/` folder. Otherwise, edit these files in
@@ -93,6 +97,10 @@ the generated `cv.tex`.
 
 If a LaTeX compiler is installed on `PATH`, `cv.pdf` is built from `cv.tex`.
 Supported compilers are `latexmk`, `pdflatex`, `xelatex`, or `lualatex`.
+
+The app now also checks the common MiKTeX install locations on Windows, so if
+`pdflatex --version` works in PowerShell, the dashboard should normally report
+LaTeX as ready after a refresh.
 
 On Windows, install one of:
 
@@ -199,6 +207,19 @@ job-agent france-hunt --location Paris --limit 10
 
 This tries queries like `data scientist stage`, `machine learning internship`, `alternance data science`, `junior data scientist`, etc.
 
+To keep France Travail search results internship-only, add `--internships-only`:
+
+```powershell
+job-agent search-api francetravail --query "data scientist stage" --location Paris --save --internships-only
+job-agent france-hunt --location Paris --limit 10 --internships-only
+```
+
+To fill the Excel tracker with the internships you already marked as applied:
+
+```powershell
+job-agent export internships
+```
+
 ### 4. Target CAC 40 / large French companies
 
 ```bash
@@ -252,6 +273,7 @@ job-agent france-setup
 job-agent france-search-urls [--query ...] [--location ...] [--language english|french|both] [--boards recommended|all] [--format list|table|json] [--output PATH]
 job-agent france-targets [--limit N]
 job-agent france-hunt [--query ...] [--location Paris] [--limit N] [--packets/--no-packets]
+job-agent export internships [--workbook PATH] [--sheet NAME]
 job-agent add paste [--title ...] [--company ...] [--url ...]
 job-agent add file PATH [--title ...] [--company ...] [--url ...]
 job-agent add url URL

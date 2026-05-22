@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.intake.free_apis import FreeApiError, search_free_api_jobs, supported_source_names
+from job_agent.exporters.internship_workbook import export_applied_internships
 from job_agent.pipeline import add_job_to_tracker, add_text_job, add_url_job, generate_packet_for_job
 from job_agent.schemas.job import JobStatus
 from job_agent.timeutil import utc_now
@@ -134,11 +135,13 @@ def _api_search(config: AppConfig, payload: dict) -> dict:
     save = bool(payload.get("save", True))
     prepare_packets = bool(payload.get("prepare_packets", False))
     force_packets = bool(payload.get("force_packets", False))
+    internships_only = bool(payload.get("internships_only", False))
     jobs = search_free_api_jobs(
         source,
         query=query,
         location=location,
         limit=limit,
+        internships_only=internships_only,
         use_cache=True,
         cache_ttl_hours=6.0,
     )
@@ -158,6 +161,7 @@ def _one_click_hunt(config: AppConfig, payload: dict) -> dict:
     limit_per_query = _safe_int(payload.get("limit_per_query"), 5, maximum=30)
     prepare_packets = bool(payload.get("prepare_packets", False))
     force_packets = bool(payload.get("force_packets", False))
+    internships_only = bool(payload.get("internships_only", False))
     links = _search_links({"query": query, "location": location, "language": language, "limit": limit_queries, "boards": "recommended"})
     if not is_france_travail_configured():
         return {
@@ -181,6 +185,7 @@ def _one_click_hunt(config: AppConfig, payload: dict) -> dict:
                 query=group["query"],
                 location=location,
                 limit=limit_per_query,
+                internships_only=internships_only,
                 use_cache=True,
                 cache_ttl_hours=6.0,
             )
@@ -203,6 +208,13 @@ def _one_click_hunt(config: AppConfig, payload: dict) -> dict:
         "jobs": jobs_out,
         "failures": failures,
     }
+
+
+def _export_internships(config: AppConfig, payload: dict) -> dict:
+    workbook = payload.get("workbook")
+    sheet = str(payload.get("sheet") or "") or None
+    workbook_path, count = export_applied_internships(config, workbook_path=workbook, sheet_name=sheet)
+    return {"workbook": str(workbook_path), "count": count}
 
 
 class JobAgentHandler(BaseHTTPRequestHandler):
@@ -303,6 +315,8 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                     return self._send_error_json("job_id is required.")
                 packet = generate_packet_for_job(config, job_id, force=bool(payload.get("force", False)))
                 return self._send_json({"packet": packet_to_dict(packet)})
+            if parsed.path == "/api/export-internships":
+                return self._send_json(_export_internships(config, payload))
             if parsed.path == "/api/status":
                 job_id = str(payload.get("job_id") or "")
                 status = JobStatus(str(payload.get("status") or ""))

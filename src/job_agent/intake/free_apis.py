@@ -20,6 +20,7 @@ from typing import Any, Callable, Iterable
 import requests
 
 from job_agent.intake.url import HEADERS
+from job_agent.intake.internships import is_internship_listing
 from job_agent.normalizer import normalize
 from job_agent.schemas.job import JobListing
 from job_agent.utils.html import strip_html
@@ -45,6 +46,7 @@ class FreeApiSearch:
     limit: int = 20
     page: int = 1
     remote_only: bool = False
+    internships_only: bool = False
     timeout: int = DEFAULT_TIMEOUT
     use_cache: bool = False
     cache_ttl_hours: float = DEFAULT_CACHE_TTL_HOURS
@@ -242,6 +244,8 @@ def _contains_location(job: JobListing, location: str) -> bool:
 def _post_filter(jobs: list[JobListing], search: FreeApiSearch) -> list[JobListing]:
     result: list[JobListing] = []
     for job in jobs:
+        if search.internships_only and not is_internship_listing(job):
+            continue
         if search.remote_only and not job.remote:
             continue
         if not _contains_query(job, search.query):
@@ -709,6 +713,7 @@ def search_free_api_jobs(
     limit: int = 20,
     page: int = 1,
     remote_only: bool = False,
+    internships_only: bool = False,
     timeout: int = DEFAULT_TIMEOUT,
     use_cache: bool = False,
     cache_ttl_hours: float = DEFAULT_CACHE_TTL_HOURS,
@@ -732,6 +737,7 @@ def search_free_api_jobs(
         limit=_bounded_limit(limit),
         page=max(1, int(page or 1)),
         remote_only=remote_only,
+        internships_only=internships_only,
         timeout=timeout,
         use_cache=use_cache,
         cache_ttl_hours=cache_ttl_hours,

@@ -33,8 +33,8 @@ class ApplicationTracker:
     def get_job(self, job_id: str) -> Optional[JobListing]:
         return self.db.resolve_job(job_id)
 
-    def list_jobs(self, status: Optional[JobStatus] = None) -> list[JobListing]:
-        return self.db.list_jobs(status=status)
+    def list_jobs(self, status: Optional[JobStatus] = None, limit: Optional[int] = 100) -> list[JobListing]:
+        return self.db.list_jobs(status=status, limit=limit)
 
     def get_history(self, job_id: str) -> list[dict]:
         job = self.db.resolve_job(job_id)

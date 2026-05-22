@@ -72,6 +72,10 @@
             <input id="forcePackets" type="checkbox" />
             Force packet generation
           </label>
+          <label class="check-row">
+            <input id="internshipsOnly" type="checkbox" checked />
+            Internships only
+          </label>
         </form>
 
         <div class="action-row">
@@ -164,11 +168,22 @@
               <textarea id="apiAppDescription" rows="7" readonly></textarea>
             </label>
             <button id="copyApiTextBtn">Copy API text</button>
+            <hr />
+            <label>
+              Workbook path
+              <input id="internshipWorkbookPath" value="" placeholder="profiles/Internship Search Tracking File A24.xlsx" />
+            </label>
+            <label>
+              Sheet name
+              <input id="internshipSheetName" value="" placeholder="Optional sheet name" />
+            </label>
+            <button id="exportInternshipsBtn">Export internship tracker</button>
           </section>
           <section class="panel">
             <h3>Paths</h3>
             <dl class="path-list" id="pathList"></dl>
             <div id="profileMessages"></div>
+            <div class="notice hidden" id="profileNotice"></div>
           </section>
         </div>
       </section>

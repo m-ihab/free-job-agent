@@ -13,6 +13,7 @@ from typing import Any
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.intake.france_market import board_notes, build_france_search_urls, expand_france_search_queries
+from job_agent.renderer.latex_render import available_latex_compiler
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.schemas.packet import ApplicationPacket
 from job_agent.validators import validate_profile_bundle
@@ -39,10 +40,8 @@ def is_france_travail_configured() -> bool:
 
 
 def latex_compiler() -> str | None:
-    for name in ("latexmk", "pdflatex", "xelatex", "lualatex"):
-        if shutil.which(name):
-            return name
-    return None
+    compiler = available_latex_compiler()
+    return Path(compiler).name if compiler else None
 
 
 def profile_status(config: AppConfig | None = None) -> dict[str, Any]:

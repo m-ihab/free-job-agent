@@ -118,6 +118,7 @@ function searchPayload() {
     limit: Number($("variantLimit").value || 8),
     limit_queries: Number($("variantLimit").value || 8),
     limit_per_query: Number($("apiLimit").value || 5),
+    internships_only: $("internshipsOnly").checked,
     prepare_packets: $("preparePackets").checked,
     force_packets: $("forcePackets").checked,
   };
@@ -343,6 +344,23 @@ async function generatePacket(jobId, button) {
   }
 }
 
+async function exportInternships() {
+  const button = $("exportInternshipsBtn");
+  setBusy(button, true);
+  setNotice("profileNotice", "");
+  try {
+    const payload = await api("/api/export-internships", {
+      workbook: $("internshipWorkbookPath").value.trim(),
+      sheet: $("internshipSheetName").value.trim(),
+    });
+    setNotice("profileNotice", `Exported ${payload.count} internship applications to ${payload.workbook}`);
+  } catch (error) {
+    setNotice("profileNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 function bindEvents() {
   document.querySelectorAll(".tab").forEach((button) => {
     button.addEventListener("click", () => {
@@ -369,6 +387,7 @@ function bindEvents() {
   $("addUrlBtn").addEventListener("click", addUrl);
   $("addTextBtn").addEventListener("click", addText);
   $("profileRefreshBtn").addEventListener("click", loadState);
+  $("exportInternshipsBtn").addEventListener("click", exportInternships);
   $("copyApiTextBtn").addEventListener("click", async () => {
     const text = `App name: ${$("apiAppName").value}\nURL: ${$("apiAppUrl").value}\nDescription: ${$("apiAppDescription").value}`;
     await navigator.clipboard.writeText(text);

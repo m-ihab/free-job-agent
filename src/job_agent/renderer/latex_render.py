@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from calendar import month_name
+import os
 import re
 import shutil
 import subprocess
@@ -329,6 +330,18 @@ def available_latex_compiler() -> str | None:
         found = shutil.which(command)
         if found:
             return found
+    common_roots = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "MiKTeX" / "miktex" / "bin" / "x64",
+        Path(os.environ.get("PROGRAMFILES", "")) / "MiKTeX" / "miktex" / "bin" / "x64",
+        Path(os.environ.get("PROGRAMFILES(X86)", "")) / "MiKTeX" / "miktex" / "bin" / "x64",
+    ]
+    for root in common_roots:
+        if not str(root):
+            continue
+        for command in ["latexmk.exe", "pdflatex.exe", "xelatex.exe", "lualatex.exe"]:
+            candidate = root / command
+            if candidate.exists():
+                return str(candidate)
     return None
 
 

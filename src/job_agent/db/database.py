@@ -201,12 +201,18 @@ class Database:
             row = conn.execute("SELECT * FROM jobs WHERE fingerprint = ?", (fingerprint,)).fetchone()
         return self._row_to_job(row) if row else None
 
-    def list_jobs(self, status: Optional[JobStatus] = None, limit: int = 100) -> list[JobListing]:
+    def list_jobs(self, status: Optional[JobStatus] = None, limit: Optional[int] = 100) -> list[JobListing]:
         with self._connect() as conn:
             if status:
-                rows = conn.execute("SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?", (status.value, limit)).fetchall()
+                if limit is None:
+                    rows = conn.execute("SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC", (status.value,)).fetchall()
+                else:
+                    rows = conn.execute("SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?", (status.value, limit)).fetchall()
             else:
-                rows = conn.execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+                if limit is None:
+                    rows = conn.execute("SELECT * FROM jobs ORDER BY created_at DESC").fetchall()
+                else:
+                    rows = conn.execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
         return [self._row_to_job(r) for r in rows]
 
     def update_job_status(self, job_id: str, status: JobStatus) -> bool:
