@@ -15,7 +15,7 @@ It runs on your machine, uses SQLite, and never requires paid LLM APIs, paid bro
 - **CV tailoring:** reorders and selects facts from your master CV; it never invents facts.
 - **Cover letter:** concise, role-specific, grounded only in your profile/CV/job posting.
 - **Locked screening answers:** uses `master_qa_profile.json`; unknown factual answers require manual review.
-- **Artifacts:** writes `cv.md`, `cv.html`, `cv.pdf`, `cover_letter.md`, `cover_letter.html`, `cover_letter.pdf`, and `assistant.html`.
+- **Artifacts:** writes `cv.md`, `cv.tex`, `cv.html`, `cv.pdf`, `cover_letter.md`, `cover_letter.html`, `cover_letter.pdf`, and `assistant.html`.
 - **Tracking:** jobs, packets, and events are saved in local SQLite.
 - **Manual final submit:** the system opens/creates an assistant page, but it never submits applications automatically.
 
@@ -64,6 +64,36 @@ The example profile is now a France/Paris data-AI template. Replace all `EDIT TH
 
 You can override locations explicitly with `JOB_AGENT_DATA_DIR` and
 `JOB_AGENT_PROFILES_DIR`.
+
+## LaTeX CV output
+
+Every generated application packet includes an editable `cv.tex` next to
+`cv.md`, `cv.html`, and `cv.pdf`.
+
+If a LaTeX compiler is installed on `PATH`, `cv.pdf` is built from `cv.tex`.
+Supported compilers are `latexmk`, `pdflatex`, `xelatex`, or `lualatex`.
+
+On Windows, install one of:
+
+```text
+MiKTeX: https://miktex.org/download
+TeX Live: https://tug.org/texlive/windows.html
+```
+
+After installing, restart PowerShell and verify:
+
+```powershell
+pdflatex --version
+```
+
+Then rerun packet generation:
+
+```powershell
+job-agent apply <job-id> --force
+```
+
+If no compiler is installed, the app still writes `cv.tex`, creates a fallback
+PDF, and writes `latex_warning.txt` in the packet folder.
 
 ## France / Paris workflow
 

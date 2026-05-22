@@ -47,7 +47,7 @@ def test_packet_generation_writes_all_promised_files(tmp_path):
     from job_agent.fingerprint import set_fingerprint
     tracker.add_job(set_fingerprint(job))
     packet = generate_packet_for_job(config, job.id)
-    expected_names = {"cv.md", "cv.html", "cv.pdf", "cover_letter.md", "cover_letter.html", "cover_letter.pdf", "assistant.html"}
+    expected_names = {"cv.md", "cv.tex", "cv.html", "cv.pdf", "cover_letter.md", "cover_letter.html", "cover_letter.pdf", "assistant.html"}
     actual_names = {Path(a.path).name for a in packet.artifacts}
     assert expected_names.issubset(actual_names)
     for artifact in packet.artifacts:

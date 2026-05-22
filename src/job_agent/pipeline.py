@@ -18,6 +18,7 @@ from job_agent.intake.url import ingest_url
 from job_agent.normalizer import normalize
 from job_agent.renderer.assistant_render import render_assistant_page
 from job_agent.renderer.html_render import render_html
+from job_agent.renderer.latex_render import LatexCompileError, compile_latex_to_pdf, render_latex_source
 from job_agent.renderer.pdf_render import render_pdf
 from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile
 from job_agent.schemas.job import JobListing, JobStatus
@@ -85,6 +86,10 @@ def _write_text(path: Path, content: str) -> DocumentArtifact:
         kind = "cv_markdown"
     elif "cv" in name and suffix == ".html":
         kind = "cv_html"
+    elif "cv" in name and suffix == ".tex":
+        kind = "cv_latex"
+    elif name == "latex_warning.txt":
+        kind = "latex_warning"
     else:
         kind = suffix.lstrip(".") or "file"
     return DocumentArtifact(kind=kind, path=str(path), sha256=sha256_file(path))
@@ -93,6 +98,18 @@ def _write_text(path: Path, content: str) -> DocumentArtifact:
 def _write_pdf(markdown: str, path: Path, kind: str, title: str) -> DocumentArtifact:
     render_pdf(markdown, path, title=title)
     return DocumentArtifact(kind=kind, path=str(path), sha256=sha256_file(path))
+
+
+def _write_cv_pdf(cv_md: str, cv_tex_path: Path, cv_pdf_path: Path) -> tuple[DocumentArtifact, str | None]:
+    try:
+        compile_latex_to_pdf(cv_tex_path, cv_pdf_path)
+        return DocumentArtifact(kind="cv_pdf", path=str(cv_pdf_path), sha256=sha256_file(cv_pdf_path)), None
+    except LatexCompileError as exc:
+        render_pdf(cv_md, cv_pdf_path, title="Tailored CV")
+        return (
+            DocumentArtifact(kind="cv_pdf", path=str(cv_pdf_path), sha256=sha256_file(cv_pdf_path)),
+            f"LaTeX CV PDF fallback used: {exc}",
+        )
 
 
 def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False) -> ApplicationPacket:
@@ -111,6 +128,7 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
 
     job = score_and_save(config, job, profile)
     cv_md = tailor_cv(job, master_cv, profile)
+    cv_tex = render_latex_source(cv_md, title=f"CV - {job.title}")
     letter_md = generate_cover_letter(job, master_cv, profile)
     cv_html = render_html(cv_md, title=f"CV - {job.title}")
     letter_html = render_html(letter_md, title=f"Cover Letter - {job.title}")
@@ -124,6 +142,7 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
     out_dir.mkdir(parents=True, exist_ok=True)
     artifacts: list[DocumentArtifact] = []
     cv_md_path = out_dir / "cv.md"
+    cv_tex_path = out_dir / "cv.tex"
     cv_html_path = out_dir / "cv.html"
     letter_md_path = out_dir / "cover_letter.md"
     letter_html_path = out_dir / "cover_letter.html"
@@ -131,13 +150,17 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
     letter_pdf_path = out_dir / "cover_letter.pdf"
 
     artifacts.append(_write_text(cv_md_path, cv_md))
+    artifacts.append(_write_text(cv_tex_path, cv_tex))
     artifacts.append(_write_text(cv_html_path, cv_html))
-    artifacts.append(_write_pdf(cv_md, cv_pdf_path, "cv_pdf", "Tailored CV"))
+    cv_pdf_artifact, latex_warning = _write_cv_pdf(cv_md, cv_tex_path, cv_pdf_path)
+    artifacts.append(cv_pdf_artifact)
     artifacts.append(_write_text(letter_md_path, letter_md))
     artifacts.append(_write_text(letter_html_path, letter_html))
     artifacts.append(_write_pdf(letter_md, letter_pdf_path, "cover_letter_pdf", "Cover Letter"))
 
     risk_flags = sorted(set(job.risk_flags + filter_result.risk_flags + (["screening_question_needs_manual_review"] if needs_screening_review else [])))
+    if latex_warning:
+        artifacts.append(_write_text(out_dir / "latex_warning.txt", latex_warning))
     temp_packet_id = f"pkt_{job.id[:8]}_v{next_version}"
     assistant_html = render_assistant_page(
         packet_id=temp_packet_id,

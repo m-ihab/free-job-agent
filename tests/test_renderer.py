@@ -2,6 +2,7 @@
 import pytest
 
 from job_agent.renderer.html_render import render_html
+from job_agent.renderer.latex_render import render_latex_source
 from job_agent.renderer.markdown_render import render_markdown
 from job_agent.renderer.pdf_render import render_pdf
 
@@ -83,3 +84,11 @@ def test_render_pdf_creates_parent_dirs(tmp_path):
     output = tmp_path / "subdir" / "nested" / "cv.pdf"
     render_pdf(SAMPLE_MD, output)
     assert output.exists()
+
+
+def test_render_latex_source_is_editable_document():
+    result = render_latex_source(SAMPLE_MD, title="Test CV")
+    assert "\\documentclass" in result
+    assert "\\section*{Summary}" in result
+    assert "\\begin{itemize}" in result
+    assert "\\item Built real-time pipeline" in result
