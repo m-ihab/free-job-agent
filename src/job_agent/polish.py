@@ -15,7 +15,6 @@ returned unchanged — the pipeline never depends on the LLM being available.
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 from dataclasses import dataclass
@@ -29,7 +28,17 @@ except Exception:  # pragma: no cover - requests is in install_requires
 
 DEFAULT_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "llama3.2:3b"
-DEFAULT_TIMEOUT = 20
+DEFAULT_TIMEOUT = 45
+
+_PREFERRED_MODELS = [
+    "qwen3.6:latest",
+    "qwen3:latest",
+    "qwen2.5:latest",
+    "llama3.2:3b",
+    "llama3.2:latest",
+    "mistral:latest",
+    "gemma3:latest",
+]
 
 
 @dataclass(frozen=True)
@@ -65,21 +74,89 @@ def _numbers(text: str) -> set[str]:
     return {match.group(0) for match in _NUMBER_RE.finditer(text)}
 
 
-def _ollama_available(options: PolishOptions) -> bool:
-    if not options.enabled or requests is None:
-        return False
+def available_ollama_models(options: PolishOptions | None = None) -> list[str]:
+    """Return local Ollama model names, or [] if the server is unavailable."""
+    options = options or PolishOptions.from_env()
+    if requests is None:
+        return []
     try:
         response = requests.get(options.base_url + "/api/tags", timeout=options.timeout)
-        return response.status_code == 200
+        response.raise_for_status()
+        data = response.json()
     except Exception:
+        return []
+    models = data.get("models", []) if isinstance(data, dict) else []
+    names: list[str] = []
+    for item in models:
+        if isinstance(item, dict):
+            name = str(item.get("name") or item.get("model") or "").strip()
+            if name:
+                names.append(name)
+    return names
+
+
+def resolve_ollama_model(options: PolishOptions | None = None) -> str:
+    """Pick the best installed Ollama model for this machine.
+
+    The app used to default to llama3.2:3b. On machines where a different local
+    model is installed, such as qwen3.6:latest, that caused silent AI failures.
+    This resolver keeps explicit env config first, then picks a known good
+    local model, then falls back to the first installed model.
+    """
+    options = options or PolishOptions.from_env()
+    requested = (options.model or "").strip()
+    models = available_ollama_models(options)
+    if not models:
+        return requested or DEFAULT_MODEL
+    if requested in models:
+        return requested
+    requested_family = requested.split(":", 1)[0] if requested else ""
+    if requested_family:
+        for model in models:
+            if model.split(":", 1)[0] == requested_family:
+                return model
+    for preferred in _PREFERRED_MODELS:
+        if preferred in models:
+            return preferred
+    for preferred in _PREFERRED_MODELS:
+        preferred_family = preferred.split(":", 1)[0]
+        for model in models:
+            if model.split(":", 1)[0] == preferred_family:
+                return model
+    return models[0]
+
+
+def is_ollama_reachable(options: PolishOptions | None = None) -> bool:
+    """Return True when a local Ollama server responds, regardless of opt-in."""
+    return bool(available_ollama_models(options or PolishOptions.from_env()))
+
+
+def ollama_status(options: PolishOptions | None = None) -> dict:
+    """Small readiness payload for CLI/UI diagnostics."""
+    options = options or PolishOptions.from_env()
+    models = available_ollama_models(options)
+    selected = resolve_ollama_model(options) if models else options.model
+    return {
+        "enabled": options.enabled,
+        "reachable": bool(models),
+        "ready": bool(models),
+        "selected_model": selected,
+        "models": models,
+        "base_url": options.base_url,
+    }
+
+
+def _ollama_available(options: PolishOptions, *, require_enabled: bool = True) -> bool:
+    if require_enabled and not options.enabled:
         return False
+    return is_ollama_reachable(options)
 
 
 def _call_ollama(prompt: str, options: PolishOptions) -> str | None:
     if requests is None:
         return None
     payload = {
-        "model": options.model,
+        "model": resolve_ollama_model(options),
         "prompt": prompt,
         "stream": False,
         "options": {"temperature": 0.2, "num_predict": 512},

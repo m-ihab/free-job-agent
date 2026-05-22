@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from job_agent.ai_agent import analyze_fit as _ai_analyze_fit
+from job_agent.ai_agent import analyze_fit as _ai_analyze_fit, suggest_search_queries
 from job_agent.analytics import compute_stats, jobs_to_csv
 from job_agent.autopilot import AutopilotConfig, get_autopilot
 from job_agent.config import AppConfig
@@ -44,6 +44,7 @@ from job_agent.ui.services import (
     profile_status,
     status_options,
 )
+from job_agent.validators import load_profile_bundle
 
 
 STATIC_DIR = Path(__file__).with_name("static")
@@ -244,27 +245,50 @@ def _one_click_hunt(config: AppConfig, payload: dict) -> dict:
     prepare_packets = bool(payload.get("prepare_packets", False))
     force_packets = bool(payload.get("force_packets", False))
     internships_only = bool(payload.get("internships_only", False))
+    include_multi_source = bool(payload.get("include_multi_source", True))
     links = _search_links({"query": query, "location": location, "language": language, "limit": limit_queries, "boards": "recommended"})
+    try:
+        profile, master_cv, _ = load_profile_bundle(config)
+        query_plan = suggest_search_queries(
+            profile,
+            master_cv,
+            seed_query=query,
+            location=location,
+            language=language,
+            internships_only=internships_only,
+            limit=limit_queries,
+        )
+    except Exception:
+        query_plan = {
+            "queries": [group["query"] for group in links["groups"]],
+            "rationale": "Profile loading failed; deterministic query expansion used.",
+            "used_ai": False,
+            "model": "",
+        }
+    api_queries = [str(item).strip() for item in query_plan.get("queries", []) if str(item).strip()] or [group["query"] for group in links["groups"]]
     if not is_france_travail_configured():
         return {
             "api_configured": False,
             "message": "France Travail API credentials are not configured, so I prepared curated manual links instead.",
             "manual": links,
+            "query_plan": query_plan,
             "imported": 0,
             "duplicates": 0,
             "prepared": 0,
             "jobs": [],
             "failures": [],
+            "multi_source": None,
         }
 
     imported = duplicates = prepared = 0
     jobs_out: list[dict] = []
     failures: list[str] = []
-    for group in links["groups"]:
+    france_found = 0
+    for api_query in api_queries[:limit_queries]:
         try:
             jobs = search_free_api_jobs(
                 "francetravail",
-                query=group["query"],
+                query=api_query,
                 location=location,
                 limit=limit_per_query,
                 internships_only=internships_only,
@@ -272,23 +296,69 @@ def _one_click_hunt(config: AppConfig, payload: dict) -> dict:
                 cache_ttl_hours=6.0,
             )
         except Exception as exc:
-            failures.append(f"{group['query']}: {exc}")
+            failures.append(f"{api_query}: {exc}")
             continue
+        france_found += len(jobs)
         saved = _save_jobs(config, jobs, prepare_packets=prepare_packets, force_packets=force_packets)
         imported += saved["imported"]
         duplicates += saved["duplicates"]
         prepared += saved["prepared"]
         failures.extend(saved["failures"])
         jobs_out.extend(saved["jobs"])
+
+    multi_summary = None
+    if include_multi_source:
+        per_source: dict[str, int] = {}
+        errors: dict[str, str] = {}
+        multi_found = multi_imported = multi_duplicates = multi_prepared = 0
+        for api_query in api_queries[: min(3, len(api_queries))]:
+            try:
+                aggregate = search_all_free_sources(
+                    query=api_query,
+                    location=location,
+                    limit_per_source=max(1, min(limit_per_query, 5)),
+                    sources=list(KEYWORD_ONLY_SOURCES),
+                    internships_only=internships_only,
+                    use_cache=True,
+                    cache_ttl_hours=6.0,
+                )
+            except Exception as exc:
+                errors[f"multi/{api_query}"] = str(exc)
+                continue
+            multi_found += len(aggregate["jobs"])
+            for source, count in (aggregate.get("per_source") or {}).items():
+                per_source[source] = per_source.get(source, 0) + int(count or 0)
+            for source, err in (aggregate.get("errors") or {}).items():
+                errors[source] = str(err)
+            saved = _save_jobs(config, aggregate["jobs"], prepare_packets=prepare_packets, force_packets=force_packets)
+            multi_imported += saved["imported"]
+            multi_duplicates += saved["duplicates"]
+            multi_prepared += saved["prepared"]
+            imported += saved["imported"]
+            duplicates += saved["duplicates"]
+            prepared += saved["prepared"]
+            failures.extend(saved["failures"])
+            jobs_out.extend(saved["jobs"])
+        multi_summary = {
+            "found": multi_found,
+            "imported": multi_imported,
+            "duplicates": multi_duplicates,
+            "prepared": multi_prepared,
+            "per_source": per_source,
+            "errors": errors,
+        }
     return {
         "api_configured": True,
-        "message": "France Travail search finished.",
+        "message": "Smart 1-click hunt finished.",
         "manual": links,
+        "query_plan": query_plan,
         "imported": imported,
         "duplicates": duplicates,
         "prepared": prepared,
+        "found": france_found + (multi_summary or {}).get("found", 0),
         "jobs": jobs_out,
         "failures": failures,
+        "multi_source": multi_summary,
     }
 
 
@@ -470,7 +540,7 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 analysis = _ai_analyze_fit(job, master_cv, profile, PolishOptions.from_env())
                 if analysis is None:
                     return self._send_error_json(
-                        "AI analysis unavailable. Enable Ollama with JOB_AGENT_USE_OLLAMA=1 and ensure the model is running.",
+                        "AI analysis unavailable. Start Ollama and make sure at least one local model is installed.",
                         HTTPStatus.SERVICE_UNAVAILABLE,
                     )
                 return self._send_json({"analysis": analysis.to_dict()})

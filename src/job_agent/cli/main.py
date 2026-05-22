@@ -50,6 +50,7 @@ except Exception:  # pragma: no cover
             return f"{self.title or ''}\n{self.text}"
 
 from job_agent.config import AppConfig
+from job_agent.ai_agent import suggest_search_queries
 from job_agent.db.database import Database
 from job_agent.enrichment import EnrichOptions, enrich_job
 from job_agent.exporters.internship_workbook import export_applied_internships
@@ -75,6 +76,7 @@ from job_agent.intake.rss import ingest_rss
 from job_agent.intake.url import ingest_url
 from job_agent.normalizer import normalize
 from job_agent.pipeline import add_job_to_tracker, generate_packet_for_job, process_file
+from job_agent.polish import PolishOptions, ollama_status
 from job_agent.profile_enrich import (
     enrich_from_github,
     enrich_from_linkedin_skills,
@@ -338,6 +340,83 @@ def _handle_api_sources(args) -> None:
     console.print("Keyword-only sources (no board/credentials): " + ", ".join(KEYWORD_ONLY_SOURCES))
     console.print("France priority source: francetravail (free credentials required).")
     console.print("All sources are read-only here; final submission remains manual.")
+
+
+def _find_local_tool(name: str) -> str | None:
+    appdata = Path.home() / "AppData" / "Roaming"
+    local = Path.home() / "AppData" / "Local"
+    program_files = Path("C:/Program Files")
+    candidates = {
+        "perl": [
+            Path("C:/Strawberry/perl/bin/perl.exe"),
+            Path("C:/Perl64/bin/perl.exe"),
+            Path("C:/Perl/bin/perl.exe"),
+        ],
+        "node": [
+            program_files / "nodejs" / "node.exe",
+        ],
+        "npm": [
+            program_files / "nodejs" / "npm.cmd",
+            appdata / "npm" / "npm.cmd",
+        ],
+        "openclaw": [
+            appdata / "npm" / "openclaw.cmd",
+            appdata / "npm" / "openclaw.ps1",
+            local / "Programs" / "openclaw" / "openclaw.exe",
+        ],
+    }.get(name, [])
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return shutil.which(name)
+
+
+def _handle_ai_status(args) -> None:
+    status = ollama_status(PolishOptions.from_env())
+    compiler_tools = {
+        "pdflatex": shutil.which("pdflatex"),
+        "latexmk": shutil.which("latexmk"),
+        "perl": _find_local_tool("perl"),
+        "node": _find_local_tool("node"),
+        "npm": _find_local_tool("npm"),
+        "openclaw": _find_local_tool("openclaw"),
+    }
+    lines = [
+        f"Ollama reachable: {'yes' if status['reachable'] else 'no'}",
+        f"Selected model: {status['selected_model'] or '-'}",
+        f"Installed models: {', '.join(status['models']) if status['models'] else '-'}",
+        f"Ollama polish opt-in: {'enabled' if status['enabled'] else 'disabled'}",
+        "",
+        "Local tools:",
+    ]
+    for name, path in compiler_tools.items():
+        lines.append(f"- {name}: {path or 'not on PATH'}")
+    if not compiler_tools["npm"] or not compiler_tools["openclaw"]:
+        lines.append("")
+        lines.append("If npm/openclaw are installed but shown as missing, restart PowerShell or add their install folder to PATH.")
+    console.print(Panel("\n".join(lines), title="AI / local-tool readiness"))
+
+
+def _handle_smart_plan(args) -> None:
+    config = _load_config()
+    profile, master_cv, _ = load_profile_bundle(config)
+    plan = suggest_search_queries(
+        profile,
+        master_cv,
+        seed_query=args.query,
+        location=args.location,
+        language=args.language,
+        internships_only=args.internships_only,
+        limit=args.limit,
+    )
+    console.print(Panel(
+        f"Mode: {'local AI' if plan.get('used_ai') else 'deterministic'}\n"
+        f"Model: {plan.get('model') or '-'}\n"
+        f"Rationale: {plan.get('rationale') or '-'}",
+        title="Smart search plan",
+    ))
+    for idx, query in enumerate(plan.get("queries", []), start=1):
+        print(f"{idx}. {query}")
 
 
 def _handle_multi_search(args) -> None:
@@ -1045,6 +1124,18 @@ class LocalCLIApp:
 
         api_p = sub.add_parser("api-sources", help="List supported free/read-only public job API sources.")
         api_p.set_defaults(handler=_handle_api_sources)
+
+        ai_status_p = sub.add_parser("ai-status", help="Check Ollama, LaTeX, Node/npm, Perl, and OpenClaw readiness.")
+        ai_status_p.set_defaults(handler=_handle_ai_status)
+
+        smart_plan_p = sub.add_parser("smart-plan", help="Generate a local-AI search query plan.")
+        smart_plan_p.add_argument("--query", "-q", default="data scientist")
+        smart_plan_p.add_argument("--location", "-l", default="Paris")
+        smart_plan_p.add_argument("--language", choices=["english", "french", "both"], default="both")
+        smart_plan_p.add_argument("--internships-only", action="store_true", default=True)
+        smart_plan_p.add_argument("--all-roles", dest="internships_only", action="store_false")
+        smart_plan_p.add_argument("--limit", "-n", type=int, default=8)
+        smart_plan_p.set_defaults(handler=_handle_smart_plan)
 
         multi_p = sub.add_parser("multi-search", help="Search several free/public APIs at once and dedupe results.")
         multi_p.add_argument("--query", "-q", default="data scientist")

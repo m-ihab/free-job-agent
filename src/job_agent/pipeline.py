@@ -102,6 +102,57 @@ def _write_pdf(markdown: str, path: Path, kind: str, title: str) -> DocumentArti
     return DocumentArtifact(kind=kind, path=str(path), sha256=sha256_file(path))
 
 
+def _render_ai_brief(job, fit_analysis) -> str:
+    lines = [
+        f"# AI Fit Brief - {job.title} at {job.company}",
+        "",
+        f"Verdict: **{fit_analysis.verdict}**",
+        f"AI score: **{fit_analysis.score}/100**",
+        f"Confidence: **{int(fit_analysis.confidence * 100)}%**",
+        "",
+        "## Summary",
+        fit_analysis.summary,
+        "",
+        "## Strengths",
+    ]
+    lines.extend(f"- {item}" for item in fit_analysis.strengths or ["None."])
+    lines.extend(["", "## Gaps"])
+    lines.extend(f"- {item}" for item in fit_analysis.gaps or ["None."])
+    lines.extend(["", "## Suggested Emphasis"])
+    lines.extend(f"- {item}" for item in fit_analysis.suggested_emphasis or ["None."])
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _render_external_agent_prompt(job, packet_id: str, artifacts: list[DocumentArtifact]) -> str:
+    artifact_lines = "\n".join(f"- {artifact.kind}: {artifact.path}" for artifact in artifacts)
+    return f"""# External Agent Review Prompt
+
+You are reviewing an application packet before manual submission.
+
+Strict rules:
+- Do not invent candidate facts, metrics, dates, certifications, legal/visa claims, salary expectations, or availability.
+- Do not submit the application or automate a login.
+- Only suggest improvements grounded in the listed files and the job posting.
+- Flag any missing factual answer that should be added to `profiles/master_qa_profile.json`.
+
+Packet: {packet_id}
+Job: {job.title} at {job.company}
+Location: {job.location or "-"}
+Apply URL: {job.apply_url or job.source_url or "-"}
+
+Files to review:
+{artifact_lines}
+
+Review tasks:
+1. Check whether the CV PDF and `cv.tex` preserve the master CV layout and photo.
+2. Check whether the role-specific summary is specific but factual.
+3. Check whether the cover letter is concise, relevant, and grounded.
+4. Identify missing keywords that are present in the candidate facts and safe to emphasize.
+5. Return a short prioritized list of edits, with file names and exact text suggestions.
+"""
+
+
 def _write_cv_pdf(cv_md: str, cv_tex_path: Path, cv_pdf_path: Path, master_cv_pdf: Path | None = None) -> tuple[DocumentArtifact, str | None]:
     try:
         compile_latex_to_pdf(cv_tex_path, cv_pdf_path)
@@ -198,6 +249,7 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
     letter_html_path = out_dir / "cover_letter.html"
     cv_pdf_path = out_dir / "cv.pdf"
     letter_pdf_path = out_dir / "cover_letter.pdf"
+    temp_packet_id = f"pkt_{job.id[:8]}_v{next_version}"
 
     artifacts.append(_write_text(cv_md_path, cv_md))
     artifacts.append(_write_text(cv_tex_path, cv_tex))
@@ -214,10 +266,13 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
     artifacts.append(_write_text(letter_html_path, letter_html))
     artifacts.append(_write_pdf(letter_md, letter_pdf_path, "cover_letter_pdf", "Cover Letter"))
 
+    if fit_analysis is not None:
+        artifacts.append(_write_text(out_dir / "ai_fit_brief.md", _render_ai_brief(job, fit_analysis)))
+
     risk_flags = sorted(set(job.risk_flags + filter_result.risk_flags + (["screening_question_needs_manual_review"] if needs_screening_review else [])))
     if latex_warning:
         artifacts.append(_write_text(out_dir / "latex_warning.txt", latex_warning))
-    temp_packet_id = f"pkt_{job.id[:8]}_v{next_version}"
+    artifacts.append(_write_text(out_dir / "external_agent_prompt.md", _render_external_agent_prompt(job, temp_packet_id, artifacts)))
     assistant_html = render_assistant_page(
         packet_id=temp_packet_id,
         job=job,

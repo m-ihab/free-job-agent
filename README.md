@@ -340,14 +340,29 @@ job-agent search-api workable --board examplecompany --query "data" --save
 job-agent search-api personio --board examplecompany --query "data" --save
 ```
 
-## Optional Ollama polishing (opt-in)
+## Local AI with Ollama
 
-If you have [Ollama](https://ollama.com/) running locally, you can enable a
-strict polishing step for CV bullets:
+If [Ollama](https://ollama.com/) is running locally, the app auto-detects
+installed models and selects the best available one. For example, if your
+machine has `qwen3.6:latest`, the app uses that model instead of assuming a
+different default.
+
+Check readiness and generate an AI query plan:
+
+```powershell
+job-agent ai-status
+job-agent smart-plan --query "data scientist" --location Paris --limit 8
+```
+
+Local AI is used for smart query planning, Autopilot search expansion, AI fit
+analysis, dashboard **AI fit**, and packet `ai_fit_brief.md` files.
+
+Polishing generated prose is still opt-in. Enable it only when you want the
+model to rewrite CV bullets/paragraphs:
 
 ```powershell
 $env:JOB_AGENT_USE_OLLAMA = "1"
-$env:JOB_AGENT_OLLAMA_MODEL = "llama3.2:3b"   # or any local model
+$env:JOB_AGENT_OLLAMA_MODEL = "qwen3.6:latest"   # or any local model
 job-agent apply <job-id> --force
 ```
 
@@ -360,30 +375,31 @@ Guarantees:
 - If any check fails (or Ollama is unreachable), the **original bullet is
   used unchanged**. Polishing never blocks the pipeline.
 
-Disable by unsetting `JOB_AGENT_USE_OLLAMA`. The pipeline is identical with or
-without Ollama; this is purely a finishing touch.
+Disable prose polishing by unsetting `JOB_AGENT_USE_OLLAMA`. Query planning
+and AI fit analysis still work when Ollama is running.
 
 ## AI fit analysis (smart mode)
 
-When Ollama is enabled, every packet generation also runs a structured fit
-analysis. The model returns JSON with verdict, score, strengths, gaps, and
+When Ollama is reachable, packet generation can run a structured fit analysis.
+The model returns JSON with verdict, score, strengths, gaps, and
 suggested-emphasis bullets; these are surfaced in the job's fit notes and on
 the dashboard's **AI fit** button per job row. The deterministic 0-100 score
 remains untouched — AI insights only augment it.
 
-A "smart" AI summary can replace the deterministic CV summary when its
-vocabulary overlaps enough with the candidate facts and job description.
-Otherwise the deterministic closer is kept.
+The `main.tex` CV summary stays conservative: the master narrative is
+preserved and the role-specific closer is updated. AI is used for fit insight
+and search planning, not for inventing a new CV identity.
 
 ## Autopilot — autonomous job hunting
 
 Open the **Autopilot** tab. Configure interval (e.g. 30 min), queries, and
 auto-packet score threshold. Click **Start**. The background loop will:
 
-1. Search France Travail (if credentials are set) + multi-source aggregators.
-2. Deduplicate against the local database.
-3. Score every new job against your profile.
-4. Auto-generate tailored packets for jobs that beat the threshold.
+1. Build a smart local-AI query plan when Ollama is reachable.
+2. Search France Travail (if credentials are set) + multi-source aggregators.
+3. Deduplicate against the local database.
+4. Score every new job against your profile.
+5. Auto-generate tailored packets for jobs that beat the threshold.
 
 The autopilot **never** submits applications, never logs in to job boards,
 and never makes network calls beyond the configured public APIs. Stop it any
@@ -406,6 +422,18 @@ copy the Skills section from your profile and paste it into the **Add LinkedIn
 skills** modal on the Autopilot tab — endorsement counts and bullet glyphs
 are stripped automatically.
 
+## External Agent / OpenClaw Review
+
+Every packet now includes `external_agent_prompt.md`. Use it with OpenClaw or
+another local reviewer to critique the packet before you apply:
+
+```powershell
+openclaw .job_agent\outputs\<company_jobid>\packet_vN\external_agent_prompt.md
+```
+
+The prompt forbids invented facts, automated submissions, login automation,
+and unsafe screening answers. It asks for file-specific edits only.
+
 ## One-command processing
 
 ```bash
@@ -420,6 +448,8 @@ Does: `ingest -> normalize -> dedupe -> filter -> score -> generate packet`.
 job-agent init
 job-agent copy-examples
 job-agent setup-wizard [--non-interactive]
+job-agent ai-status
+job-agent smart-plan [--query ...] [--location ...] [--limit N]
 job-agent enrich-github [--handle ...] [--no-projects]
 job-agent enrich-linkedin [--file PATH]
 job-agent validate-profile

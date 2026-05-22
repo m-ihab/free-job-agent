@@ -5,7 +5,8 @@ breaks the pipeline and never accepts unsafe rewrites.
 """
 from __future__ import annotations
 
-from job_agent.polish import PolishOptions, _is_safe_rewrite, polish_bullet, polish_bullets
+from job_agent import polish
+from job_agent.polish import PolishOptions, _is_safe_rewrite, polish_bullet, polish_bullets, resolve_ollama_model
 
 
 def _opts() -> PolishOptions:
@@ -54,3 +55,37 @@ def test_polish_options_from_env_default_disabled(monkeypatch):
     monkeypatch.delenv("JOB_AGENT_USE_OLLAMA", raising=False)
     options = PolishOptions.from_env()
     assert options.enabled is False
+
+
+def test_resolve_ollama_model_prefers_installed_qwen(monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"models": [{"name": "qwen3.6:latest"}]}
+
+    class FakeRequests:
+        @staticmethod
+        def get(*args, **kwargs):
+            return Response()
+
+    monkeypatch.setattr(polish, "requests", FakeRequests)
+    assert resolve_ollama_model(PolishOptions(model="llama3.2:3b")) == "qwen3.6:latest"
+
+
+def test_resolve_ollama_model_keeps_explicit_installed_model(monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"models": [{"name": "mistral:latest"}, {"name": "qwen3.6:latest"}]}
+
+    class FakeRequests:
+        @staticmethod
+        def get(*args, **kwargs):
+            return Response()
+
+    monkeypatch.setattr(polish, "requests", FakeRequests)
+    assert resolve_ollama_model(PolishOptions(model="mistral:latest")) == "mistral:latest"

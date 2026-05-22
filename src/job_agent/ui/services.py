@@ -14,7 +14,7 @@ from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.intake.france_market import board_notes, build_france_search_urls, expand_france_search_queries
 from job_agent.intake.france_travail_endpoints import load_endpoint_base_url, load_endpoint_registry
-from job_agent.polish import PolishOptions, is_ollama_enabled_and_reachable
+from job_agent.polish import PolishOptions, is_ollama_enabled_and_reachable, ollama_status
 from job_agent.renderer.latex_render import available_latex_compiler
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.schemas.packet import ApplicationPacket
@@ -46,6 +46,23 @@ def latex_compiler() -> str | None:
     return Path(compiler).name if compiler else None
 
 
+def _tool_path(name: str) -> str:
+    found = shutil.which(name)
+    if found:
+        return found
+    appdata = Path.home() / "AppData" / "Roaming"
+    program_files = Path("C:/Program Files")
+    candidates = {
+        "perl": [Path("C:/Strawberry/perl/bin/perl.exe"), Path("C:/Perl64/bin/perl.exe")],
+        "npm": [program_files / "nodejs" / "npm.cmd", appdata / "npm" / "npm.cmd"],
+        "openclaw": [appdata / "npm" / "openclaw.cmd", appdata / "npm" / "openclaw.ps1"],
+    }.get(name, [])
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return ""
+
+
 def profile_status(config: AppConfig | None = None) -> dict[str, Any]:
     config = config or configured_app()
     report = validate_profile_bundle(config)
@@ -57,7 +74,8 @@ def profile_status(config: AppConfig | None = None) -> dict[str, Any]:
     endpoint_configured = sum(1 for spec in registry.values() if spec.path)
     endpoint_enabled = sum(1 for spec in registry.values() if spec.enabled and spec.path)
     polish_options = PolishOptions.from_env()
-    ollama_ready = polish_options.enabled and is_ollama_enabled_and_reachable(polish_options)
+    ollama = ollama_status(polish_options)
+    ollama_ready = bool(ollama["reachable"])
     france_travail_ready = is_france_travail_configured()
     return {
         "valid": not report.errors,
@@ -92,7 +110,14 @@ def profile_status(config: AppConfig | None = None) -> dict[str, Any]:
         "latex_ready": compiler is not None,
         "ollama_enabled": polish_options.enabled,
         "ollama_ready": ollama_ready,
-        "ollama_model": polish_options.model if polish_options.enabled else "",
+        "ollama_model": ollama["selected_model"] if ollama_ready else polish_options.model,
+        "ollama_models": ollama["models"],
+        "ollama_polish_enabled": is_ollama_enabled_and_reachable(polish_options),
+        "local_tools": {
+            "perl": _tool_path("perl"),
+            "npm": _tool_path("npm"),
+            "openclaw": _tool_path("openclaw"),
+        },
         "app_name": APP_NAME,
         "app_description": APP_DESCRIPTION,
         "app_url": APP_URL_PLACEHOLDER,
@@ -172,4 +197,3 @@ def packet_to_dict(packet: ApplicationPacket) -> dict[str, Any]:
 
 def status_options() -> list[str]:
     return [status.value for status in JobStatus]
-

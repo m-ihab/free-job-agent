@@ -92,9 +92,9 @@ function scorePill(score) {
 
 function renderState() {
   const profile = state.profile || {};
-  const ollamaBadge = profile.ollama_enabled
-    ? renderBadge(profile.ollama_ready ? `Ollama: ${profile.ollama_model}` : "Ollama enabled, not reachable", profile.ollama_ready ? "good" : "warn")
-    : "";
+  const ollamaBadge = profile.ollama_ready
+    ? renderBadge(`Local AI: ${profile.ollama_model}`, "good")
+    : renderBadge("Local AI offline", "warn");
   $("statusStrip").innerHTML = [
     renderBadge(profile.valid ? "Profile ready" : "Profile needs review", profile.valid ? "good" : "bad"),
     renderBadge(profile.france_travail_configured ? "France Travail API ready" : "API not configured", profile.france_travail_configured ? "good" : "warn"),
@@ -111,12 +111,16 @@ function renderState() {
     metric("Profile", profile.valid ? "Ready" : "Review"),
     metric("France Travail", profile.france_travail_configured ? "Ready" : "Missing"),
     metric("LaTeX", profile.latex_ready ? profile.latex_compiler : "Missing"),
+    metric("Local AI", profile.ollama_ready ? profile.ollama_model : "Offline", profile.ollama_polish_enabled ? "Polish enabled" : "Fit/query AI auto-ready when Ollama runs"),
     metric("Tracked jobs", state.jobs.length),
   ].join("");
 
   $("apiReadiness").innerHTML = [
     readinessRow("Job search (ID + secret)", profile.france_travail_configured ? "Ready" : "Set FRANCE_TRAVAIL_CLIENT_ID/SECRET"),
     readinessRow(".env.local", profile.env_local_present ? "Loaded" : "Optional"),
+    readinessRow("OpenClaw", profile.local_tools?.openclaw ? "Installed" : "Not on PATH"),
+    readinessRow("npm", profile.local_tools?.npm ? "Installed" : "Not on PATH"),
+    readinessRow("Perl", profile.local_tools?.perl ? "Installed" : "Only needed for latexmk"),
     readinessRow("Endpoints map (enrichment only — optional)", profile.endpoints_file_present ? "Configured" : "Not configured"),
     readinessRow(
       "Enabled enrichment endpoints",
@@ -247,6 +251,33 @@ function renderMultiSourceResults(payload) {
       <span class="muted">Imported ${payload.imported ?? 0} new, ${payload.duplicates ?? 0} duplicates</span>
     </div>
     <div class="metric-grid">${tiles}</div>
+  </div>`;
+}
+
+function renderSmartPlan(plan, multiSource = null) {
+  if (!plan && !multiSource) {
+    $("multiSourceResults").innerHTML = "";
+    return;
+  }
+  const queries = (plan?.queries || []).map((q) => `<span class="badge">${escapeHtml(q)}</span>`).join("");
+  const sourceLine = plan?.used_ai
+    ? `AI query plan via ${escapeHtml(plan.model || "local model")}`
+    : "Deterministic query plan";
+  const multiLine = multiSource
+    ? `<div class="detail-row"><span>Multi-source</span><strong>${multiSource.found || 0} found, ${multiSource.imported || 0} imported</strong></div>`
+    : "";
+  const errors = multiSource?.errors && Object.keys(multiSource.errors).length
+    ? `<div class="muted" style="margin-top:0.4rem">${escapeHtml(Object.entries(multiSource.errors).slice(0, 3).map(([k, v]) => `${k}: ${String(v).slice(0, 90)}`).join(" | "))}</div>`
+    : "";
+  $("multiSourceResults").innerHTML = `<div class="panel">
+    <div class="section-header" style="margin-bottom:0.5rem">
+      <h3 style="margin:0">Smart search plan</h3>
+      <span class="muted">${sourceLine}</span>
+    </div>
+    <p class="muted" style="margin-top:0">${escapeHtml(plan?.rationale || "")}</p>
+    <div class="tag-cloud">${queries}</div>
+    ${multiLine}
+    ${errors}
   </div>`;
 }
 
@@ -498,7 +529,7 @@ async function oneClickHunt() {
     renderSearchMetrics({ ...payload, query_count: payload.manual?.query_count, link_count: payload.manual?.link_count });
     renderManualGroups(payload.manual?.groups || []);
     renderApiResults(payload.jobs || [], payload.failures || []);
-    $("multiSourceResults").innerHTML = "";
+    renderSmartPlan(payload.query_plan, payload.multi_source);
     await loadJobs(false);
     renderState();
     setNotice("searchNotice", payload.message || "1-click hunt complete.");
@@ -751,12 +782,14 @@ function renderAutopilot(status) {
     const perQuery = Object.entries(summary.per_query || {})
       .map(([q, c]) => `${escapeHtml(q)}: ${c}`)
       .join("<br>");
+    const plannedQueries = (summary.queries || []).map((q) => `<span class="badge">${escapeHtml(q)}</span>`).join("");
     $("autopilotLastSummary").innerHTML = `
       <div class="detail-row"><span>Last run</span><strong>${escapeHtml(status.last_run_at || "-")}</strong></div>
       <div class="detail-row"><span>Jobs added</span><strong>${summary.jobs_added || 0}</strong></div>
       <div class="detail-row"><span>Packets built</span><strong>${summary.packets_built || 0}</strong></div>
       <div class="detail-row"><span>France Travail</span><strong>${summary.france_travail_used ? "yes" : "no"}</strong></div>
       <div class="detail-row"><span>Multi-source</span><strong>${summary.multi_source_used ? "yes" : "no"}</strong></div>
+      ${plannedQueries ? `<h4>Smart queries</h4><div class="tag-cloud">${plannedQueries}</div>` : ""}
       ${perQuery ? `<h4>Per query</h4><div class="muted">${perQuery}</div>` : ""}
     `;
   } else {

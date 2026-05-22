@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from job_agent.ai_agent import suggest_search_queries
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.intake.free_apis import (
@@ -34,6 +35,7 @@ from job_agent.intake.france_travail_auth import france_travail_token
 from job_agent.pipeline import add_job_to_tracker, generate_packet_for_job
 from job_agent.schemas.job import JobStatus
 from job_agent.tracker import ApplicationTracker
+from job_agent.validators import load_profile_bundle
 
 
 @dataclass
@@ -165,7 +167,8 @@ class Autopilot:
         per_query: dict[str, int] = {}
 
         ft_ready = self.opts.use_france_travail and self._france_travail_ready()
-        for query in self.opts.queries:
+        search_queries = self._planned_queries()
+        for query in search_queries:
             if self._stop_event.is_set():
                 break
             cycle_added = 0
@@ -235,10 +238,44 @@ class Autopilot:
             "packets_built": packets_built,
             "errors": errors[:10],
             "per_query": per_query,
+            "queries": search_queries,
             "france_travail_used": ft_ready,
             "multi_source_used": self.opts.use_multi_source,
             "ran_at": _now_iso(),
         }
+
+    def _planned_queries(self) -> list[str]:
+        """Use local AI to expand the user's seeds, then dedupe conservatively."""
+        planned: list[str] = []
+        try:
+            profile, master_cv, _ = load_profile_bundle(self.config)
+            for seed in self.opts.queries:
+                plan = suggest_search_queries(
+                    profile,
+                    master_cv,
+                    seed_query=seed,
+                    location=self.opts.location,
+                    language=self.opts.language,
+                    internships_only=self.opts.internships_only,
+                    limit=4,
+                )
+                for query in plan.get("queries", []):
+                    key = str(query).casefold().strip()
+                    if key and key not in {item.casefold() for item in planned}:
+                        planned.append(str(query).strip())
+                if len(planned) >= 12:
+                    break
+        except Exception:
+            planned = []
+        if not planned:
+            for seed in self.opts.queries:
+                for query in expand_france_search_queries(seed, limit=4, language=self.opts.language):
+                    key = query.casefold().strip()
+                    if key and key not in {item.casefold() for item in planned}:
+                        planned.append(query)
+                    if len(planned) >= 12:
+                        break
+        return planned[:12] or self.opts.queries
 
 
 def _now_iso() -> str:

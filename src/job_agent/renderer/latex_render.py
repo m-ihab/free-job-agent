@@ -518,6 +518,19 @@ def available_latex_compiler() -> str | None:
     return None
 
 
+def _latex_subprocess_env() -> dict[str, str]:
+    """Return an env that lets MiKTeX latexmk find Strawberry Perl."""
+    env = os.environ.copy()
+    path_parts = env.get("PATH", "").split(os.pathsep)
+    for candidate in [Path("C:/Strawberry/perl/bin"), Path("C:/Perl64/bin"), Path("C:/Perl/bin")]:
+        if candidate.exists():
+            candidate_str = str(candidate)
+            if not any(part.casefold() == candidate_str.casefold() for part in path_parts):
+                path_parts.insert(0, candidate_str)
+    env["PATH"] = os.pathsep.join(path_parts)
+    return env
+
+
 def compile_latex_to_pdf(tex_path: Path | str, output_pdf: Path | str) -> Path:
     """Compile a LaTeX file to PDF using a local compiler."""
     tex_path = Path(tex_path)
@@ -537,6 +550,7 @@ def compile_latex_to_pdf(tex_path: Path | str, output_pdf: Path | str) -> Path:
         last_result = subprocess.run(
             command,
             cwd=workdir,
+            env=_latex_subprocess_env(),
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

@@ -222,6 +222,13 @@ h4 {
   color: var(--bad);
 }
 
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
 .score-pill {
   display: inline-flex;
   align-items: center;
