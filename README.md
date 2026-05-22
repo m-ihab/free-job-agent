@@ -68,7 +68,11 @@ You can override locations explicitly with `JOB_AGENT_DATA_DIR` and
 ## LaTeX CV output
 
 Every generated application packet includes an editable `cv.tex` next to
-`cv.md`, `cv.html`, and `cv.pdf`.
+`cv.md`, `cv.html`, and `cv.pdf`. When `profiles/main.tex` exists, the app
+preserves that `moderncv` template, keeps the same layout/photo/style, and
+replaces only the CV content macros with job-tailored text from your profile
+data. Local LaTeX assets such as `me.jpg` and `.sty` files are copied beside
+the generated `cv.tex`.
 
 If a LaTeX compiler is installed on `PATH`, `cv.pdf` is built from `cv.tex`.
 Supported compilers are `latexmk`, `pdflatex`, `xelatex`, or `lualatex`.

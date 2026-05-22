@@ -18,7 +18,7 @@ from job_agent.intake.url import ingest_url
 from job_agent.normalizer import normalize
 from job_agent.renderer.assistant_render import render_assistant_page
 from job_agent.renderer.html_render import render_html
-from job_agent.renderer.latex_render import LatexCompileError, compile_latex_to_pdf, render_latex_source
+from job_agent.renderer.latex_render import LatexCompileError, compile_latex_to_pdf, copy_latex_assets, render_latex_source
 from job_agent.renderer.pdf_render import render_pdf
 from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile
 from job_agent.schemas.job import JobListing, JobStatus
@@ -128,7 +128,15 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
 
     job = score_and_save(config, job, profile)
     cv_md = tailor_cv(job, master_cv, profile)
-    cv_tex = render_latex_source(cv_md, title=f"CV - {job.title}")
+    template_path = (config.profiles_dir / "main.tex") if config.profiles_dir else None  # type: ignore[operator]
+    cv_tex = render_latex_source(
+        cv_md,
+        title=f"CV - {job.title}",
+        template_path=template_path,
+        job=job,
+        master_cv=master_cv,
+        profile=profile,
+    )
     letter_md = generate_cover_letter(job, master_cv, profile)
     cv_html = render_html(cv_md, title=f"CV - {job.title}")
     letter_html = render_html(letter_md, title=f"Cover Letter - {job.title}")
@@ -151,6 +159,7 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
 
     artifacts.append(_write_text(cv_md_path, cv_md))
     artifacts.append(_write_text(cv_tex_path, cv_tex))
+    copy_latex_assets(config.profiles_dir, out_dir)
     artifacts.append(_write_text(cv_html_path, cv_html))
     cv_pdf_artifact, latex_warning = _write_cv_pdf(cv_md, cv_tex_path, cv_pdf_path)
     artifacts.append(cv_pdf_artifact)
