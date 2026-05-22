@@ -172,6 +172,21 @@ export FRANCE_TRAVAIL_CLIENT_SECRET="your-client-secret"
 export FRANCE_TRAVAIL_SCOPE="api_offresdemploiv2 o2dsoffre"
 ```
 
+Or put them in a local, git-ignored file at the repo root:
+
+```text
+.env.local
+```
+
+With contents:
+
+```text
+FRANCE_TRAVAIL_CLIENT_ID=your-client-id
+FRANCE_TRAVAIL_CLIENT_SECRET=your-client-secret
+FRANCE_TRAVAIL_SCOPE=api_offresdemploiv2 o2dsoffre
+```
+
+The app auto-loads `.env.local` when it starts.
 Windows PowerShell:
 
 ```powershell

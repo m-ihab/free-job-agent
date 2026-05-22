@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from job_agent.secrets import load_local_env
 try:
     from pydantic.v1 import BaseModel, Field
 except Exception:  # pragma: no cover
@@ -82,6 +83,7 @@ class AppConfig(BaseModel):
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "AppConfig":
+        load_local_env()
         env_path = os.environ.get("JOB_AGENT_CONFIG")
         if path is None and env_path:
             path = Path(env_path)

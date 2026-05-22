@@ -23,6 +23,7 @@ outputs/
 .job_agent/
 .smoke_home/
 .smoke_job.txt
+.env.local
 profiles/
 jobs/
 france_urls.json
