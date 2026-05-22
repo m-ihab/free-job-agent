@@ -178,6 +178,12 @@ def _linkedin_handle(url: str | None) -> str:
     return cleaned.rsplit("/", 1)[-1]
 
 
+def _github_handle(url: str | None) -> str:
+    if not url:
+        return ""
+    return url.rstrip("/").rsplit("/", 1)[-1]
+
+
 def render_moderncv_template(
     template_path: Path,
     *,
@@ -198,6 +204,12 @@ def render_moderncv_template(
     source = _replace_line_command(source, r"^\\email\{.*?\}$", rf"\email{{{_inline_latex(contact.email)}}}")
     if contact.linkedin_url:
         source = _replace_line_command(source, r"^\\social\[linkedin\]\{.*?\}$", rf"\social[linkedin]{{{_inline_latex(_linkedin_handle(contact.linkedin_url))}}}")
+    if contact.github_url:
+        github_command = rf"\social[github]{{{_inline_latex(_github_handle(contact.github_url))}}}"
+        if re.search(r"^%?\s*\\social\[github\]\{.*?\}$", source, flags=re.MULTILINE):
+            source = _replace_line_command(source, r"^%?\s*\\social\[github\]\{.*?\}$", github_command)
+        else:
+            source = source.replace(r"\social[linkedin]", github_command + "\n" + r"\social[linkedin]", 1)
 
     relevant_skill_names = [skill.name for skill in sorted(master_cv.skills, key=lambda skill: _skill_score(skill, job), reverse=True) if _skill_score(skill, job) > 0]
     summary = profile.summary or master_cv.summary

@@ -1,7 +1,7 @@
 from click.testing import CliRunner
 
 from job_agent.cli.main import app
-from job_agent.intake.france_market import build_france_search_urls, cac40_targets
+from job_agent.intake.france_market import build_france_search_urls, cac40_targets, expand_france_search_queries
 
 
 def test_france_search_urls_include_major_boards():
@@ -19,6 +19,15 @@ def test_cac40_targets_include_bnp_and_schneider():
     assert "BNP Paribas" in names
     assert "Schneider Electric" in names
     assert "TotalEnergies" in names
+
+
+def test_expand_france_search_queries_includes_bilingual_contract_terms():
+    queries = expand_france_search_queries("data scientist", limit=20)
+    lowered = {query.lower() for query in queries}
+    assert "data scientist stage" in lowered
+    assert "data scientist internship" in lowered
+    assert "data scientist alternance" in lowered
+    assert "data scientist stagiaire" in lowered
 
 
 def test_cli_france_search_urls_runs():

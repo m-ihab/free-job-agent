@@ -7,20 +7,60 @@ This module intentionally avoids scraping logged-in job boards.  It provides:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from urllib.parse import urlencode, quote_plus
 
 
+ROLE_QUERY_TERMS = [
+    "data scientist",
+    "data science",
+    "machine learning",
+    "AI",
+    "artificial intelligence",
+    "intelligence artificielle",
+    "data analyst",
+    "analyste data",
+    "data engineer",
+    "data engineering",
+    "business intelligence",
+    "BI analyst",
+    "data automation",
+]
+
+INTERNSHIP_QUERY_TERMS = [
+    "stage",
+    "stagiaire",
+    "intern",
+    "internship",
+    "alternance",
+    "apprentissage",
+    "apprenticeship",
+    "junior",
+    "graduate",
+]
+
+
 DEFAULT_FRANCE_DATA_AI_QUERIES = [
     "data scientist stage",
+    "data science internship",
+    "machine learning stage",
     "machine learning internship",
+    "stagiaire machine learning",
     "data analyst stage",
+    "stagiaire data analyst",
     "data engineer stage",
+    "business intelligence stage",
+    "data automation internship",
     "AI intern",
     "intelligence artificielle stage",
+    "stage intelligence artificielle",
     "alternance data science",
     "alternance machine learning",
+    "alternance data analyst",
+    "apprentissage data",
     "junior data scientist",
+    "graduate data scientist",
     "chargé d'études data",
 ]
 
@@ -165,6 +205,42 @@ def build_france_search_urls(query: str, location: str = "Paris", boards: list[s
             continue
         rows.append((board.key, board.name, board.url(query, location)))
     return rows
+
+
+def expand_france_search_queries(query: str, limit: int = 28) -> list[str]:
+    """Build bilingual internship/apprenticeship query variants for France."""
+    base = " ".join(query.split()).strip()
+    variants: list[str] = []
+
+    def add(value: str) -> None:
+        cleaned = " ".join(value.split()).strip()
+        seen = {item.casefold() for item in variants}
+        if cleaned and cleaned.casefold() not in seen:
+            variants.append(cleaned)
+
+    add(base)
+    base_lower = base.casefold()
+    has_role = any(role.casefold() in base_lower for role in ROLE_QUERY_TERMS)
+    has_contract = any(term.casefold() in base_lower for term in INTERNSHIP_QUERY_TERMS)
+
+    if has_role and not has_contract:
+        for term in INTERNSHIP_QUERY_TERMS:
+            add(f"{base} {term}")
+    elif has_contract and not has_role:
+        for role in ROLE_QUERY_TERMS:
+            add(f"{role} {base}")
+    elif has_role and has_contract:
+        role_part = base
+        for existing_term in INTERNSHIP_QUERY_TERMS:
+            role_part = re.sub(rf"\b{re.escape(existing_term)}\b", "", role_part, flags=re.IGNORECASE)
+        role_part = " ".join(role_part.split()) or base
+        for term in INTERNSHIP_QUERY_TERMS:
+            add(f"{role_part} {term}")
+    else:
+        for role in ROLE_QUERY_TERMS:
+            for term in ["stage", "internship", "alternance"]:
+                add(f"{role} {term}")
+    return variants[:limit]
 
 
 def board_notes() -> dict[str, str]:

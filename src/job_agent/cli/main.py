@@ -59,6 +59,7 @@ from job_agent.intake.france_market import (
     board_notes,
     build_france_search_urls,
     cac40_targets,
+    expand_france_search_queries,
 )
 from job_agent.intake.paste import ingest_paste
 from job_agent.intake.rss import ingest_rss
@@ -336,13 +337,17 @@ def _handle_france_setup(args) -> None:
 
 
 def _handle_france_search_urls(args) -> None:
-    rows = build_france_search_urls(args.query, args.location)
+    queries = [args.query] if args.single_query else expand_france_search_queries(args.query, limit=args.limit)
     notes = board_notes()
+    console.print("Boards: " + ", ".join(row[1] for row in build_france_search_urls(args.query, args.location)))
+    if not args.single_query:
+        console.print("Expanded queries: " + "; ".join(queries))
     table = Table(title=f"France search URLs: {args.query} / {args.location}", show_header=True, header_style="bold cyan")
-    for col in ["Board", "URL", "Note"]:
+    for col in ["Query", "Board", "URL", "Note"]:
         table.add_column(col)
-    for key, name, url in rows:
-        table.add_row(name, url, notes.get(key, ""))
+    for query in queries:
+        for key, name, url in build_france_search_urls(query, args.location):
+            table.add_row(query, name, url, notes.get(key, ""))
     console.print(table)
 
 
@@ -361,7 +366,7 @@ def _handle_france_hunt(args) -> None:
     profile, _, _ = _load_profiles(config)
     if not profile and args.packets:
         _fail("Cannot generate packets without valid profile files. Run copy-examples, edit them, then validate-profile.")
-    queries = [args.query] if args.query.strip() else DEFAULT_FRANCE_DATA_AI_QUERIES
+    queries = expand_france_search_queries(args.query, limit=args.limit_queries) if args.query.strip() else DEFAULT_FRANCE_DATA_AI_QUERIES[: args.limit_queries]
     imported = duplicates = prepared = 0
     failures: list[str] = []
     for query in queries:
@@ -673,6 +678,8 @@ class LocalCLIApp:
         urls_p = sub.add_parser("france-search-urls", help="Print safe manual search URLs for French job boards.")
         urls_p.add_argument("--query", "-q", default="data science stage")
         urls_p.add_argument("--location", "-l", default="Paris")
+        urls_p.add_argument("--single-query", action="store_true", help="Do not expand internship/stage/alternance query variants.")
+        urls_p.add_argument("--limit", "-n", type=int, default=18, help="Maximum expanded query variants.")
         urls_p.set_defaults(handler=_handle_france_search_urls)
 
         targets_p = sub.add_parser("france-targets", help="List CAC 40 / large French company career pages.")
@@ -683,6 +690,7 @@ class LocalCLIApp:
         fh_p.add_argument("--query", "-q", default="")
         fh_p.add_argument("--location", "-l", default="Paris")
         fh_p.add_argument("--limit", "-n", type=int, default=10)
+        fh_p.add_argument("--limit-queries", type=int, default=24)
         fh_p.add_argument("--packets", dest="packets", action="store_true")
         fh_p.add_argument("--no-packets", dest="packets", action="store_false")
         fh_p.set_defaults(packets=True)
