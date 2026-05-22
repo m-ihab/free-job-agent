@@ -49,6 +49,23 @@ job-agent copy-examples
 job-agent validate-profile
 ```
 
+Run the local dashboard:
+
+```powershell
+job-agent ui
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765
+```
+
+The dashboard gives you one-click search controls, language selection, curated
+job-board links, France Travail API search when configured, job tracking,
+URL/text import, packet generation, profile readiness, and the suggested app
+description for France Travail API access.
+
 If this repository contains a `profiles/` folder with the three profile JSON
 files, the CLI uses it automatically and stores runtime data in the local
 ignored `.job_agent/` folder. Otherwise, edit these files in
@@ -114,6 +131,19 @@ job-agent france-search-urls --query "data science stage" --location Paris
 job-agent france-search-urls --query "machine learning alternance" --location "Île-de-France"
 ```
 
+The default output is a plain list with full, copyable URLs. It uses recommended
+boards by default and expands queries in English first, then French. You can
+control both:
+
+```powershell
+job-agent france-search-urls --query "data scientist" --location Paris --language english --limit 8
+job-agent france-search-urls --query "data scientist" --location Paris --language french --limit 8
+job-agent france-search-urls --query "data scientist" --location Paris --boards all --limit 8
+job-agent france-search-urls --query "data scientist" --location Paris --limit 8 --output france_urls.txt
+job-agent france-search-urls --query "data scientist" --location Paris --format table
+job-agent france-search-urls --query "data scientist" --location Paris --format json --output france_urls.json
+```
+
 Open the best URLs, copy promising job URLs, then import them:
 
 ```bash
@@ -124,13 +154,36 @@ job-agent apply-assist <packet-id>
 
 ### 3. Use France Travail API when configured
 
-France Travail requires free developer credentials/habilitation. After approval, set:
+France Travail requires free developer credentials/habilitation for the API.
+Your normal candidate login is separate and is not used by this CLI. After
+approval, set:
 
 ```bash
 export FRANCE_TRAVAIL_CLIENT_ID="your-client-id"
 export FRANCE_TRAVAIL_CLIENT_SECRET="your-client-secret"
 export FRANCE_TRAVAIL_SCOPE="api_offresdemploiv2 o2dsoffre"
 ```
+
+Windows PowerShell:
+
+```powershell
+[Environment]::SetEnvironmentVariable("FRANCE_TRAVAIL_CLIENT_ID", "your-client-id", "User")
+[Environment]::SetEnvironmentVariable("FRANCE_TRAVAIL_CLIENT_SECRET", "your-client-secret", "User")
+[Environment]::SetEnvironmentVariable("FRANCE_TRAVAIL_SCOPE", "api_offresdemploiv2 o2dsoffre", "User")
+```
+
+Restart PowerShell after saving user environment variables.
+
+Suggested France Travail API application details:
+
+```text
+App name: Paris Data Career Copilot
+URL: https://github.com/m-ihab/free-job-agent
+Description: A local-first career copilot for data science, AI, and analytics roles in France. It searches public job data, tracks opportunities, scores fit against my profile, and prepares tailored CV and cover-letter packets for manual review and submission.
+```
+
+For portfolio value, keep private application data local and use the GitHub
+repository or a later GitHub Pages demo page as the public project URL.
 
 Then search and save:
 
@@ -194,8 +247,9 @@ ingest -> normalize -> dedupe -> filter -> score -> generate packet
 job-agent init
 job-agent copy-examples
 job-agent validate-profile
+job-agent ui [--host 127.0.0.1] [--port 8765] [--no-open]
 job-agent france-setup
-job-agent france-search-urls [--query ...] [--location ...]
+job-agent france-search-urls [--query ...] [--location ...] [--language english|french|both] [--boards recommended|all] [--format list|table|json] [--output PATH]
 job-agent france-targets [--limit N]
 job-agent france-hunt [--query ...] [--location Paris] [--limit N] [--packets/--no-packets]
 job-agent add paste [--title ...] [--company ...] [--url ...]

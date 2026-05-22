@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Paris Data Career Copilot</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Local job-search cockpit</p>
+        <h1>Paris Data Career Copilot</h1>
+      </div>
+      <div class="status-strip" id="statusStrip"></div>
+    </header>
+
+    <nav class="tabs" aria-label="Main sections">
+      <button class="tab active" data-tab="search">Search</button>
+      <button class="tab" data-tab="jobs">Jobs</button>
+      <button class="tab" data-tab="add">Add Job</button>
+      <button class="tab" data-tab="profile">Profile & API</button>
+    </nav>
+
+    <main>
+      <section id="tab-search" class="tab-panel active">
+        <div class="section-header">
+          <div>
+            <h2>1-click search</h2>
+            <p>Choose the market, language, and depth, then run API search or curated board links.</p>
+          </div>
+          <button class="primary" id="oneClickBtn">1-click hunt</button>
+        </div>
+
+        <form class="control-grid" id="searchForm">
+          <label>
+            Keywords
+            <input id="queryInput" value="data scientist" autocomplete="off" />
+          </label>
+          <label>
+            Location
+            <input id="locationInput" value="Paris" autocomplete="off" />
+          </label>
+          <label>
+            Language
+            <select id="languageSelect">
+              <option value="both">English first, then French</option>
+              <option value="english">English only</option>
+              <option value="french">French only</option>
+            </select>
+          </label>
+          <label>
+            Boards
+            <select id="boardsSelect">
+              <option value="recommended">Recommended</option>
+              <option value="all">All boards</option>
+            </select>
+          </label>
+          <label>
+            Query variants
+            <input id="variantLimit" type="number" min="1" max="30" value="8" />
+          </label>
+          <label>
+            API jobs per query
+            <input id="apiLimit" type="number" min="1" max="30" value="5" />
+          </label>
+          <label class="check-row">
+            <input id="preparePackets" type="checkbox" />
+            Prepare packets for new API jobs
+          </label>
+          <label class="check-row">
+            <input id="forcePackets" type="checkbox" />
+            Force packet generation
+          </label>
+        </form>
+
+        <div class="action-row">
+          <button id="linksBtn">Build clean links</button>
+          <button id="apiSearchBtn">Search France Travail API</button>
+          <button id="refreshJobsBtn">Refresh jobs</button>
+        </div>
+
+        <div class="metric-grid" id="searchMetrics"></div>
+        <div class="notice hidden" id="searchNotice"></div>
+        <div id="manualResults" class="results-stack"></div>
+        <div id="apiResults" class="results-stack"></div>
+      </section>
+
+      <section id="tab-jobs" class="tab-panel">
+        <div class="section-header">
+          <div>
+            <h2>Tracked jobs</h2>
+            <p>Review, optimize, open packets, and move applications forward.</p>
+          </div>
+          <div class="toolbar">
+            <select id="statusFilter">
+              <option value="">All statuses</option>
+            </select>
+            <button id="jobsRefreshBtn">Refresh</button>
+          </div>
+        </div>
+        <div id="jobsTableWrap" class="table-wrap"></div>
+      </section>
+
+      <section id="tab-add" class="tab-panel">
+        <div class="split">
+          <section class="panel">
+            <h2>Add from URL</h2>
+            <label>
+              Public job URL
+              <input id="addUrlInput" placeholder="https://company.com/jobs/..." />
+            </label>
+            <button id="addUrlBtn">Import URL</button>
+          </section>
+          <section class="panel">
+            <h2>Add from text</h2>
+            <div class="control-grid compact">
+              <label>
+                Title
+                <input id="textTitleInput" placeholder="Data Scientist Intern" />
+              </label>
+              <label>
+                Company
+                <input id="textCompanyInput" placeholder="Company name" />
+              </label>
+              <label>
+                Apply URL
+                <input id="textUrlInput" placeholder="https://..." />
+              </label>
+            </div>
+            <label>
+              Job description
+              <textarea id="jobTextInput" rows="12"></textarea>
+            </label>
+            <button id="addTextBtn">Import text</button>
+          </section>
+        </div>
+        <div class="notice hidden" id="addNotice"></div>
+      </section>
+
+      <section id="tab-profile" class="tab-panel">
+        <div class="section-header">
+          <div>
+            <h2>Profile, CV, and API</h2>
+            <p>Runtime readiness, LaTeX status, and France Travail application text.</p>
+          </div>
+          <button id="profileRefreshBtn">Refresh</button>
+        </div>
+
+        <div class="metric-grid" id="profileMetrics"></div>
+        <div class="split">
+          <section class="panel">
+            <h3>France Travail API request</h3>
+            <label>
+              App name
+              <input id="apiAppName" readonly />
+            </label>
+            <label>
+              App URL
+              <input id="apiAppUrl" readonly />
+            </label>
+            <label>
+              Description
+              <textarea id="apiAppDescription" rows="7" readonly></textarea>
+            </label>
+            <button id="copyApiTextBtn">Copy API text</button>
+          </section>
+          <section class="panel">
+            <h3>Paths</h3>
+            <dl class="path-list" id="pathList"></dl>
+            <div id="profileMessages"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden" role="status"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
+

@@ -7,6 +7,7 @@ available. Tests continue to use a tiny local ``click.testing`` shim.
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 import webbrowser
@@ -322,8 +323,15 @@ def _handle_api_sources(args) -> None:
     console.print("All sources are read-only here; final submission remains manual.")
 
 
+def _handle_ui(args) -> None:
+    from job_agent.ui.server import run_server
+
+    run_server(host=args.host, port=args.port, open_browser=not args.no_open)
+
+
 def _handle_france_setup(args) -> None:
     setup_text = (
+        "Important: your normal candidate login is not an API client id/secret.\n"
         "1. Request free France Travail API access for 'API Offres d’emploi'.\n"
         "2. Set these environment variables after approval:\n"
         "   FRANCE_TRAVAIL_CLIENT_ID=...\n"
@@ -337,18 +345,54 @@ def _handle_france_setup(args) -> None:
 
 
 def _handle_france_search_urls(args) -> None:
-    queries = [args.query] if args.single_query else expand_france_search_queries(args.query, limit=args.limit)
+    queries = [args.query] if args.single_query else expand_france_search_queries(args.query, limit=args.limit, language=args.language)
     notes = board_notes()
-    console.print("Boards: " + ", ".join(row[1] for row in build_france_search_urls(args.query, args.location)))
-    if not args.single_query:
-        console.print("Expanded queries: " + "; ".join(queries))
-    table = Table(title=f"France search URLs: {args.query} / {args.location}", show_header=True, header_style="bold cyan")
-    for col in ["Query", "Board", "URL", "Note"]:
-        table.add_column(col)
+    recommended_only = args.boards == "recommended"
+    board_rows = build_france_search_urls(args.query, args.location, recommended_only=recommended_only)
+    if args.format != "json":
+        console.print("Boards: " + ", ".join(row[1] for row in board_rows))
+        console.print(f"Language: {args.language}")
+        if not args.single_query:
+            console.print("Expanded queries: " + "; ".join(queries))
+
+    rows: list[dict[str, str]] = []
     for query in queries:
-        for key, name, url in build_france_search_urls(query, args.location):
-            table.add_row(query, name, url, notes.get(key, ""))
-    console.print(table)
+        for key, name, url in build_france_search_urls(query, args.location, recommended_only=recommended_only):
+            rows.append(
+                {
+                    "query": query,
+                    "board_key": key,
+                    "board": name,
+                    "url": url,
+                    "note": notes.get(key, ""),
+                }
+            )
+
+    if args.format == "json":
+        output = json.dumps(rows, ensure_ascii=False, indent=2)
+        sys.stdout.write(output + "\n")
+    elif args.format == "table":
+        table = Table(title=f"France search URLs: {args.query} / {args.location}", show_header=True, header_style="bold cyan")
+        for col in ["Query", "Board", "URL", "Note"]:
+            table.add_column(col)
+        for row in rows:
+            table.add_row(row["query"], row["board"], row["url"], row["note"])
+        console.print(table)
+        output = "\n".join(f"{row['query']} | {row['board']} | {row['url']} | {row['note']}" for row in rows)
+    else:
+        lines: list[str] = []
+        for idx, row in enumerate(rows, start=1):
+            lines.append(f"[{idx}] {row['query']} | {row['board']}")
+            lines.append(row["url"])
+            if row["note"]:
+                lines.append(f"    Note: {row['note']}")
+            lines.append("")
+        output = "\n".join(lines).rstrip()
+        sys.stdout.write(output + "\n")
+
+    if args.output:
+        args.output.write_text(output + "\n", encoding="utf-8")
+        console.print(f"Saved full URLs to: {args.output}")
 
 
 def _handle_france_targets(args) -> None:
@@ -366,7 +410,7 @@ def _handle_france_hunt(args) -> None:
     profile, _, _ = _load_profiles(config)
     if not profile and args.packets:
         _fail("Cannot generate packets without valid profile files. Run copy-examples, edit them, then validate-profile.")
-    queries = expand_france_search_queries(args.query, limit=args.limit_queries) if args.query.strip() else DEFAULT_FRANCE_DATA_AI_QUERIES[: args.limit_queries]
+    queries = expand_france_search_queries(args.query, limit=args.limit_queries, language=args.language) if args.query.strip() else DEFAULT_FRANCE_DATA_AI_QUERIES[: args.limit_queries]
     imported = duplicates = prepared = 0
     failures: list[str] = []
     for query in queries:
@@ -672,6 +716,12 @@ class LocalCLIApp:
         api_p = sub.add_parser("api-sources", help="List supported free/read-only public job API sources.")
         api_p.set_defaults(handler=_handle_api_sources)
 
+        ui_p = sub.add_parser("ui", help="Run the local web dashboard.")
+        ui_p.add_argument("--host", default="127.0.0.1")
+        ui_p.add_argument("--port", type=int, default=8765)
+        ui_p.add_argument("--no-open", action="store_true", help="Do not open the browser automatically.")
+        ui_p.set_defaults(handler=_handle_ui)
+
         fs_p = sub.add_parser("france-setup", help="Show France workflow setup instructions.")
         fs_p.set_defaults(handler=_handle_france_setup)
 
@@ -679,7 +729,11 @@ class LocalCLIApp:
         urls_p.add_argument("--query", "-q", default="data science stage")
         urls_p.add_argument("--location", "-l", default="Paris")
         urls_p.add_argument("--single-query", action="store_true", help="Do not expand internship/stage/alternance query variants.")
-        urls_p.add_argument("--limit", "-n", type=int, default=18, help="Maximum expanded query variants.")
+        urls_p.add_argument("--limit", "-n", type=int, default=8, help="Maximum expanded query variants.")
+        urls_p.add_argument("--language", choices=["english", "french", "both"], default="both", help="Search query expansion language. Both means English variants first, then French.")
+        urls_p.add_argument("--boards", choices=["recommended", "all"], default="recommended", help="Recommended hides brittle/broad boards by default.")
+        urls_p.add_argument("--format", choices=["list", "table", "json"], default="list", help="Output format. The default list keeps full URLs copyable.")
+        urls_p.add_argument("--output", type=Path, default=None, help="Optional text/JSON file path for the full URL output.")
         urls_p.set_defaults(handler=_handle_france_search_urls)
 
         targets_p = sub.add_parser("france-targets", help="List CAC 40 / large French company career pages.")
@@ -691,6 +745,7 @@ class LocalCLIApp:
         fh_p.add_argument("--location", "-l", default="Paris")
         fh_p.add_argument("--limit", "-n", type=int, default=10)
         fh_p.add_argument("--limit-queries", type=int, default=24)
+        fh_p.add_argument("--language", choices=["english", "french", "both"], default="both")
         fh_p.add_argument("--packets", dest="packets", action="store_true")
         fh_p.add_argument("--no-packets", dest="packets", action="store_false")
         fh_p.set_defaults(packets=True)

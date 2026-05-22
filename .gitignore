@@ -25,3 +25,5 @@ outputs/
 .smoke_job.txt
 profiles/
 jobs/
+france_urls.json
+france_urls.txt

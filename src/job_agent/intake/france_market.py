@@ -28,6 +28,32 @@ ROLE_QUERY_TERMS = [
     "data automation",
 ]
 
+ENGLISH_ROLE_QUERY_TERMS = [
+    "data scientist",
+    "data science",
+    "machine learning",
+    "AI",
+    "artificial intelligence",
+    "data analyst",
+    "data engineer",
+    "data engineering",
+    "business intelligence",
+    "BI analyst",
+    "data automation",
+]
+
+FRENCH_ROLE_QUERY_TERMS = [
+    "data scientist",
+    "machine learning",
+    "intelligence artificielle",
+    "data analyst",
+    "analyste data",
+    "data engineer",
+    "business intelligence",
+    "data automation",
+    "chargé d'études data",
+]
+
 INTERNSHIP_QUERY_TERMS = [
     "stage",
     "stagiaire",
@@ -38,6 +64,21 @@ INTERNSHIP_QUERY_TERMS = [
     "apprenticeship",
     "junior",
     "graduate",
+]
+
+ENGLISH_INTERNSHIP_QUERY_TERMS = [
+    "internship",
+    "intern",
+    "apprenticeship",
+    "junior",
+    "graduate",
+]
+
+FRENCH_INTERNSHIP_QUERY_TERMS = [
+    "stage",
+    "stagiaire",
+    "alternance",
+    "apprentissage",
 ]
 
 
@@ -73,6 +114,7 @@ class SearchBoard:
     name: str
     url_template: str
     notes: str = ""
+    recommended: bool = True
 
     def url(self, query: str, location: str = "Paris") -> str:
         return self.url_template.format(q=quote_plus(query), loc=quote_plus(location))
@@ -108,6 +150,7 @@ FRENCH_SEARCH_BOARDS: list[SearchBoard] = [
         "Indeed France",
         "https://fr.indeed.com/jobs?q={q}&l={loc}",
         "Partner APIs are not a free personal search/apply API.",
+        recommended=False,
     ),
     SearchBoard(
         "linkedin-fr",
@@ -120,6 +163,7 @@ FRENCH_SEARCH_BOARDS: list[SearchBoard] = [
         "Glassdoor France",
         "https://www.glassdoor.fr/Emploi/{loc}-{q}-emplois-SRCH_IL.0,5_IC2881970_KO6,26.htm",
         "Search URL can be brittle; use as manual fallback.",
+        recommended=False,
     ),
     SearchBoard(
         "stage-fr",
@@ -132,6 +176,7 @@ FRENCH_SEARCH_BOARDS: list[SearchBoard] = [
         "JobTeaser",
         "https://www.jobteaser.com/fr/job-offers?query={q}&location={loc}",
         "Manual student/internship search; may require school account.",
+        recommended=False,
     ),
     SearchBoard(
         "la-bonne-alternance",
@@ -196,20 +241,40 @@ CAC40_TARGETS: list[CompanyTarget] = [
 ]
 
 
-def build_france_search_urls(query: str, location: str = "Paris", boards: list[str] | None = None) -> list[tuple[str, str, str]]:
+def build_france_search_urls(
+    query: str,
+    location: str = "Paris",
+    boards: list[str] | None = None,
+    recommended_only: bool = False,
+) -> list[tuple[str, str, str]]:
     """Return (key, board name, URL) for manual job-board searches."""
     allowed = {b.casefold() for b in boards} if boards else None
     rows: list[tuple[str, str, str]] = []
     for board in FRENCH_SEARCH_BOARDS:
+        if recommended_only and not board.recommended:
+            continue
         if allowed and board.key.casefold() not in allowed and board.name.casefold() not in allowed:
             continue
         rows.append((board.key, board.name, board.url(query, location)))
     return rows
 
 
-def expand_france_search_queries(query: str, limit: int = 28) -> list[str]:
+def _language_terms(language: str) -> tuple[list[str], list[str]]:
+    language_key = (language or "both").strip().casefold()
+    if language_key in {"en", "english"}:
+        return ENGLISH_ROLE_QUERY_TERMS, ENGLISH_INTERNSHIP_QUERY_TERMS
+    if language_key in {"fr", "french"}:
+        return FRENCH_ROLE_QUERY_TERMS, FRENCH_INTERNSHIP_QUERY_TERMS
+    return (
+        ENGLISH_ROLE_QUERY_TERMS + [role for role in FRENCH_ROLE_QUERY_TERMS if role not in ENGLISH_ROLE_QUERY_TERMS],
+        ENGLISH_INTERNSHIP_QUERY_TERMS + FRENCH_INTERNSHIP_QUERY_TERMS,
+    )
+
+
+def expand_france_search_queries(query: str, limit: int = 28, language: str = "both") -> list[str]:
     """Build bilingual internship/apprenticeship query variants for France."""
     base = " ".join(query.split()).strip()
+    role_terms, contract_terms = _language_terms(language)
     variants: list[str] = []
 
     def add(value: str) -> None:
@@ -224,27 +289,32 @@ def expand_france_search_queries(query: str, limit: int = 28) -> list[str]:
     has_contract = any(term.casefold() in base_lower for term in INTERNSHIP_QUERY_TERMS)
 
     if has_role and not has_contract:
-        for term in INTERNSHIP_QUERY_TERMS:
+        for term in contract_terms:
             add(f"{base} {term}")
     elif has_contract and not has_role:
-        for role in ROLE_QUERY_TERMS:
+        for role in role_terms:
             add(f"{role} {base}")
     elif has_role and has_contract:
         role_part = base
         for existing_term in INTERNSHIP_QUERY_TERMS:
             role_part = re.sub(rf"\b{re.escape(existing_term)}\b", "", role_part, flags=re.IGNORECASE)
         role_part = " ".join(role_part.split()) or base
-        for term in INTERNSHIP_QUERY_TERMS:
+        for term in contract_terms:
             add(f"{role_part} {term}")
     else:
-        for role in ROLE_QUERY_TERMS:
-            for term in ["stage", "internship", "alternance"]:
+        preferred_terms = [term for term in contract_terms if term in {"internship", "stage", "alternance"}] or contract_terms[:3]
+        for role in role_terms:
+            for term in preferred_terms:
                 add(f"{role} {term}")
     return variants[:limit]
 
 
 def board_notes() -> dict[str, str]:
     return {board.key: board.notes for board in FRENCH_SEARCH_BOARDS}
+
+
+def recommended_board_keys() -> list[str]:
+    return [board.key for board in FRENCH_SEARCH_BOARDS if board.recommended]
 
 
 def cac40_targets(limit: int | None = None) -> list[CompanyTarget]:

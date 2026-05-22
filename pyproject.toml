@@ -27,10 +27,14 @@ dev = ["pytest>=7.4", "pytest-cov>=4.1"]
 
 [project.scripts]
 job-agent = "job_agent.cli.main:app"
+job-agent-web = "job_agent.ui.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["job_agent*"]
+
+[tool.setuptools.package-data]
+"job_agent.ui" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
