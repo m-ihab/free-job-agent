@@ -5,6 +5,8 @@ const state = {
   selectedJobs: new Set(),
   activeJobId: null,
   insightsCache: null,
+  autopilotCache: null,
+  autopilotTimer: null,
   chord: { key: "", at: 0 },
 };
 
@@ -113,14 +115,14 @@ function renderState() {
   ].join("");
 
   $("apiReadiness").innerHTML = [
-    readinessRow(".env.local", profile.env_local_present ? "Loaded" : "Missing"),
-    readinessRow("Endpoints map", profile.endpoints_file_present ? "Configured" : "Missing"),
-    readinessRow("Endpoint base", profile.endpoints_summary?.base_url || "-"),
+    readinessRow("Job search (ID + secret)", profile.france_travail_configured ? "Ready" : "Set FRANCE_TRAVAIL_CLIENT_ID/SECRET"),
+    readinessRow(".env.local", profile.env_local_present ? "Loaded" : "Optional"),
+    readinessRow("Endpoints map (enrichment only — optional)", profile.endpoints_file_present ? "Configured" : "Not configured"),
     readinessRow(
-      "Enabled endpoints",
+      "Enabled enrichment endpoints",
       `${profile.endpoints_summary?.enabled || 0}/${profile.endpoints_summary?.configured || 0} (${profile.endpoints_summary?.total || 0} total)`
     ),
-  ].join("");
+  ].join("") + `<div class="muted" style="margin-top:0.4rem">${escapeHtml(profile.endpoints_explainer || "")}</div>`;
 
   $("apiAppName").value = profile.app_name || "";
   $("apiAppUrl").value = profile.app_url || "";
@@ -285,6 +287,7 @@ function jobActions(job) {
   const rejected = job.status === "REJECTED" ? "" : `<button data-action="status" data-status="REJECTED" data-job="${escapeHtml(job.id)}" title="Mark as rejected">Reject</button>`;
   return `<div class="row-actions">
     <button data-action="packet" data-job="${escapeHtml(job.id)}" title="Generate tailored CV + cover letter">Optimize</button>
+    <button data-action="ai-analyze" data-job="${escapeHtml(job.id)}" title="AI fit analysis (needs Ollama)">AI fit</button>
     <button data-action="enrich" data-job="${escapeHtml(job.id)}" title="Enrich with France Travail data">Enrich</button>
     ${submitted}${rejected}
     ${apply}${assistant}${cv}${letter}
@@ -712,6 +715,194 @@ function activateTab(name) {
   document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `tab-${name}`));
   if (name === "jobs") renderJobs();
   if (name === "insights" && !state.insightsCache) loadInsights();
+  if (name === "autopilot") loadAutopilot();
+}
+
+async function loadAutopilot() {
+  try {
+    const status = await api("/api/autopilot");
+    state.autopilotCache = status;
+    renderAutopilot(status);
+  } catch (error) {
+    setNotice("autopilotNotice", error.message, true);
+  }
+}
+
+function renderAutopilot(status) {
+  const cfg = status.config || {};
+  $("autopilotMetrics").innerHTML = [
+    metric("Running", status.running ? "Yes" : "No"),
+    metric("Cycles", status.cycles_completed || 0),
+    metric("Jobs added", status.jobs_added_total || 0),
+    metric("Packets built", status.packets_built_total || 0),
+  ].join("");
+  if ($("autopilotInterval")) {
+    if (cfg.interval_minutes) $("autopilotInterval").value = cfg.interval_minutes;
+    if (cfg.location) $("autopilotLocation").value = cfg.location;
+    if (cfg.auto_packet_threshold != null) $("autopilotThreshold").value = cfg.auto_packet_threshold;
+    if (cfg.max_packets_per_cycle != null) $("autopilotMaxPackets").value = cfg.max_packets_per_cycle;
+    if (cfg.queries && cfg.queries.length) $("autopilotQueries").value = cfg.queries.join("\n");
+    $("autopilotUseFT").checked = cfg.use_france_travail !== false;
+    $("autopilotUseMulti").checked = cfg.use_multi_source !== false;
+    $("autopilotInternships").checked = cfg.internships_only !== false;
+  }
+  const summary = status.last_summary;
+  if (summary) {
+    const perQuery = Object.entries(summary.per_query || {})
+      .map(([q, c]) => `${escapeHtml(q)}: ${c}`)
+      .join("<br>");
+    $("autopilotLastSummary").innerHTML = `
+      <div class="detail-row"><span>Last run</span><strong>${escapeHtml(status.last_run_at || "-")}</strong></div>
+      <div class="detail-row"><span>Jobs added</span><strong>${summary.jobs_added || 0}</strong></div>
+      <div class="detail-row"><span>Packets built</span><strong>${summary.packets_built || 0}</strong></div>
+      <div class="detail-row"><span>France Travail</span><strong>${summary.france_travail_used ? "yes" : "no"}</strong></div>
+      <div class="detail-row"><span>Multi-source</span><strong>${summary.multi_source_used ? "yes" : "no"}</strong></div>
+      ${perQuery ? `<h4>Per query</h4><div class="muted">${perQuery}</div>` : ""}
+    `;
+  } else {
+    $("autopilotLastSummary").innerHTML = "Autopilot has not run yet. Press <strong>Start autopilot</strong> to begin.";
+  }
+  const errs = (summary && summary.errors) || (status.last_error ? [status.last_error] : []);
+  if (errs && errs.length) {
+    $("autopilotErrors").innerHTML = errs.map(escapeHtml).join("<br>");
+  } else {
+    $("autopilotErrors").innerHTML = "None.";
+  }
+}
+
+function autopilotPayload() {
+  return {
+    interval_minutes: Number($("autopilotInterval").value || 30),
+    location: $("autopilotLocation").value.trim() || "Paris",
+    auto_packet_threshold: Number($("autopilotThreshold").value || 75),
+    max_packets_per_cycle: Number($("autopilotMaxPackets").value || 5),
+    queries: $("autopilotQueries").value.split("\n").map((q) => q.trim()).filter(Boolean),
+    use_france_travail: $("autopilotUseFT").checked,
+    use_multi_source: $("autopilotUseMulti").checked,
+    internships_only: $("autopilotInternships").checked,
+  };
+}
+
+async function startAutopilot() {
+  const button = $("autopilotStartBtn");
+  setBusy(button, true);
+  setNotice("autopilotNotice", "");
+  try {
+    const payload = await api("/api/autopilot/start", autopilotPayload());
+    renderAutopilot(payload.status);
+    toast("Autopilot started. It runs in the background.");
+    if (state.autopilotTimer) window.clearInterval(state.autopilotTimer);
+    state.autopilotTimer = window.setInterval(loadAutopilot, 15000);
+  } catch (error) {
+    setNotice("autopilotNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function stopAutopilot() {
+  const button = $("autopilotStopBtn");
+  setBusy(button, true);
+  try {
+    const payload = await api("/api/autopilot/stop", {});
+    renderAutopilot(payload.status);
+    if (state.autopilotTimer) {
+      window.clearInterval(state.autopilotTimer);
+      state.autopilotTimer = null;
+    }
+    toast("Autopilot stopped.");
+  } catch (error) {
+    setNotice("autopilotNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function runAiAnalysis(jobId, button) {
+  setBusy(button, true);
+  try {
+    const payload = await api("/api/ai-analyze", { job_id: jobId });
+    showAiAnalysis(payload.analysis);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function showAiAnalysis(analysis) {
+  const tone = analysis.verdict === "strong" ? "good" : analysis.verdict === "weak" ? "bad" : "warn";
+  const strengths = (analysis.strengths || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("") || "<li class='muted'>None.</li>";
+  const gaps = (analysis.gaps || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("") || "<li class='muted'>None.</li>";
+  const emphasis = (analysis.suggested_emphasis || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("") || "<li class='muted'>None.</li>";
+  $("aiAnalysisBody").innerHTML = `
+    <div class="detail-block">
+      <div class="detail-row"><span>Verdict</span>${renderBadge(analysis.verdict, tone)}</div>
+      <div class="detail-row"><span>AI score</span>${scorePill(analysis.score)}</div>
+      <div class="detail-row"><span>Confidence</span><strong>${Math.round((analysis.confidence || 0) * 100)}%</strong></div>
+    </div>
+    <div class="detail-block">
+      <h4>Summary</h4>
+      <p>${escapeHtml(analysis.summary || "")}</p>
+    </div>
+    <div class="split" style="margin-top:0">
+      <div class="detail-block"><h4>Strengths</h4><ul>${strengths}</ul></div>
+      <div class="detail-block"><h4>Gaps</h4><ul>${gaps}</ul></div>
+    </div>
+    <div class="detail-block">
+      <h4>Suggested emphasis</h4>
+      <ul>${emphasis}</ul>
+    </div>
+  `;
+  $("aiAnalysisModal").classList.remove("hidden");
+}
+
+async function enrichGithub() {
+  const button = $("enrichGithubBtn");
+  setBusy(button, true);
+  setNotice("autopilotNotice", "");
+  try {
+    const payload = await api("/api/enrich-github", {});
+    const r = payload.report || {};
+    const lines = [
+      `GitHub: ${r.handle} (${r.public_repos} repos)`,
+      `Languages: ${(r.languages_seen || []).slice(0, 6).join(", ")}`,
+      `Skills added: ${(r.added_skills || []).join(", ") || "none"}`,
+      `Projects added: ${(r.added_projects || []).join(", ") || "none"}`,
+    ];
+    setNotice("autopilotNotice", lines.join("\n"));
+    toast("GitHub enrichment complete.");
+  } catch (error) {
+    setNotice("autopilotNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function openLinkedinModal() {
+  $("linkedinModal").classList.remove("hidden");
+  $("linkedinNotice").classList.add("hidden");
+  $("linkedinTextarea").focus();
+}
+
+async function submitLinkedinSkills() {
+  const text = $("linkedinTextarea").value;
+  if (!text.trim()) {
+    setNotice("linkedinNotice", "Paste at least one skill first.", true);
+    return;
+  }
+  const button = $("linkedinSubmitBtn");
+  setBusy(button, true);
+  try {
+    const payload = await api("/api/enrich-linkedin", { text });
+    const r = payload.report || {};
+    setNotice("linkedinNotice", `Parsed ${r.parsed_count} skills. Added ${(r.added_skills || []).length} new ones.`);
+    toast(`Added ${(r.added_skills || []).length} LinkedIn skills.`);
+  } catch (error) {
+    setNotice("linkedinNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 function toggleShortcuts(show) {
@@ -719,7 +910,7 @@ function toggleShortcuts(show) {
 }
 
 function bindKeyboardShortcuts() {
-  const tabOrder = ["search", "jobs", "insights", "add", "profile"];
+  const tabOrder = ["search", "jobs", "autopilot", "insights", "add", "profile"];
   document.addEventListener("keydown", (event) => {
     const target = event.target;
     const inEditable = target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
@@ -760,6 +951,10 @@ function bindKeyboardShortcuts() {
       }
       if (event.key === "m") {
         runMultiSearch();
+        return;
+      }
+      if (event.key === "a") {
+        activateTab("autopilot");
         return;
       }
     }
@@ -823,6 +1018,22 @@ function bindEvents() {
     if (event.target === $("shortcutsHelp")) toggleShortcuts(false);
   });
 
+  $("autopilotStartBtn").addEventListener("click", startAutopilot);
+  $("autopilotStopBtn").addEventListener("click", stopAutopilot);
+  $("autopilotRefreshBtn").addEventListener("click", loadAutopilot);
+  $("enrichGithubBtn").addEventListener("click", enrichGithub);
+  $("enrichLinkedinBtn").addEventListener("click", openLinkedinModal);
+  $("linkedinSubmitBtn").addEventListener("click", submitLinkedinSkills);
+  $("linkedinCancelBtn").addEventListener("click", () => $("linkedinModal").classList.add("hidden"));
+  $("closeLinkedin").addEventListener("click", () => $("linkedinModal").classList.add("hidden"));
+  $("linkedinModal").addEventListener("click", (event) => {
+    if (event.target === $("linkedinModal")) $("linkedinModal").classList.add("hidden");
+  });
+  $("closeAiAnalysis").addEventListener("click", () => $("aiAnalysisModal").classList.add("hidden"));
+  $("aiAnalysisModal").addEventListener("click", (event) => {
+    if (event.target === $("aiAnalysisModal")) $("aiAnalysisModal").classList.add("hidden");
+  });
+
   document.body.addEventListener("click", (event) => {
     const target = event.target.closest("[data-action='packet']");
     if (target) {
@@ -832,6 +1043,11 @@ function bindEvents() {
     const enrichTarget = event.target.closest("[data-action='enrich']");
     if (enrichTarget) {
       enrichJob(enrichTarget.dataset.job, enrichTarget);
+      return;
+    }
+    const aiTarget = event.target.closest("[data-action='ai-analyze']");
+    if (aiTarget) {
+      runAiAnalysis(aiTarget.dataset.job, aiTarget);
       return;
     }
     const statusTarget = event.target.closest("[data-action='status']");

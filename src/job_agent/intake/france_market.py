@@ -83,6 +83,8 @@ FRENCH_INTERNSHIP_QUERY_TERMS = [
 
 
 DEFAULT_FRANCE_DATA_AI_QUERIES = [
+    "stage data",
+    "alternance data",
     "data scientist stage",
     "data science internship",
     "machine learning stage",
@@ -288,9 +290,22 @@ def expand_france_search_queries(query: str, limit: int = 28, language: str = "b
     has_role = any(role.casefold() in base_lower for role in ROLE_QUERY_TERMS)
     has_contract = any(term.casefold() in base_lower for term in INTERNSHIP_QUERY_TERMS)
 
+    if "data" in base_lower and not has_contract:
+        # France Travail often performs better with short French query order
+        # such as "stage data" than with literal English role order.
+        add("stage data")
+        add("alternance data")
+        add("apprentissage data")
+
     if has_role and not has_contract:
         for term in contract_terms:
             add(f"{base} {term}")
+            if term in FRENCH_INTERNSHIP_QUERY_TERMS:
+                add(f"{term} {base}")
+        if "data" in base_lower:
+            for term in ["stage", "alternance", "apprentissage"]:
+                add(f"{term} data")
+                add(f"{term} data science")
     elif has_contract and not has_role:
         for role in role_terms:
             add(f"{role} {base}")

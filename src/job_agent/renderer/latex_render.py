@@ -28,6 +28,12 @@ from pathlib import Path
 from job_agent.schemas.candidate import CandidateProfile, MasterCV, Project, Skill, WorkExperience
 from job_agent.schemas.job import JobListing
 
+try:
+    from job_agent.ai_agent import generate_tailored_summary as _ai_generate_summary
+except Exception:  # pragma: no cover
+    def _ai_generate_summary(*args, **kwargs):  # type: ignore[misc]
+        return None
+
 
 class LatexCompileError(RuntimeError):
     """Raised when a LaTeX compiler exists but cannot build the PDF."""
@@ -476,7 +482,12 @@ def _safe_existing_file(path: Path) -> bool:
 
 
 def available_latex_compiler() -> str | None:
-    """Return the best available LaTeX compiler executable."""
+    """Return the best available LaTeX compiler executable.
+
+    Order: pdflatex > xelatex > lualatex > latexmk. We prefer pdflatex because
+    it has no external dependencies, whereas MiKTeX's latexmk needs Perl
+    installed separately.
+    """
     configured = os.environ.get("JOB_AGENT_LATEX_COMPILER", "").strip()
     if configured:
         configured_path = Path(configured)
@@ -486,7 +497,7 @@ def available_latex_compiler() -> str | None:
         if found_configured:
             return found_configured
 
-    for command in ["latexmk", "pdflatex", "xelatex", "lualatex"]:
+    for command in ["pdflatex", "xelatex", "lualatex", "latexmk"]:
         found = shutil.which(command)
         if found:
             return found
@@ -494,6 +505,8 @@ def available_latex_compiler() -> str | None:
         Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "MiKTeX" / "miktex" / "bin" / "x64",
         Path(os.environ.get("PROGRAMFILES", "")) / "MiKTeX" / "miktex" / "bin" / "x64",
         Path(os.environ.get("PROGRAMFILES(X86)", "")) / "MiKTeX" / "miktex" / "bin" / "x64",
+        Path(os.environ.get("APPDATA", "")) / "TinyTeX" / "bin" / "windows",
+        Path(os.environ.get("APPDATA", "")) / "TinyTeX" / "bin" / "win32",
     ]
     for root in common_roots:
         if not str(root):

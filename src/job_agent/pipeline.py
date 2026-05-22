@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from job_agent.ai_agent import analyze_fit
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.filters import FilterConfig, apply_filters
@@ -16,6 +17,7 @@ from job_agent.intake.file import ingest_file
 from job_agent.intake.paste import ingest_paste
 from job_agent.intake.url import ingest_url
 from job_agent.normalizer import normalize
+from job_agent.polish import PolishOptions
 from job_agent.renderer.assistant_render import render_assistant_page
 from job_agent.renderer.html_render import render_html
 from job_agent.renderer.latex_render import LatexCompileError, compile_latex_to_pdf, copy_latex_assets, render_latex_source
@@ -100,15 +102,33 @@ def _write_pdf(markdown: str, path: Path, kind: str, title: str) -> DocumentArti
     return DocumentArtifact(kind=kind, path=str(path), sha256=sha256_file(path))
 
 
-def _write_cv_pdf(cv_md: str, cv_tex_path: Path, cv_pdf_path: Path) -> tuple[DocumentArtifact, str | None]:
+def _write_cv_pdf(cv_md: str, cv_tex_path: Path, cv_pdf_path: Path, master_cv_pdf: Path | None = None) -> tuple[DocumentArtifact, str | None]:
     try:
         compile_latex_to_pdf(cv_tex_path, cv_pdf_path)
         return DocumentArtifact(kind="cv_pdf", path=str(cv_pdf_path), sha256=sha256_file(cv_pdf_path)), None
     except LatexCompileError as exc:
+        # If the user has a master CV.pdf next to main.tex, prefer copying it
+        # over generating an ugly Markdown PDF. The copy keeps the user's
+        # professional design even though it isn't role-tailored.
+        if master_cv_pdf is not None and master_cv_pdf.exists():
+            import shutil as _sh
+            cv_pdf_path.parent.mkdir(parents=True, exist_ok=True)
+            _sh.copyfile(master_cv_pdf, cv_pdf_path)
+            warning = (
+                f"LaTeX CV PDF fallback used: copied {master_cv_pdf.name} because cv.tex could not be compiled. "
+                "This PDF preserves your main.tex visual format but is NOT role-tailored. "
+                "Install MiKTeX/TeX Live or fix the compiler path and rerun with --force for a tailored LaTeX PDF. "
+                f"Compiler issue: {exc}"
+            )
+            return (
+                DocumentArtifact(kind="cv_pdf", path=str(cv_pdf_path), sha256=sha256_file(cv_pdf_path)),
+                warning,
+            )
         render_pdf(cv_md, cv_pdf_path, title="Tailored CV")
         warning = (
             "LaTeX CV PDF fallback used: generated a role-tailored plain PDF because cv.tex could not be compiled. "
-            "Set JOB_AGENT_LATEX_COMPILER or run from a terminal where pdflatex is available, then regenerate the packet to get the exact main.tex layout. "
+            "Place a master CV.pdf in your profiles directory to get a design-preserving fallback. "
+            "Or set JOB_AGENT_LATEX_COMPILER / install pdflatex, then regenerate. "
             f"Compiler issue: {exc}"
         )
         return (
@@ -132,6 +152,23 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
         raise RuntimeError("Job failed hard filters: " + "; ".join(filter_result.reasons))
 
     job = score_and_save(config, job, profile)
+    # Optional AI fit analysis. Falls back silently when Ollama is not running.
+    fit_analysis = analyze_fit(job, master_cv, profile, PolishOptions.from_env())
+    if fit_analysis is not None:
+        # Surface AI insights as fit notes (deterministic score remains untouched).
+        ai_lines = [
+            f"AI verdict: {fit_analysis.verdict} ({fit_analysis.score}/100, confidence {int(fit_analysis.confidence * 100)}%)",
+        ]
+        if fit_analysis.strengths:
+            ai_lines.append("AI strengths: " + "; ".join(fit_analysis.strengths[:4]))
+        if fit_analysis.gaps:
+            ai_lines.append("AI gaps: " + "; ".join(fit_analysis.gaps[:4]))
+        if fit_analysis.suggested_emphasis:
+            ai_lines.append("Suggested emphasis: " + ", ".join(fit_analysis.suggested_emphasis[:6]))
+        for line in ai_lines:
+            if line not in job.fit_notes:
+                job.fit_notes.append(line)
+        tracker.db.save_job(job)
     cv_md = tailor_cv(job, master_cv, profile)
     template_path = (config.profiles_dir / "main.tex") if config.profiles_dir else None  # type: ignore[operator]
     cv_tex = render_latex_source(
@@ -166,7 +203,12 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
     artifacts.append(_write_text(cv_tex_path, cv_tex))
     copy_latex_assets(config.profiles_dir, out_dir)
     artifacts.append(_write_text(cv_html_path, cv_html))
-    cv_pdf_artifact, latex_warning = _write_cv_pdf(cv_md, cv_tex_path, cv_pdf_path)
+    master_cv_pdf = None
+    if config.profiles_dir:
+        candidate = Path(config.profiles_dir) / "CV.pdf"
+        if candidate.exists():
+            master_cv_pdf = candidate
+    cv_pdf_artifact, latex_warning = _write_cv_pdf(cv_md, cv_tex_path, cv_pdf_path, master_cv_pdf=master_cv_pdf)
     artifacts.append(cv_pdf_artifact)
     artifacts.append(_write_text(letter_md_path, letter_md))
     artifacts.append(_write_text(letter_html_path, letter_html))

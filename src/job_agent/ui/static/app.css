@@ -135,14 +135,14 @@ h1 {
   margin-bottom: 0;
   font-size: clamp(1.45rem, 2.4vw, 2rem);
   font-family: var(--font-display);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 h2 {
   margin-bottom: 0.2rem;
   font-size: 1.25rem;
   font-family: var(--font-display);
-  letter-spacing: -0.005em;
+  letter-spacing: 0;
 }
 
 h3 {
@@ -378,7 +378,7 @@ textarea {
 .metric {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 0.85rem 0.9rem;
   box-shadow: var(--shadow-soft);
   animation: rise 0.4s ease;
@@ -388,7 +388,7 @@ textarea {
   display: block;
   font-size: 1.35rem;
   font-family: var(--font-display);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   color: var(--ink);
 }
 
@@ -402,7 +402,7 @@ textarea {
 .panel {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 1rem;
   box-shadow: var(--shadow-soft);
 }
@@ -464,7 +464,7 @@ textarea {
   border-collapse: collapse;
   font-size: 0.92rem;
   background: var(--surface);
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
   box-shadow: var(--shadow-soft);
 }
@@ -545,7 +545,7 @@ textarea {
 
 .query-group {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 0.8rem;
   background: var(--surface);
   box-shadow: var(--shadow-soft);
@@ -728,7 +728,7 @@ textarea {
   width: min(420px, 90vw);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 8px;
   box-shadow: var(--shadow);
   padding: 1rem 1.25rem;
 }

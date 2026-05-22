@@ -206,45 +206,134 @@ def _join_nonempty(*parts: Any, sep: str = "\n\n") -> str:
     return sep.join(cleaned)
 
 
+_STOPWORDS = {"a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "is", "are", "with", "by", "from", "as", "be", "le", "la", "les", "de", "du", "des", "et", "ou", "pour", "en", "sur", "dans"}
+
+# Synonyms expand query coverage: "data scientist" should match "data science",
+# "machine learning engineer" → "ml engineer", etc.
+_QUERY_SYNONYMS = {
+    "scientist": ("scientist", "science", "scientifique"),
+    "science": ("science", "scientist", "scientifique"),
+    "engineer": ("engineer", "engineering", "engineer.", "ingénieur", "ingenieur"),
+    "engineering": ("engineering", "engineer", "ingénierie", "ingenierie"),
+    "analyst": ("analyst", "analytics", "analyse", "analyste"),
+    "analytics": ("analytics", "analyst", "analyse"),
+    "machine": ("machine", "ml", "ai"),
+    "learning": ("learning", "apprentissage"),
+    "intelligence": ("intelligence", "ia", "ai"),
+    "artificial": ("artificial", "ai", "ia"),
+    "developer": ("developer", "développeur", "developpeur", "engineer"),
+    "stage": ("stage", "stagiaire", "internship", "intern"),
+    "stagiaire": ("stagiaire", "stage", "intern", "internship"),
+    "internship": ("internship", "intern", "stage", "stagiaire"),
+    "intern": ("intern", "internship", "stage", "stagiaire"),
+    "alternance": ("alternance", "apprentissage", "apprenticeship", "apprentice"),
+    "apprentissage": ("apprentissage", "alternance", "apprentice"),
+}
+
+
+def _token_match(token: str, haystack: str) -> bool:
+    """Match a token (or any of its synonyms) as a whole word in haystack.
+
+    Word-boundary matching avoids false positives like ``data`` matching
+    inside ``database`` or ``ai`` matching inside ``main``.
+    """
+    synonyms = _QUERY_SYNONYMS.get(token, (token,))
+    for syn in synonyms:
+        if not syn:
+            continue
+        pattern = r"\b" + re.escape(syn) + r"\b"
+        if re.search(pattern, haystack):
+            return True
+    return False
+
+
 def _contains_query(job: JobListing, query: str) -> bool:
+    """Strict match: the job's title must mention the role.
+
+    APIs like Remotive ignore their own ``search`` parameter and return all
+    recent jobs, so client-side filtering is mandatory. Title is the most
+    reliable signal; descriptions and tags are too noisy and produce
+    "Senior Cinematic Video Editor" matches for "machine learning".
+    """
     if not query.strip():
         return True
-    haystack = "\n".join([
-        job.title,
-        job.company,
-        job.location or "",
-        job.description or "",
-        job.raw_text or "",
-        " ".join(job.tech_stack),
-    ]).casefold()
-    tokens = [t for t in re.split(r"\s+", query.casefold().strip()) if len(t) >= 2]
-    return all(token in haystack for token in tokens)
+    title = job.title.casefold()
+    raw_tokens = [t for t in re.split(r"\s+", query.casefold().strip()) if t]
+    meaningful = [t for t in raw_tokens if len(t) >= 2 and t not in _STOPWORDS]
+    if not meaningful:
+        return True
+    return any(_token_match(token, title) for token in meaningful)
+
+
+_LOCATION_ALIASES = {
+    "paris": ("paris", "île-de-france", "ile-de-france", "idf", "france"),
+    "île-de-france": ("paris", "île-de-france", "ile-de-france", "idf", "france"),
+    "france": ("france", "paris", "lyon", "marseille", "lille", "toulouse", "nantes"),
+    "europe": ("europe", "france", "germany", "netherlands", "spain", "italy", "uk", "united kingdom", "ireland", "portugal"),
+    "remote": ("remote", "worldwide", "anywhere", "global"),
+    "worldwide": ("remote", "worldwide", "anywhere", "global"),
+    "anywhere": ("remote", "worldwide", "anywhere", "global"),
+}
+_REMOTE_LOCATION_KEYS = {"remote", "worldwide", "anywhere", "global"}
 
 
 def _contains_location(job: JobListing, location: str) -> bool:
     if not location.strip():
         return True
-    if job.remote and location.strip().casefold() in {"remote", "worldwide", "anywhere"}:
+    key = location.casefold().strip()
+    # Remote jobs pass automatically only when the user explicitly searches for
+    # remote/worldwide roles. For Paris/France searches, a global remote job is
+    # usually clutter unless the posting also mentions the target geography.
+    if job.remote and key in _REMOTE_LOCATION_KEYS:
         return True
     haystack = "\n".join([job.location or "", job.description or "", job.raw_text or ""]).casefold()
-    return location.casefold().strip() in haystack
+    aliases = _LOCATION_ALIASES.get(key, (key,))
+    return any(alias in haystack for alias in aliases)
 
 
-def _post_filter(jobs: list[JobListing], search: FreeApiSearch) -> list[JobListing]:
-    result: list[JobListing] = []
+def _query_score(job: JobListing, query: str) -> int:
+    """Rank job relevance to query — used to sort results, not to drop them."""
+    if not query.strip():
+        return 0
+    title = job.title.casefold()
+    desc = (job.description or "").casefold()
+    stack = " ".join(job.tech_stack).casefold()
+    tokens = [t for t in re.split(r"\s+", query.casefold().strip()) if len(t) >= 2 and t not in _STOPWORDS]
+    score = 0
+    for token in tokens:
+        synonyms = _QUERY_SYNONYMS.get(token, (token,))
+        for syn in synonyms:
+            if syn in title:
+                score += 10
+            if syn in stack:
+                score += 5
+            if syn in desc:
+                score += 2
+    return score
+
+
+def _post_filter(jobs: list[JobListing], search: FreeApiSearch, apply_query_filter: bool = True) -> list[JobListing]:
+    """Filter results then rank by query relevance.
+
+    Source APIs that accept a search parameter (Remotive, RemoteOK, etc.) have
+    already done the keyword filtering. We only enforce remote/internship/
+    location constraints here, then sort by relevance to surface the best
+    matches first.
+    """
+    filtered: list[JobListing] = []
     for job in jobs:
         if search.internships_only and not is_internship_listing(job):
             continue
         if search.remote_only and not job.remote:
             continue
-        if not _contains_query(job, search.query):
+        if apply_query_filter and not _contains_query(job, search.query):
             continue
         if not _contains_location(job, search.location):
             continue
-        result.append(job)
-        if len(result) >= _bounded_limit(search.limit):
-            break
-    return result
+        filtered.append(job)
+    if search.query.strip():
+        filtered.sort(key=lambda j: (-_query_score(j, search.query), j.created_at), reverse=False)
+    return filtered[: _bounded_limit(search.limit)]
 
 
 def _make_job(**kwargs: Any) -> JobListing:
@@ -574,11 +663,35 @@ def _fetch_jobicy(search: FreeApiSearch) -> list[JobListing]:
     return _post_filter(jobs, search)
 
 
+_MUSE_CATEGORY_MAP = {
+    "data": "Data Science",
+    "data science": "Data Science",
+    "data scientist": "Data Science",
+    "machine learning": "Data Science",
+    "ml engineer": "Data Science",
+    "ai": "Data Science",
+    "data analyst": "Data Science",
+    "data engineer": "Data Science",
+    "data engineering": "Data Science",
+    "software": "Software Engineering",
+    "software engineer": "Software Engineering",
+    "backend": "Software Engineering",
+    "frontend": "Software Engineering",
+    "fullstack": "Software Engineering",
+}
+
+
 def _fetch_themuse(search: FreeApiSearch) -> list[JobListing]:
     params: dict[str, Any] = {"page": max(0, (search.page or 1) - 1)}
+    # The Muse expects exact category labels; map common queries; otherwise omit.
     if search.query:
-        params["category"] = search.query
+        normalized = search.query.casefold().strip()
+        for key, label in _MUSE_CATEGORY_MAP.items():
+            if key in normalized:
+                params["category"] = label
+                break
     if search.location:
+        # Pass through known city names; The Muse uses "City, Country" style.
         params["location"] = search.location
     data = _fetch_json(search, "https://www.themuse.com/api/public/jobs", params=params)
     items = data.get("results", []) if isinstance(data, dict) else []

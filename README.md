@@ -17,13 +17,32 @@ pip install -e ".[dev]"
 job-agent init
 job-agent copy-examples
 job-agent setup-wizard          # optional: fill stage/alternance fields
+job-agent enrich-github         # pull skills/projects from your GitHub
 job-agent validate-profile
 job-agent ui                    # opens http://127.0.0.1:8765
 ```
 
 The dashboard gives you 1-click hunt, multi-source search across free public
-APIs, tracked-jobs board, insights & funnel, CSV export, and one-click packet
-generation that fills your `profiles/main.tex` with role-tailored text.
+APIs, tracked-jobs board, insights & funnel, CSV export, GitHub/LinkedIn
+profile enrichment, AI fit analysis (with Ollama), an autonomous job-hunting
+loop, and one-click packet generation that fills your `profiles/main.tex`
+with role-tailored text while preserving your photo, design, and skills
+narrative.
+
+## France Travail credentials — what you actually need
+
+You only need **two environment variables** for the core search:
+
+```text
+FRANCE_TRAVAIL_CLIENT_ID
+FRANCE_TRAVAIL_CLIENT_SECRET
+```
+
+The "endpoints map" file (``.france_travail.endpoints.local.json``) is
+**optional** — it only unlocks the enrichment endpoints (ROME 4.0 skills,
+Anotea employer reviews, Open Training, Labour Market). The dashboard now
+shows this clearly: with just the ID/secret you're fully set for job search,
+scoring, and packet generation.
 
 ## What it does
 
@@ -174,13 +193,16 @@ that should change per job are rewritten:
 - **Skills sections**: untouched. Your curated `Classification/Regression,
   Time-Series Forecasting…` text stays as-is so the CV reads naturally.
 
-If a LaTeX compiler is on `PATH`, `cv.pdf` is built from `cv.tex` using
-`latexmk`, `pdflatex`, `xelatex`, or `lualatex`. On Windows, common MiKTeX
-install locations are checked automatically, so if `pdflatex --version` works
-in PowerShell the dashboard should report LaTeX as ready after a refresh.
+If a LaTeX compiler is visible to the terminal that launched the app, `cv.pdf`
+is built from `cv.tex`. The compiler order is `pdflatex`, `xelatex`,
+`lualatex`, then `latexmk`. This is intentional on Windows: `pdflatex` works
+with MiKTeX directly, while `latexmk` also needs Perl.
 
-If no compiler is installed, the app writes `cv.tex`, generates a fallback
-PDF from Markdown, and adds `latex_warning.txt` to the packet folder.
+If no compiler is visible, the app still writes the tailored `cv.tex`. For the
+PDF fallback, it first copies `profiles/CV.pdf` if present so your original CV
+design is preserved; that copied PDF is not role-tailored. If no master PDF is
+available, it generates a plain role-tailored Markdown PDF and adds
+`latex_warning.txt` to the packet folder.
 
 On Windows, install one of:
 
@@ -341,6 +363,49 @@ Guarantees:
 Disable by unsetting `JOB_AGENT_USE_OLLAMA`. The pipeline is identical with or
 without Ollama; this is purely a finishing touch.
 
+## AI fit analysis (smart mode)
+
+When Ollama is enabled, every packet generation also runs a structured fit
+analysis. The model returns JSON with verdict, score, strengths, gaps, and
+suggested-emphasis bullets; these are surfaced in the job's fit notes and on
+the dashboard's **AI fit** button per job row. The deterministic 0-100 score
+remains untouched — AI insights only augment it.
+
+A "smart" AI summary can replace the deterministic CV summary when its
+vocabulary overlaps enough with the candidate facts and job description.
+Otherwise the deterministic closer is kept.
+
+## Autopilot — autonomous job hunting
+
+Open the **Autopilot** tab. Configure interval (e.g. 30 min), queries, and
+auto-packet score threshold. Click **Start**. The background loop will:
+
+1. Search France Travail (if credentials are set) + multi-source aggregators.
+2. Deduplicate against the local database.
+3. Score every new job against your profile.
+4. Auto-generate tailored packets for jobs that beat the threshold.
+
+The autopilot **never** submits applications, never logs in to job boards,
+and never makes network calls beyond the configured public APIs. Stop it any
+time from the same tab.
+
+## GitHub & LinkedIn enrichment
+
+```bash
+job-agent enrich-github                    # uses contact.github_url, no auth
+job-agent enrich-github --handle m-ihab    # explicit handle
+job-agent enrich-linkedin --file linkedin_skills.txt
+```
+
+GitHub enrichment pulls your public profile + repos via the public REST API,
+weighs languages by byte count, and merges new skills/projects into your
+profile JSON files without overwriting existing curated entries.
+
+LinkedIn requires login (cannot be scraped legally), so the workflow is:
+copy the Skills section from your profile and paste it into the **Add LinkedIn
+skills** modal on the Autopilot tab — endorsement counts and bullet glyphs
+are stripped automatically.
+
 ## One-command processing
 
 ```bash
@@ -355,6 +420,8 @@ Does: `ingest -> normalize -> dedupe -> filter -> score -> generate packet`.
 job-agent init
 job-agent copy-examples
 job-agent setup-wizard [--non-interactive]
+job-agent enrich-github [--handle ...] [--no-projects]
+job-agent enrich-linkedin [--file PATH]
 job-agent validate-profile
 job-agent ui [--host 127.0.0.1] [--port 8765] [--no-open]
 job-agent france-setup

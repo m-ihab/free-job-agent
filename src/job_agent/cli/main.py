@@ -75,6 +75,11 @@ from job_agent.intake.rss import ingest_rss
 from job_agent.intake.url import ingest_url
 from job_agent.normalizer import normalize
 from job_agent.pipeline import add_job_to_tracker, generate_packet_for_job, process_file
+from job_agent.profile_enrich import (
+    enrich_from_github,
+    enrich_from_linkedin_skills,
+    linkedin_handle,
+)
 from job_agent.schemas.job import JobStatus
 from job_agent.schemas.packet import PacketStatus
 from job_agent.scorer import score_job
@@ -260,6 +265,7 @@ def _handle_search_api(args) -> None:
             job.apply_url or job.source_url or "-",
         )
     console.print(table)
+    _print_full_job_links(jobs)
 
     if args.save:
         added = 0
@@ -354,6 +360,7 @@ def _handle_multi_search(args) -> None:
     for idx, job in enumerate(result["jobs"], start=1):
         table.add_row(str(idx), job.source.replace("api:", ""), job.title[:60], job.company[:30], (job.location or "-")[:30])
     console.print(table)
+    _print_full_job_links(result["jobs"])
     summary_lines = [f"{src}: {count}" for src, count in result["per_source"].items()]
     if result["errors"]:
         summary_lines.append("Errors: " + "; ".join(f"{k}={v[:80]}" for k, v in result["errors"].items()))
@@ -367,6 +374,28 @@ def _handle_multi_search(args) -> None:
             else:
                 duplicates += 1
         console.print(f"Saved {added} new jobs ({duplicates} duplicates skipped).")
+
+
+def _print_full_job_links(jobs) -> None:
+    """Print full, copyable result URLs after Rich tables.
+
+    Rich tables are easier to scan, but terminals often truncate long links.
+    Keeping a plain-text block here makes the CLI useful for direct copy/paste.
+    """
+    rows: list[tuple[int, str, str, str]] = []
+    for idx, job in enumerate(jobs, start=1):
+        url = job.apply_url or job.source_url
+        if not url:
+            continue
+        rows.append((idx, job.title, job.company, url))
+    if not rows:
+        return
+
+    print()
+    print("Full URLs:")
+    for idx, title, company, url in rows:
+        print(f"{idx}. {title} @ {company}")
+        print(f"   {url}")
 
 
 def _handle_ui(args) -> None:
@@ -406,6 +435,57 @@ _WIZARD_STEPS = [
     ("relocation", "Open to relocation outside Paris?", "No"),
     ("remote_preference", "Remote / hybrid / onsite preference", "Hybrid in Paris; remote within France OK"),
 ]
+
+
+def _handle_enrich_github(args) -> None:
+    config = _load_config()
+    config.ensure_dirs()
+    handle = args.handle.strip() if args.handle else ""
+    if not handle and config.profiles_dir:
+        try:
+            profile_json = json.loads((config.profiles_dir / "candidate_profile.json").read_text(encoding="utf-8"))
+            github_url = (profile_json.get("contact") or {}).get("github_url") or ""
+            handle = github_url.rstrip("/").rsplit("/", 1)[-1] if github_url else ""
+        except Exception:
+            handle = ""
+    if not handle:
+        _fail("Provide --handle or set contact.github_url in candidate_profile.json.")
+    try:
+        report = enrich_from_github(Path(config.profiles_dir), handle, add_projects=not args.no_projects)
+    except Exception as exc:
+        _fail(f"GitHub enrichment failed: {exc}")
+    console.print(Panel(
+        f"GitHub handle: {report['handle']}\n"
+        f"Public repos: {report['public_repos']}\n"
+        f"Top languages: {', '.join(report['languages_seen'][:8])}\n"
+        f"Skills added: {', '.join(report['added_skills']) or 'none'}\n"
+        f"Projects added: {', '.join(report['added_projects']) or 'none'}\n"
+        f"GitHub URL written: {report['updated_contact']}",
+        title="GitHub enrichment complete",
+    ))
+
+
+def _handle_enrich_linkedin(args) -> None:
+    config = _load_config()
+    config.ensure_dirs()
+    if args.file:
+        try:
+            text = Path(args.file).read_text(encoding="utf-8")
+        except Exception as exc:
+            _fail(f"Could not read {args.file}: {exc}")
+    else:
+        console.print("Paste your LinkedIn Skills section (one per line). Press Ctrl+D (Ctrl+Z on Windows) when done:")
+        text = sys.stdin.read()
+    try:
+        report = enrich_from_linkedin_skills(Path(config.profiles_dir), text)
+    except Exception as exc:
+        _fail(f"LinkedIn enrichment failed: {exc}")
+    console.print(Panel(
+        f"Parsed skills: {report['parsed_count']}\n"
+        f"Newly added: {', '.join(report['added_skills']) or 'none'}\n"
+        f"Updated: {report['candidate_path']}, {report['master_cv_path']}",
+        title="LinkedIn enrichment complete",
+    ))
 
 
 def _handle_setup_wizard(args) -> None:
@@ -992,6 +1072,15 @@ class LocalCLIApp:
         wizard_p = sub.add_parser("setup-wizard", help="Interactive wizard to set stage/alternance fields in your QA profile.")
         wizard_p.add_argument("--non-interactive", action="store_true", help="Use default answers without prompting (useful for tests).")
         wizard_p.set_defaults(handler=_handle_setup_wizard)
+
+        gh_p = sub.add_parser("enrich-github", help="Pull skills/repos from your public GitHub and merge into profile JSON.")
+        gh_p.add_argument("--handle", default="", help="GitHub username; defaults to contact.github_url in candidate_profile.json.")
+        gh_p.add_argument("--no-projects", action="store_true", help="Only update skills; skip adding repos as projects.")
+        gh_p.set_defaults(handler=_handle_enrich_github)
+
+        li_p = sub.add_parser("enrich-linkedin", help="Merge a LinkedIn Skills paste (or text file) into profile JSON.")
+        li_p.add_argument("--file", default="", help="Optional path to a text file with one skill per line.")
+        li_p.set_defaults(handler=_handle_enrich_linkedin)
 
         export_p = sub.add_parser("export", help="Export tracked internships to the A24 workbook.")
         export_sub = export_p.add_subparsers(dest="export_command")

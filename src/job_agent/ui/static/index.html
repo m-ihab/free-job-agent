@@ -11,7 +11,7 @@
       <div>
         <p class="eyebrow">Local job-search cockpit</p>
         <h1>Paris Data Career Copilot</h1>
-        <p class="hero-sub muted" id="heroSub">Local-first. Free. France-focused. Press <kbd>?</kbd> for shortcuts.</p>
+        <p class="hero-sub muted" id="heroSub">Local-first, private, France-focused.</p>
       </div>
       <div class="status-strip" id="statusStrip"></div>
     </header>
@@ -19,6 +19,7 @@
     <nav class="tabs" aria-label="Main sections">
       <button class="tab active" data-tab="search">Search</button>
       <button class="tab" data-tab="jobs">Jobs</button>
+      <button class="tab" data-tab="autopilot">Autopilot</button>
       <button class="tab" data-tab="insights">Insights</button>
       <button class="tab" data-tab="add">Add Job</button>
       <button class="tab" data-tab="profile">Profile &amp; API</button>
@@ -144,6 +145,79 @@
             <h3>Job details</h3>
             <div id="enrichmentDetails" class="muted">Click a job to see details, enrichment, and a preview of the tailored docs.</div>
           </aside>
+        </div>
+      </section>
+
+      <section id="tab-autopilot" class="tab-panel">
+        <div class="section-header">
+          <div>
+            <h2>Autopilot</h2>
+            <p>Auto-search every N minutes, score new jobs, and tailor packets for high-fit roles. Submission is still manual.</p>
+          </div>
+          <div class="action-row">
+            <button class="primary" id="autopilotStartBtn">Start autopilot</button>
+            <button id="autopilotStopBtn">Stop</button>
+            <button id="autopilotRefreshBtn">Refresh</button>
+          </div>
+        </div>
+
+        <div class="metric-grid" id="autopilotMetrics"></div>
+
+        <div class="split">
+          <section class="panel">
+            <h3>Schedule &amp; queries</h3>
+            <div class="control-grid compact">
+              <label>
+                Interval (minutes)
+                <input id="autopilotInterval" type="number" min="5" max="1440" value="30" />
+              </label>
+              <label>
+                Location
+                <input id="autopilotLocation" value="Paris" />
+              </label>
+              <label>
+                Auto-packet score ≥
+                <input id="autopilotThreshold" type="number" min="0" max="100" value="75" />
+              </label>
+            </div>
+            <label>
+              Queries (one per line)
+              <textarea id="autopilotQueries" rows="6">data scientist
+data science
+machine learning
+data analyst
+data engineer</textarea>
+            </label>
+            <div class="control-grid compact">
+              <label class="check-row"><input id="autopilotUseFT" type="checkbox" checked /> Use France Travail</label>
+              <label class="check-row"><input id="autopilotUseMulti" type="checkbox" checked /> Use multi-source</label>
+              <label class="check-row"><input id="autopilotInternships" type="checkbox" checked /> Internships only</label>
+              <label>
+                Max packets / cycle
+                <input id="autopilotMaxPackets" type="number" min="0" max="20" value="5" />
+              </label>
+            </div>
+          </section>
+          <section class="panel">
+            <h3>Last cycle</h3>
+            <div id="autopilotLastSummary" class="muted">Autopilot has not run yet.</div>
+            <h3 style="margin-top:1rem">Errors</h3>
+            <div id="autopilotErrors" class="muted">None.</div>
+          </section>
+        </div>
+
+        <div class="panel">
+          <h3>Smart features</h3>
+          <p class="muted" style="margin:0 0 0.6rem">
+            For the strongest experience, install <a href="https://ollama.com/" target="_blank" rel="noreferrer">Ollama</a>
+            locally and set <code>JOB_AGENT_USE_OLLAMA=1</code>. The autopilot still runs without it — Ollama
+            just adds AI-graded fit analysis and smarter summaries.
+          </p>
+          <div class="action-row">
+            <button id="enrichGithubBtn">Enrich from GitHub</button>
+            <button id="enrichLinkedinBtn">Add LinkedIn skills</button>
+          </div>
+          <div class="notice hidden" id="autopilotNotice"></div>
         </div>
       </section>
 
@@ -279,6 +353,40 @@
       </section>
     </main>
 
+    <div id="linkedinModal" class="shortcuts-modal hidden" role="dialog" aria-modal="true">
+      <div class="shortcuts-card" style="width: min(560px, 92vw);">
+        <div class="shortcuts-header">
+          <h3>Paste LinkedIn skills</h3>
+          <button id="closeLinkedin" aria-label="Close">&times;</button>
+        </div>
+        <p class="muted" style="margin-top:0">
+          Open your LinkedIn profile, scroll to the Skills section, copy the list, and paste it below.
+          LinkedIn blocks scraping; this copy-paste is the safe alternative. One skill per line works best.
+        </p>
+        <textarea id="linkedinTextarea" rows="10" placeholder="Python
+Machine Learning
+Deep Learning
+Pandas
+SQL
+..."></textarea>
+        <div class="action-row" style="margin-top:0.6rem">
+          <button class="primary" id="linkedinSubmitBtn">Add skills</button>
+          <button id="linkedinCancelBtn">Cancel</button>
+        </div>
+        <div class="notice hidden" id="linkedinNotice"></div>
+      </div>
+    </div>
+
+    <div id="aiAnalysisModal" class="shortcuts-modal hidden" role="dialog" aria-modal="true">
+      <div class="shortcuts-card" style="width: min(640px, 92vw);">
+        <div class="shortcuts-header">
+          <h3>AI fit analysis</h3>
+          <button id="closeAiAnalysis" aria-label="Close">&times;</button>
+        </div>
+        <div id="aiAnalysisBody" class="muted">Run AI analysis on a job to see strengths, gaps, and tailored suggestions here.</div>
+      </div>
+    </div>
+
     <div id="shortcutsHelp" class="shortcuts-modal hidden" role="dialog" aria-modal="true">
       <div class="shortcuts-card">
         <div class="shortcuts-header">
@@ -287,10 +395,11 @@
         </div>
         <dl class="shortcuts-list">
           <dt><kbd>?</kbd></dt><dd>Show this help</dd>
-          <dt><kbd>1</kbd>-<kbd>5</kbd></dt><dd>Switch tabs</dd>
+          <dt><kbd>1</kbd>-<kbd>6</kbd></dt><dd>Switch tabs</dd>
           <dt><kbd>/</kbd></dt><dd>Focus job search</dd>
           <dt><kbd>g</kbd> <kbd>h</kbd></dt><dd>1-click hunt</dd>
           <dt><kbd>g</kbd> <kbd>m</kbd></dt><dd>Multi-source search</dd>
+          <dt><kbd>g</kbd> <kbd>a</kbd></dt><dd>Open Autopilot tab</dd>
           <dt><kbd>r</kbd></dt><dd>Refresh jobs</dd>
           <dt><kbd>Esc</kbd></dt><dd>Close dialogs</dd>
         </dl>

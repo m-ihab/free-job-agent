@@ -12,11 +12,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from job_agent.ai_agent import analyze_fit as _ai_analyze_fit
 from job_agent.analytics import compute_stats, jobs_to_csv
+from job_agent.autopilot import AutopilotConfig, get_autopilot
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.enrichment import EnrichOptions, enrich_job
 from job_agent.exporters.internship_workbook import export_applied_internships
+from job_agent.polish import PolishOptions
+from job_agent.profile_enrich import enrich_from_github, enrich_from_linkedin_skills
 from job_agent.intake.free_apis import (
     FreeApiError,
     KEYWORD_ONLY_SOURCES,
@@ -349,6 +353,8 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             db.initialize()
             packets = db.get_packets_for_job(job_id) if job_id else db.list_packets()
             return self._send_json({"packets": [packet_to_dict(packet) for packet in packets]})
+        if parsed.path == "/api/autopilot":
+            return self._send_json(get_autopilot(self._config()).status())
         if parsed.path == "/api/stats":
             config = self._config()
             db = Database(config.db_path)  # type: ignore[arg-type]
@@ -431,6 +437,61 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 return self._send_json({"report": report})
             if parsed.path == "/api/enrich-batch":
                 return self._send_json(_enrich_batch(config, payload))
+            if parsed.path == "/api/autopilot/start":
+                autopilot_options = AutopilotConfig(
+                    queries=[q.strip() for q in (payload.get("queries") or []) if str(q).strip()] or AutopilotConfig().queries,
+                    location=str(payload.get("location") or "Paris"),
+                    language=str(payload.get("language") or "both"),
+                    interval_minutes=int(payload.get("interval_minutes") or 30),
+                    auto_packet_threshold=int(payload.get("auto_packet_threshold") or 75),
+                    multi_source_limit=int(payload.get("multi_source_limit") or 5),
+                    france_travail_limit=int(payload.get("france_travail_limit") or 8),
+                    use_france_travail=bool(payload.get("use_france_travail", True)),
+                    use_multi_source=bool(payload.get("use_multi_source", True)),
+                    max_packets_per_cycle=int(payload.get("max_packets_per_cycle") or 5),
+                    internships_only=bool(payload.get("internships_only", True)),
+                )
+                state = get_autopilot(config).start(autopilot_options)
+                return self._send_json({"state": state.__dict__, "status": get_autopilot(config).status()})
+            if parsed.path == "/api/autopilot/stop":
+                state = get_autopilot(config).stop()
+                return self._send_json({"state": state.__dict__, "status": get_autopilot(config).status()})
+            if parsed.path == "/api/ai-analyze":
+                job_id = str(payload.get("job_id") or "")
+                if not job_id:
+                    return self._send_error_json("job_id is required.")
+                db = Database(config.db_path)  # type: ignore[arg-type]
+                db.initialize()
+                job = db.resolve_job(job_id)
+                if not job:
+                    return self._send_error_json("Job not found.", HTTPStatus.NOT_FOUND)
+                from job_agent.validators import load_profile_bundle
+                profile, master_cv, _ = load_profile_bundle(config)
+                analysis = _ai_analyze_fit(job, master_cv, profile, PolishOptions.from_env())
+                if analysis is None:
+                    return self._send_error_json(
+                        "AI analysis unavailable. Enable Ollama with JOB_AGENT_USE_OLLAMA=1 and ensure the model is running.",
+                        HTTPStatus.SERVICE_UNAVAILABLE,
+                    )
+                return self._send_json({"analysis": analysis.to_dict()})
+            if parsed.path == "/api/enrich-github":
+                handle = str(payload.get("handle") or "").strip()
+                if not handle and config.profiles_dir:
+                    try:
+                        import json as _j
+                        profile_json = _j.loads((config.profiles_dir / "candidate_profile.json").read_text(encoding="utf-8"))
+                        github_url = (profile_json.get("contact") or {}).get("github_url") or ""
+                        handle = github_url.rstrip("/").rsplit("/", 1)[-1] if github_url else ""
+                    except Exception:
+                        handle = ""
+                if not handle:
+                    return self._send_error_json("GitHub handle is required. Set contact.github_url in candidate_profile.json or pass 'handle'.")
+                report = enrich_from_github(Path(config.profiles_dir), handle, add_projects=bool(payload.get("add_projects", True)))
+                return self._send_json({"report": report})
+            if parsed.path == "/api/enrich-linkedin":
+                text = str(payload.get("text") or "")
+                report = enrich_from_linkedin_skills(Path(config.profiles_dir), text)
+                return self._send_json({"report": report})
             if parsed.path == "/api/export-internships":
                 return self._send_json(_export_internships(config, payload))
             if parsed.path == "/api/status":

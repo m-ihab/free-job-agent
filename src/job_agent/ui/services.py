@@ -58,6 +58,7 @@ def profile_status(config: AppConfig | None = None) -> dict[str, Any]:
     endpoint_enabled = sum(1 for spec in registry.values() if spec.enabled and spec.path)
     polish_options = PolishOptions.from_env()
     ollama_ready = polish_options.enabled and is_ollama_enabled_and_reachable(polish_options)
+    france_travail_ready = is_france_travail_configured()
     return {
         "valid": not report.errors,
         "errors": report.errors,
@@ -65,10 +66,22 @@ def profile_status(config: AppConfig | None = None) -> dict[str, Any]:
         "profiles_dir": str(config.profiles_dir),
         "data_dir": str(config.data_dir),
         "outputs_dir": str(config.outputs_dir),
-        "france_travail_configured": is_france_travail_configured(),
+        "france_travail_configured": france_travail_ready,
         "env_local_present": env_path.exists(),
         "endpoints_file_present": endpoints_path.exists(),
         "endpoints_file": str(endpoints_path) if endpoints_path.exists() else "",
+        # The endpoints map is OPTIONAL — only needed for enrichment APIs
+        # (ROME 4.0, Anotea, Open Training, Labour Market). Basic job search
+        # works with just the client_id/secret credentials.
+        "endpoints_optional": True,
+        "endpoints_explainer": (
+            "The endpoints map is only required for advanced enrichment APIs "
+            "(ROME 4.0 skills, Anotea reviews, Open Training, Labour Market). "
+            "With just FRANCE_TRAVAIL_CLIENT_ID and FRANCE_TRAVAIL_CLIENT_SECRET, "
+            "the core job search already works."
+        ),
+        "search_ready": france_travail_ready,
+        "enrichment_ready": france_travail_ready and endpoints_path.exists(),
         "endpoints_summary": {
             "total": endpoint_total,
             "configured": endpoint_configured,
