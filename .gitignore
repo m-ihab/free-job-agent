@@ -31,4 +31,8 @@ france_urls.json
 france_urls.txt
 UsersmihabDocumentstmppytest/
 .claude/
+node_modules/
+playwright-report/
+test-results/
+preview_cv.tex
 

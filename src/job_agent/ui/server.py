@@ -12,14 +12,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from job_agent.ai_agent import analyze_fit as _ai_analyze_fit, suggest_search_queries
+from job_agent.ai_agent import (
+    analyze_fit as _ai_analyze_fit,
+    chat_about_job as _ai_chat_about_job,
+    classify_job as _ai_classify_job,
+    summarize_job as _ai_summarize_job,
+    suggest_search_queries,
+)
 from job_agent.analytics import compute_stats, jobs_to_csv
 from job_agent.autopilot import AutopilotConfig, get_autopilot
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.enrichment import EnrichOptions, enrich_job
 from job_agent.exporters.internship_workbook import export_applied_internships
-from job_agent.polish import PolishOptions
+from job_agent.polish import PolishOptions, ollama_status, resolve_ollama_model
 from job_agent.profile_enrich import enrich_from_github, enrich_from_linkedin_skills
 from job_agent.intake.free_apis import (
     FreeApiError,
@@ -105,7 +111,13 @@ def _list_jobs(config: AppConfig, status: str = "") -> list[dict]:
     results: list[dict] = []
     for job in jobs:
         enrichment = tracker.db.get_enrichment(job.id)
-        results.append(job_to_dict(job, _latest_packet_for_job(tracker.db, job.id), enrichment=enrichment))
+        ai_cache = tracker.db.list_ai_cache_for_job(job.id)
+        results.append(job_to_dict(
+            job,
+            _latest_packet_for_job(tracker.db, job.id),
+            enrichment=enrichment,
+            ai_cache=ai_cache,
+        ))
     return results
 
 
@@ -425,6 +437,19 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             return self._send_json({"packets": [packet_to_dict(packet) for packet in packets]})
         if parsed.path == "/api/autopilot":
             return self._send_json(get_autopilot(self._config()).status())
+        if parsed.path == "/api/autopilot/stream":
+            return self._stream_autopilot()
+        if parsed.path == "/api/ai-status":
+            return self._send_json(ollama_status(PolishOptions.from_env()))
+        if parsed.path == "/api/ai-cache":
+            query = parse_qs(parsed.query)
+            job_id = (query.get("job_id") or [""])[0]
+            if not job_id:
+                return self._send_error_json("job_id is required.")
+            config = self._config()
+            db = Database(config.db_path)  # type: ignore[arg-type]
+            db.initialize()
+            return self._send_json({"cache": db.list_ai_cache_for_job(job_id)})
         if parsed.path == "/api/stats":
             config = self._config()
             db = Database(config.db_path)  # type: ignore[arg-type]
@@ -526,6 +551,71 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/autopilot/stop":
                 state = get_autopilot(config).stop()
                 return self._send_json({"state": state.__dict__, "status": get_autopilot(config).status()})
+            if parsed.path == "/api/ai-chat":
+                job_id = str(payload.get("job_id") or "")
+                question = str(payload.get("question") or "").strip()
+                history = payload.get("history") or []
+                if not job_id or not question:
+                    return self._send_error_json("job_id and question are required.")
+                db = Database(config.db_path)  # type: ignore[arg-type]
+                db.initialize()
+                job = db.resolve_job(job_id)
+                if not job:
+                    return self._send_error_json("Job not found.", HTTPStatus.NOT_FOUND)
+                profile, master_cv, _ = load_profile_bundle(config)
+                reply = _ai_chat_about_job(job, master_cv, profile, question, history if isinstance(history, list) else [])
+                if not reply:
+                    return self._send_error_json(
+                        "AI chat unavailable. Start Ollama (and make sure a model is pulled) to enable this.",
+                        HTTPStatus.SERVICE_UNAVAILABLE,
+                    )
+                return self._send_json({"reply": reply})
+            if parsed.path == "/api/ai-summarize":
+                job_id = str(payload.get("job_id") or "")
+                if not job_id:
+                    return self._send_error_json("job_id is required.")
+                db = Database(config.db_path)  # type: ignore[arg-type]
+                db.initialize()
+                job = db.resolve_job(job_id)
+                if not job:
+                    return self._send_error_json("Job not found.", HTTPStatus.NOT_FOUND)
+                tldr = _ai_summarize_job(job)
+                if not tldr:
+                    return self._send_error_json("AI summary unavailable.", HTTPStatus.SERVICE_UNAVAILABLE)
+                try:
+                    db.save_ai_cache(job.id, "summary", tldr, resolve_ollama_model())
+                except Exception:
+                    pass
+                return self._send_json({"summary": tldr})
+            if parsed.path == "/api/ai-classify":
+                job_id = str(payload.get("job_id") or "")
+                if not job_id:
+                    return self._send_error_json("job_id is required.")
+                db = Database(config.db_path)  # type: ignore[arg-type]
+                db.initialize()
+                job = db.resolve_job(job_id)
+                if not job:
+                    return self._send_error_json("Job not found.", HTTPStatus.NOT_FOUND)
+                classification = _ai_classify_job(job)
+                if not classification:
+                    return self._send_error_json("AI classify unavailable.", HTTPStatus.SERVICE_UNAVAILABLE)
+                try:
+                    db.save_ai_cache(job.id, "classify", classification, resolve_ollama_model())
+                except Exception:
+                    pass
+                return self._send_json({"classification": classification})
+            if parsed.path == "/api/ai-plan-queries":
+                profile, master_cv, _ = load_profile_bundle(config)
+                plan = suggest_search_queries(
+                    profile,
+                    master_cv,
+                    seed_query=str(payload.get("seed_query") or "data scientist"),
+                    location=str(payload.get("location") or "Paris"),
+                    language=str(payload.get("language") or "both"),
+                    internships_only=bool(payload.get("internships_only", True)),
+                    limit=int(payload.get("limit") or 8),
+                )
+                return self._send_json(plan)
             if parsed.path == "/api/ai-analyze":
                 job_id = str(payload.get("job_id") or "")
                 if not job_id:
@@ -575,6 +665,39 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             return self._send_error_json(str(exc), HTTPStatus.BAD_GATEWAY)
         except Exception as exc:
             return self._send_error_json(str(exc), HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _stream_autopilot(self) -> None:
+        """SSE stream that pushes the autopilot status every few seconds."""
+        try:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+        except Exception:
+            return None
+        autopilot = get_autopilot(self._config())
+        last_payload = ""
+        import time as _time
+        try:
+            for _ in range(120):  # cap at ~10 minutes per stream connection
+                status = autopilot.status()
+                payload = json.dumps(status, ensure_ascii=False)
+                if payload != last_payload:
+                    chunk = f"event: status\ndata: {payload}\n\n".encode("utf-8")
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                    last_payload = payload
+                else:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                _time.sleep(5)
+        except (BrokenPipeError, ConnectionResetError):
+            return None
+        except Exception:
+            return None
+        return None
 
     def _send_static(self, path: Path) -> None:
         try:

@@ -7,7 +7,12 @@ const state = {
   insightsCache: null,
   autopilotCache: null,
   autopilotTimer: null,
+  autopilotStream: null,
   chord: { key: "", at: 0 },
+  charts: {},
+  aiStatus: null,
+  chatJobId: null,
+  chatHistory: [],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -92,16 +97,21 @@ function scorePill(score) {
 
 function renderState() {
   const profile = state.profile || {};
+  const aiModelLabel = (profile.ollama_model || "").replace(":latest", "") || "ready";
   const ollamaBadge = profile.ollama_ready
-    ? renderBadge(`Local AI: ${profile.ollama_model}`, "good")
+    ? renderBadge(`Local AI: ${aiModelLabel}`, "good")
     : renderBadge("Local AI offline", "warn");
-  $("statusStrip").innerHTML = [
+  const compiler = (profile.latex_compiler || "").split(/[\\/]/).pop();
+  const badgesHtml = [
     renderBadge(profile.valid ? "Profile ready" : "Profile needs review", profile.valid ? "good" : "bad"),
-    renderBadge(profile.france_travail_configured ? "France Travail API ready" : "API not configured", profile.france_travail_configured ? "good" : "warn"),
-    renderBadge(profile.latex_ready ? `LaTeX: ${profile.latex_compiler}` : "LaTeX compiler missing", profile.latex_ready ? "good" : "warn"),
+    renderBadge(profile.france_travail_configured ? "France Travail ready" : "France Travail off", profile.france_travail_configured ? "good" : "warn"),
+    renderBadge(profile.latex_ready ? `LaTeX: ${compiler}` : "LaTeX missing", profile.latex_ready ? "good" : "warn"),
     ollamaBadge,
     renderBadge(`${state.jobs.length} jobs`, "good"),
   ].filter(Boolean).join("");
+  const themeButton = document.getElementById("themeToggleBtn");
+  $("statusStrip").innerHTML = badgesHtml;
+  if (themeButton) $("statusStrip").appendChild(themeButton);
 
   $("statusFilter").innerHTML = `<option value="">All statuses</option>${state.statuses
     .map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`)
@@ -318,11 +328,24 @@ function jobActions(job) {
   const rejected = job.status === "REJECTED" ? "" : `<button data-action="status" data-status="REJECTED" data-job="${escapeHtml(job.id)}" title="Mark as rejected">Reject</button>`;
   return `<div class="row-actions">
     <button data-action="packet" data-job="${escapeHtml(job.id)}" title="Generate tailored CV + cover letter">Optimize</button>
-    <button data-action="ai-analyze" data-job="${escapeHtml(job.id)}" title="AI fit analysis (needs Ollama)">AI fit</button>
+    <button data-action="ai-analyze" data-job="${escapeHtml(job.id)}" title="AI fit analysis">AI fit</button>
+    <button data-action="ai-chat" data-job="${escapeHtml(job.id)}" title="Chat about this role">Chat</button>
     <button data-action="enrich" data-job="${escapeHtml(job.id)}" title="Enrich with France Travail data">Enrich</button>
     ${submitted}${rejected}
     ${apply}${assistant}${cv}${letter}
   </div>`;
+}
+
+function aiTagsHtml(job) {
+  const tags = (job.ai_tags || []).slice(0, 4);
+  if (!tags.length) return "";
+  return `<div class="row-tags">${tags.map((t) => `<span class="row-tag">${escapeHtml(t)}</span>`).join("")}</div>`;
+}
+
+function aiVerdictBadge(job) {
+  if (!job.ai_verdict) return "";
+  const tone = job.ai_verdict === "strong" ? "good" : job.ai_verdict === "weak" ? "bad" : "warn";
+  return renderBadge(`AI: ${job.ai_verdict}`, tone);
 }
 
 function isInternship(job) {
@@ -440,12 +463,15 @@ function renderJobs() {
         const checked = state.selectedJobs.has(job.id) ? "checked" : "";
         const enrichLabel = job.enriched ? "Enriched" : "—";
         const activeClass = state.activeJobId === job.id ? "active-row" : "";
+        const summary = job.ai_summary ? `<div class="row-summary">${escapeHtml(job.ai_summary)}</div>` : "";
+        const aiBadge = aiVerdictBadge(job);
+        const tags = aiTagsHtml(job);
         return `<tr data-job-row="${escapeHtml(job.id)}" class="${activeClass}">
           <td><input type="checkbox" data-select-job="${escapeHtml(job.id)}" ${checked} /></td>
-          <td><strong>${escapeHtml(job.title)}</strong><br><span class="muted">${escapeHtml(job.company)}</span></td>
+          <td><strong>${escapeHtml(job.title)}</strong><br><span class="muted">${escapeHtml(job.company)}</span>${summary}${tags}</td>
           <td>${escapeHtml(job.location || "")}${job.remote ? ` ${renderBadge("Remote", "good")}` : ""}</td>
           <td>${escapeHtml(job.status)}</td>
-          <td>${scorePill(job.fit_score)}</td>
+          <td>${scorePill(job.fit_score)}${aiBadge ? `<br>${aiBadge}` : ""}</td>
           <td>${escapeHtml((job.tech_stack || []).slice(0, 5).join(", "))}</td>
           <td>${escapeHtml(enrichLabel)}</td>
           <td class="actions">${jobActions(job)}</td>
@@ -680,6 +706,110 @@ async function loadInsights() {
   }
 }
 
+function readVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
+}
+
+function destroyChart(key) {
+  const existing = state.charts[key];
+  if (existing && typeof existing.destroy === "function") existing.destroy();
+  state.charts[key] = null;
+}
+
+function renderFunnelChart(funnel) {
+  if (typeof Chart === "undefined") return;
+  destroyChart("funnel");
+  const ctx = document.getElementById("funnelChart");
+  if (!ctx) return;
+  const labels = funnel.map((row) => row.label);
+  const values = funnel.map((row) => row.count);
+  const accent = readVar("--accent");
+  const accent3 = readVar("--accent-3");
+  state.charts.funnel = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "Jobs",
+        data: values,
+        backgroundColor: labels.map((_, i) => `rgba(${i % 2 ? "28,63,114" : "11,139,127"}, 0.85)`),
+        borderRadius: 6,
+        borderSkipped: false,
+      }],
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, grid: { color: readVar("--line") }, ticks: { color: readVar("--muted") } },
+        y: { grid: { display: false }, ticks: { color: readVar("--ink") } },
+      },
+    },
+  });
+}
+
+function renderWeeklyChart(weeks) {
+  if (typeof Chart === "undefined") return;
+  destroyChart("weekly");
+  const ctx = document.getElementById("weeklyChart");
+  if (!ctx) return;
+  const labels = weeks.map((row) => row.week.replace(/^\d{4}-/, ""));
+  const added = weeks.map((row) => row.added);
+  const applied = weeks.map((row) => row.applied);
+  state.charts.weekly = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "Added", data: added, backgroundColor: "rgba(28,63,114,0.75)", borderRadius: 4 },
+        { label: "Applied", data: applied, backgroundColor: "rgba(11,139,127,0.85)", borderRadius: 4 },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: readVar("--muted") } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: readVar("--muted") } },
+        y: { beginAtZero: true, grid: { color: readVar("--line") }, ticks: { color: readVar("--muted") } },
+      },
+    },
+  });
+}
+
+function renderScoreChart(buckets) {
+  if (typeof Chart === "undefined") return;
+  destroyChart("score");
+  const ctx = document.getElementById("scoreChart");
+  if (!ctx) return;
+  const labels = Object.keys(buckets);
+  const values = Object.values(buckets);
+  state.charts.score = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: [
+          "rgba(192,57,43,0.85)",
+          "rgba(244,184,96,0.85)",
+          "rgba(11,139,127,0.85)",
+          "rgba(28,63,114,0.85)",
+        ],
+        borderColor: readVar("--surface"),
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom", labels: { color: readVar("--muted") } } },
+    },
+  });
+}
+
 function renderInsights(stats) {
   const total = stats.total || 0;
   const submitted = stats.submitted_count || 0;
@@ -691,35 +821,9 @@ function renderInsights(stats) {
     metric("Response rate", `${stats.response_rate ?? 0}%`, `avg score ${stats.avg_score ?? "—"}`),
   ].join("");
 
-  const maxFunnel = Math.max(...(stats.funnel || []).map((row) => row.count || 0), 1);
-  $("funnelView").innerHTML = (stats.funnel || [])
-    .map((row) => {
-      const pct = Math.round((row.count / maxFunnel) * 100);
-      return `<div class="funnel-row">
-        <span>${escapeHtml(row.label)}</span>
-        <div class="funnel-bar"><div class="funnel-fill" style="width:${pct}%"></div></div>
-        <strong>${row.count}</strong>
-      </div>`;
-    })
-    .join("");
-
-  const weeks = stats.weekly || [];
-  const maxWeek = Math.max(1, ...weeks.flatMap((row) => [row.added, row.applied]));
-  $("weeklyView").innerHTML = `${weeks
-    .map((row) => {
-      const widthAdded = Math.round((row.added / maxWeek) * 100);
-      const widthApplied = Math.round((row.applied / maxWeek) * 100);
-      return `<div class="weekly-row">
-        <span>${escapeHtml(row.week)}</span>
-        <div class="weekly-bar-wrap">
-          <div class="weekly-bar added" style="width:${widthAdded}%" title="Added"></div>
-          <div class="weekly-bar applied" style="width:${widthApplied}%" title="Applied"></div>
-        </div>
-        <strong>${row.added}/${row.applied}</strong>
-      </div>`;
-    })
-    .join("")}
-    <div class="weekly-legend"><span><span class="legend-swatch" style="background:var(--accent-3)"></span>Added</span><span><span class="legend-swatch" style="background:var(--accent)"></span>Applied</span></div>`;
+  renderFunnelChart(stats.funnel || []);
+  renderWeeklyChart(stats.weekly || []);
+  renderScoreChart(stats.score_buckets || {});
 
   $("topCompaniesView").innerHTML = (stats.top_companies || [])
     .map((row) => `<li><span>${escapeHtml(row.name)}</span><strong>${row.count}</strong></li>`)
@@ -730,15 +834,6 @@ function renderInsights(stats) {
   $("topLocationsView").innerHTML = (stats.top_locations || [])
     .map((row) => `<li><span>${escapeHtml(row.name)}</span><strong>${row.count}</strong></li>`)
     .join("") || "<li class='muted'>No data yet.</li>";
-
-  const buckets = stats.score_buckets || {};
-  const maxBucket = Math.max(1, ...Object.values(buckets));
-  $("scoreDistView").innerHTML = Object.entries(buckets)
-    .map(([key, value]) => {
-      const pct = Math.round((value / maxBucket) * 100);
-      return `<div class="score-dist-row"><span>${escapeHtml(key)}</span><div class="score-dist-bar"><div class="score-dist-fill" style="width:${pct}%"></div></div><strong>${value}</strong></div>`;
-    })
-    .join("");
 }
 
 function activateTab(name) {
@@ -816,6 +911,33 @@ function autopilotPayload() {
   };
 }
 
+function subscribeAutopilotSse() {
+  if (state.autopilotStream) return;
+  if (typeof EventSource === "undefined") return;
+  const es = new EventSource("/api/autopilot/stream");
+  state.autopilotStream = es;
+  es.addEventListener("status", (event) => {
+    try {
+      const status = JSON.parse(event.data);
+      state.autopilotCache = status;
+      renderAutopilot(status);
+      if (!status.running) closeAutopilotSse();
+    } catch {
+      // ignore parse errors; keep stream open
+    }
+  });
+  es.onerror = () => {
+    closeAutopilotSse();
+  };
+}
+
+function closeAutopilotSse() {
+  if (state.autopilotStream) {
+    try { state.autopilotStream.close(); } catch {}
+    state.autopilotStream = null;
+  }
+}
+
 async function startAutopilot() {
   const button = $("autopilotStartBtn");
   setBusy(button, true);
@@ -825,7 +947,8 @@ async function startAutopilot() {
     renderAutopilot(payload.status);
     toast("Autopilot started. It runs in the background.");
     if (state.autopilotTimer) window.clearInterval(state.autopilotTimer);
-    state.autopilotTimer = window.setInterval(loadAutopilot, 15000);
+    state.autopilotTimer = window.setInterval(loadAutopilot, 30000);
+    subscribeAutopilotSse();
   } catch (error) {
     setNotice("autopilotNotice", error.message, true);
   } finally {
@@ -843,11 +966,45 @@ async function stopAutopilot() {
       window.clearInterval(state.autopilotTimer);
       state.autopilotTimer = null;
     }
+    closeAutopilotSse();
     toast("Autopilot stopped.");
   } catch (error) {
     setNotice("autopilotNotice", error.message, true);
   } finally {
     setBusy(button, false);
+  }
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  try { localStorage.setItem("job-agent-theme", theme); } catch {}
+  // Charts must be re-drawn to pick up new CSS-variable colors
+  if (state.insightsCache) renderInsights(state.insightsCache);
+}
+
+function initTheme() {
+  let theme = "light";
+  try {
+    theme = localStorage.getItem("job-agent-theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  } catch {
+    theme = "light";
+  }
+  applyTheme(theme);
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute("data-theme") || "light";
+  applyTheme(current === "light" ? "dark" : "light");
+}
+
+async function loadAiStatus() {
+  try {
+    const payload = await api("/api/ai-status");
+    state.aiStatus = payload;
+    renderState();
+  } catch {
+    state.aiStatus = { reachable: false };
+    renderState();
   }
 }
 
@@ -888,6 +1045,61 @@ function showAiAnalysis(analysis) {
     </div>
   `;
   $("aiAnalysisModal").classList.remove("hidden");
+}
+
+function openChatModal(job) {
+  state.chatJobId = job.id;
+  state.chatHistory = [];
+  $("aiChatTitle").textContent = `Chat: ${job.title}`.slice(0, 80);
+  $("aiChatSubtitle").textContent = `${job.company || ""} ${job.location ? "· " + job.location : ""}`;
+  $("aiChatStream").innerHTML = "";
+  $("aiChatInput").value = "";
+  if (job.ai_summary) {
+    appendChatBubble("assistant", job.ai_summary);
+  } else {
+    appendChatBubble("assistant", "Ask anything: should I apply, what to emphasize in the CV, what gaps you see, how to write the opener…");
+  }
+  $("aiChatModal").classList.remove("hidden");
+  $("aiChatInput").focus();
+}
+
+function appendChatBubble(role, text) {
+  const el = document.createElement("div");
+  el.className = `chat-bubble ${role}`;
+  el.textContent = text;
+  $("aiChatStream").appendChild(el);
+  $("aiChatStream").scrollTop = $("aiChatStream").scrollHeight;
+  return el;
+}
+
+async function sendChatMessage() {
+  const text = $("aiChatInput").value.trim();
+  if (!text || !state.chatJobId) return;
+  appendChatBubble("user", text);
+  state.chatHistory.push({ role: "user", content: text });
+  $("aiChatInput").value = "";
+  const thinking = appendChatBubble("thinking", "Thinking locally…");
+  const button = $("aiChatSendBtn");
+  setBusy(button, true);
+  try {
+    const payload = await api("/api/ai-chat", {
+      job_id: state.chatJobId,
+      question: text,
+      history: state.chatHistory.slice(0, -1),
+    });
+    thinking.remove();
+    if (payload.reply) {
+      appendChatBubble("assistant", payload.reply);
+      state.chatHistory.push({ role: "assistant", content: payload.reply });
+    } else {
+      appendChatBubble("assistant", "(AI returned no usable reply. Try rephrasing.)");
+    }
+  } catch (error) {
+    thinking.remove();
+    appendChatBubble("assistant", `Error: ${error.message}`);
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 async function enrichGithub() {
@@ -1067,6 +1279,20 @@ function bindEvents() {
     if (event.target === $("aiAnalysisModal")) $("aiAnalysisModal").classList.add("hidden");
   });
 
+  $("closeAiChat").addEventListener("click", () => $("aiChatModal").classList.add("hidden"));
+  $("aiChatModal").addEventListener("click", (event) => {
+    if (event.target === $("aiChatModal")) $("aiChatModal").classList.add("hidden");
+  });
+  $("aiChatSendBtn").addEventListener("click", sendChatMessage);
+  $("aiChatInput").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendChatMessage();
+    }
+  });
+  const themeBtn = document.getElementById("themeToggleBtn");
+  if (themeBtn) themeBtn.addEventListener("click", toggleTheme);
+
   document.body.addEventListener("click", (event) => {
     const target = event.target.closest("[data-action='packet']");
     if (target) {
@@ -1081,6 +1307,13 @@ function bindEvents() {
     const aiTarget = event.target.closest("[data-action='ai-analyze']");
     if (aiTarget) {
       runAiAnalysis(aiTarget.dataset.job, aiTarget);
+      return;
+    }
+    const chatTarget = event.target.closest("[data-action='ai-chat']");
+    if (chatTarget) {
+      const jobId = chatTarget.dataset.job;
+      const job = state.jobs.find((item) => item.id === jobId);
+      if (job) openChatModal(job);
       return;
     }
     const statusTarget = event.target.closest("[data-action='status']");
@@ -1105,10 +1338,13 @@ function bindEvents() {
   });
 }
 
+initTheme();
 bindEvents();
 bindKeyboardShortcuts();
+loadAiStatus();
 loadState()
   .then(() => buildLinks())
   .catch((error) => {
     setNotice("searchNotice", error.message, true);
   });
+window.setInterval(loadAiStatus, 60000);

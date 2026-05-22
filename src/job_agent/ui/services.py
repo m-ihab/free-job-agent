@@ -143,10 +143,14 @@ def build_manual_search_groups(
     return groups
 
 
-def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None, enrichment: dict | None = None) -> dict[str, Any]:
+def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None, enrichment: dict | None = None, ai_cache: dict | None = None) -> dict[str, Any]:
     enrichment = enrichment or {}
     enrichment_sources = enrichment.get("sources") or {}
     anotea = enrichment.get("anotea") or {}
+    ai_cache = ai_cache or {}
+    ai_fit = ai_cache.get("fit") or {}
+    ai_summary = ai_cache.get("summary") or {}
+    ai_classify = ai_cache.get("classify") or {}
     return {
         "id": job.id,
         "short_id": job.id[:8],
@@ -178,6 +182,17 @@ def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None,
         "rome_skills": (enrichment.get("rome_skills") or [])[:10],
         "training_recommendations": (enrichment.get("training_recommendations") or [])[:8],
         "labour_market_signals": (enrichment.get("labour_market_signals") or [])[:8],
+        "ai_verdict": ai_fit.get("verdict") or "",
+        "ai_score": ai_fit.get("score"),
+        "ai_summary": ai_summary.get("tldr") or "",
+        "ai_key_signals": ai_summary.get("key_signals") or [],
+        "ai_tags": ai_classify.get("tags") or [],
+        "ai_role_family": ai_classify.get("role_family") or "",
+        "ai_seniority": ai_classify.get("seniority") or "",
+        "ai_contract": ai_classify.get("contract") or "",
+        "ai_remote_mode": ai_classify.get("remote_mode") or "",
+        "ai_must_haves": ai_classify.get("must_haves") or [],
+        "ai_nice_to_haves": ai_classify.get("nice_to_haves") or [],
     }
 
 

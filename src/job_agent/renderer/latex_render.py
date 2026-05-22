@@ -481,12 +481,20 @@ def _safe_existing_file(path: Path) -> bool:
         return False
 
 
+def _perl_available() -> bool:
+    """latexmk needs a Perl interpreter; check before preferring it."""
+    return shutil.which("perl") is not None
+
+
 def available_latex_compiler() -> str | None:
     """Return the best available LaTeX compiler executable.
 
-    Order: pdflatex > xelatex > lualatex > latexmk. We prefer pdflatex because
-    it has no external dependencies, whereas MiKTeX's latexmk needs Perl
-    installed separately.
+    Preference order:
+    - latexmk (preferred — handles reruns/cross-refs/bibliography cleanly)
+      but only when Perl is on PATH, since MiKTeX latexmk needs it.
+    - pdflatex / xelatex / lualatex as direct fallbacks (no Perl needed).
+
+    The order can be overridden by ``JOB_AGENT_LATEX_COMPILER``.
     """
     configured = os.environ.get("JOB_AGENT_LATEX_COMPILER", "").strip()
     if configured:
@@ -497,7 +505,13 @@ def available_latex_compiler() -> str | None:
         if found_configured:
             return found_configured
 
-    for command in ["pdflatex", "xelatex", "lualatex", "latexmk"]:
+    has_perl = _perl_available()
+    order = (
+        ["latexmk", "pdflatex", "xelatex", "lualatex"]
+        if has_perl
+        else ["pdflatex", "xelatex", "lualatex", "latexmk"]
+    )
+    for command in order:
         found = shutil.which(command)
         if found:
             return found
@@ -508,10 +522,15 @@ def available_latex_compiler() -> str | None:
         Path(os.environ.get("APPDATA", "")) / "TinyTeX" / "bin" / "windows",
         Path(os.environ.get("APPDATA", "")) / "TinyTeX" / "bin" / "win32",
     ]
+    fallback_order = (
+        ["latexmk.exe", "pdflatex.exe", "xelatex.exe", "lualatex.exe"]
+        if has_perl
+        else ["pdflatex.exe", "xelatex.exe", "lualatex.exe", "latexmk.exe"]
+    )
     for root in common_roots:
         if not str(root):
             continue
-        for command in ["pdflatex.exe", "xelatex.exe", "lualatex.exe", "latexmk.exe"]:
+        for command in fallback_order:
             candidate = root / command
             if _safe_existing_file(candidate):
                 return str(candidate)
@@ -567,4 +586,10 @@ def compile_latex_to_pdf(tex_path: Path | str, output_pdf: Path | str) -> Path:
     if built_pdf.resolve() != output_pdf.resolve():
         output_pdf.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(built_pdf, output_pdf)
+    # Clean up latexmk's intermediate files. We keep cv.log for debugging.
+    for stale in ("cv.aux", "cv.out", "cv.fdb_latexmk", "cv.fls"):
+        try:
+            (workdir / stale).unlink(missing_ok=True)
+        except Exception:
+            pass
     return output_pdf

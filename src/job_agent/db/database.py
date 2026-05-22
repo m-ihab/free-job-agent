@@ -124,6 +124,17 @@ class Database:
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
                 );
+
+                CREATE TABLE IF NOT EXISTS ai_cache (
+                    job_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    model TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (job_id, kind),
+                    FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_cache_kind ON ai_cache(kind);
             """)
 
     # ---- Job methods ----
@@ -352,3 +363,48 @@ class Database:
             return None
         payload["updated_at"] = row["updated_at"]
         return payload
+
+    # ---- AI cache ----
+
+    def save_ai_cache(self, job_id: str, kind: str, payload: dict, model: str = "") -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO ai_cache (job_id, kind, payload_json, model, updated_at) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(job_id, kind) DO UPDATE SET payload_json=excluded.payload_json, model=excluded.model, updated_at=excluded.updated_at",
+                (job_id, kind, json.dumps(payload, ensure_ascii=False), model, utc_now()),
+            )
+
+    def get_ai_cache(self, job_id: str, kind: str) -> Optional[dict]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json, model, updated_at FROM ai_cache WHERE job_id = ? AND kind = ?",
+                (job_id, kind),
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            payload = json.loads(row["payload_json"])
+        except Exception:
+            return None
+        if isinstance(payload, dict):
+            payload["model"] = row["model"]
+            payload["updated_at"] = row["updated_at"]
+        return payload
+
+    def list_ai_cache_for_job(self, job_id: str) -> dict[str, dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT kind, payload_json, model, updated_at FROM ai_cache WHERE job_id = ?",
+                (job_id,),
+            ).fetchall()
+        result: dict[str, dict] = {}
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"])
+            except Exception:
+                continue
+            if isinstance(payload, dict):
+                payload["model"] = row["model"]
+                payload["updated_at"] = row["updated_at"]
+                result[row["kind"]] = payload
+        return result

@@ -5,15 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Paris Data Career Copilot</title>
     <link rel="stylesheet" href="/static/app.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
   </head>
   <body>
     <header class="app-header">
       <div>
         <p class="eyebrow">Local job-search cockpit</p>
         <h1>Paris Data Career Copilot</h1>
-        <p class="hero-sub muted" id="heroSub">Local-first, private, France-focused.</p>
+        <p class="hero-sub muted" id="heroSub">Local-first. AI-powered. France-focused. Press <kbd>?</kbd> for shortcuts.</p>
       </div>
-      <div class="status-strip" id="statusStrip"></div>
+      <div class="status-strip" id="statusStrip">
+        <button class="theme-toggle ghost" id="themeToggleBtn" title="Toggle dark mode" aria-label="Toggle theme">Theme</button>
+      </div>
     </header>
 
     <nav class="tabs" aria-label="Main sections">
@@ -234,11 +237,11 @@ data engineer</textarea>
         <div class="split">
           <section class="panel">
             <h3>Funnel</h3>
-            <div id="funnelView" class="funnel"></div>
+            <div class="chart-wrap"><canvas id="funnelChart"></canvas></div>
           </section>
           <section class="panel">
             <h3>Weekly activity (last 8 weeks)</h3>
-            <div id="weeklyView" class="weekly"></div>
+            <div class="chart-wrap"><canvas id="weeklyChart"></canvas></div>
           </section>
         </div>
 
@@ -260,7 +263,7 @@ data engineer</textarea>
           </section>
           <section class="panel">
             <h3>Score distribution</h3>
-            <div id="scoreDistView" class="score-dist"></div>
+            <div class="chart-wrap"><canvas id="scoreChart"></canvas></div>
           </section>
         </div>
       </section>
@@ -377,12 +380,30 @@ SQL
     </div>
 
     <div id="aiAnalysisModal" class="shortcuts-modal hidden" role="dialog" aria-modal="true">
-      <div class="shortcuts-card" style="width: min(640px, 92vw);">
+      <div class="shortcuts-card" style="width: min(720px, 94vw);">
         <div class="shortcuts-header">
           <h3>AI fit analysis</h3>
           <button id="closeAiAnalysis" aria-label="Close">&times;</button>
         </div>
         <div id="aiAnalysisBody" class="muted">Run AI analysis on a job to see strengths, gaps, and tailored suggestions here.</div>
+      </div>
+    </div>
+
+    <div id="aiChatModal" class="shortcuts-modal hidden" role="dialog" aria-modal="true">
+      <div class="shortcuts-card" style="width: min(720px, 94vw);">
+        <div class="shortcuts-header">
+          <div>
+            <h3 id="aiChatTitle">Ask AI about this job</h3>
+            <p class="muted" id="aiChatSubtitle" style="margin:0;font-size:0.85rem;"></p>
+          </div>
+          <button id="closeAiChat" aria-label="Close">&times;</button>
+        </div>
+        <div class="chat-stream" id="aiChatStream"></div>
+        <div class="chat-input">
+          <textarea id="aiChatInput" rows="2" placeholder="Should I apply? What should I emphasize? Where might I struggle?"></textarea>
+          <button class="primary" id="aiChatSendBtn">Ask</button>
+        </div>
+        <p class="muted" style="margin-top:0.4rem;font-size:0.78rem;">Runs locally via Ollama. Grounded in your profile + the job posting.</p>
       </div>
     </div>
 

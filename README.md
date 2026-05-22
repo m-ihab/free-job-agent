@@ -378,17 +378,36 @@ Guarantees:
 Disable prose polishing by unsetting `JOB_AGENT_USE_OLLAMA`. Query planning
 and AI fit analysis still work when Ollama is running.
 
-## AI fit analysis (smart mode)
+## AI smart mode — local-only, on by default when Ollama runs
 
-When Ollama is reachable, packet generation can run a structured fit analysis.
-The model returns JSON with verdict, score, strengths, gaps, and
-suggested-emphasis bullets; these are surfaced in the job's fit notes and on
-the dashboard's **AI fit** button per job row. The deterministic 0-100 score
-remains untouched — AI insights only augment it.
+When a local Ollama server is reachable, the agent unlocks five capabilities,
+all grounded in your profile + the job posting and validated for hallucination
+before they reach your CV / cover letter:
+
+1. **Fit analysis** (`/api/ai-analyze`) — verdict (strong / moderate / weak),
+   0-100 score, strengths, gaps, suggested-emphasis bullets. Surfaced as fit
+   notes on the packet and a colored badge on the job row.
+2. **Classifier** — tags, seniority, role family, contract type, remote mode,
+   must-haves and nice-to-haves. Used to filter and group jobs visually.
+3. **TL;DR summary** — 2-sentence pitch for fast scanning, shown right below
+   the job title in the table.
+4. **Cover-letter drafter** — replaces the deterministic body with 3 AI
+   paragraphs that must keep ≥55% vocabulary overlap with your profile + the
+   job. Otherwise the deterministic fallback is used.
+5. **Chat about a job** — open the **Chat** button on any row to ask
+   "Should I apply?", "What should I emphasize?", "Where will I struggle?".
+   Replies are rejected if vocabulary overlap drops below 25%.
+
+All five are cached in a local `ai_cache` SQLite table per job + model — the
+model only runs once per job and stays warm across reloads.
+
+The selected model is the first available one matching your install. The
+qwen3.6 family is detected automatically. Set `JOB_AGENT_OLLAMA_MODEL` to pin
+a different model.
 
 The `main.tex` CV summary stays conservative: the master narrative is
-preserved and the role-specific closer is updated. AI is used for fit insight
-and search planning, not for inventing a new CV identity.
+preserved and only the role-specific closing sentence is updated. AI is used
+for insights and chat, never to invent a new CV identity.
 
 ## Autopilot — autonomous job hunting
 

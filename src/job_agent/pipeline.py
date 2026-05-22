@@ -4,7 +4,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from job_agent.ai_agent import analyze_fit
+from job_agent.ai_agent import (
+    analyze_fit,
+    classify_job,
+    draft_cover_letter_body,
+    summarize_job,
+)
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.filters import FilterConfig, apply_filters
@@ -203,10 +208,16 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
         raise RuntimeError("Job failed hard filters: " + "; ".join(filter_result.reasons))
 
     job = score_and_save(config, job, profile)
-    # Optional AI fit analysis. Falls back silently when Ollama is not running.
-    fit_analysis = analyze_fit(job, master_cv, profile, PolishOptions.from_env())
+    polish_opts = PolishOptions.from_env()
+    # AI fit analysis, classification, and summary. All optional, cached.
+    fit_analysis = analyze_fit(job, master_cv, profile, polish_opts)
+    model_name = ""
+    try:
+        from job_agent.polish import resolve_ollama_model
+        model_name = resolve_ollama_model(polish_opts)
+    except Exception:
+        model_name = ""
     if fit_analysis is not None:
-        # Surface AI insights as fit notes (deterministic score remains untouched).
         ai_lines = [
             f"AI verdict: {fit_analysis.verdict} ({fit_analysis.score}/100, confidence {int(fit_analysis.confidence * 100)}%)",
         ]
@@ -220,6 +231,13 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
             if line not in job.fit_notes:
                 job.fit_notes.append(line)
         tracker.db.save_job(job)
+        tracker.db.save_ai_cache(job.id, "fit", fit_analysis.to_dict(), model_name)
+    classification = classify_job(job, polish_opts)
+    if classification:
+        tracker.db.save_ai_cache(job.id, "classify", classification, model_name)
+    tldr = summarize_job(job, polish_opts)
+    if tldr:
+        tracker.db.save_ai_cache(job.id, "summary", tldr, model_name)
     cv_md = tailor_cv(job, master_cv, profile)
     template_path = (config.profiles_dir / "main.tex") if config.profiles_dir else None  # type: ignore[operator]
     cv_tex = render_latex_source(
