@@ -152,6 +152,26 @@ def pull_model(model: str, options: PolishOptions | None = None) -> dict:
         if not start.get("ok"):
             return {"ok": False, "reason": start.get("reason", "daemon_unreachable")}
 
+    installed = set(available_ollama_models(options))
+    if model in installed:
+        progress = PullProgress(
+            model=model,
+            state="success",
+            started_at=_now_iso(),
+            finished_at=_now_iso(),
+            last_line="Already installed.",
+            log_tail=["Already installed."],
+        )
+        with _PULL_LOCK:
+            _PULL_STATE[model] = progress
+        return {
+            "ok": True,
+            "running": False,
+            "model": model,
+            "state": "success",
+            "already_installed": True,
+        }
+
     with _PULL_LOCK:
         existing = _PULL_STATE.get(model)
         if existing and existing.state == "running":

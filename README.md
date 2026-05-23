@@ -19,13 +19,13 @@ job-agent copy-examples
 job-agent setup-wizard          # optional: fill stage/alternance fields
 job-agent enrich-github         # pull skills/projects from your GitHub
 job-agent validate-profile
-job-agent ui                    # opens http://127.0.0.1:8765
+.\launch.ps1                    # opens http://127.0.0.1:8765
 ```
 
 The dashboard gives you 1-click hunt, multi-source search across free public
 APIs, tracked-jobs board, insights & funnel, CSV export, GitHub/LinkedIn
 profile enrichment, AI fit analysis (with Ollama), an autonomous job-hunting
-loop, and one-click packet generation that fills your `profiles/main.tex`
+loop, one-click Ollama startup, and one-click packet generation that fills your `profiles/main.tex`
 with role-tailored text while preserving your photo, design, and skills
 narrative.
 
@@ -117,13 +117,17 @@ package being installed.
 
 ## Quick start
 
-```bash
+```powershell
 job-agent init                  # create local data dirs
 job-agent copy-examples         # seed profile files
 job-agent setup-wizard          # optional: stage/alternance Q&A
 job-agent validate-profile      # check profile files are ready
-job-agent ui                    # local dashboard on http://127.0.0.1:8765
+.\launch.ps1                    # local dashboard on http://127.0.0.1:8765
 ```
+
+On Windows you can also double-click `launch.bat`. The launcher uses `.venv`,
+installs/updates the local package, loads `.env.local`, and opens the
+dashboard. Manual launch still works with `job-agent ui`.
 
 The setup wizard updates `master_qa_profile.json` with the stage/alternance
 fields most French employers ask for: school/program, availability,
@@ -148,7 +152,7 @@ Override locations explicitly with `JOB_AGENT_DATA_DIR` and
 ## Dashboard
 
 ```powershell
-job-agent ui
+.\launch.ps1
 ```
 
 Tabs:
@@ -156,19 +160,21 @@ Tabs:
 - **Search:** 1-click hunt (France Travail + curated board links),
   multi-source search across free public APIs, deep API search, and a clean
   link builder.
-- **Jobs:** filter, sort, search, batch enrich, batch packet generation,
-  CSV export, color-coded score badges, inline job detail panel.
+- **Jobs:** filter, sort, search, remove noisy jobs, batch enrich, batch
+  packet generation, CSV export, color-coded score badges, inline detail
+  panel, and a CV preview for packet-ready roles.
 - **Insights:** application funnel, 8-week activity bars, top companies/
   sources/locations, score distribution.
 - **Add Job:** paste a URL or job description.
 - **Profile & API:** profile validation, LaTeX/Ollama readiness, France
-  Travail API request text (copy/paste-ready), internship workbook export.
+  Travail API request text (copy/paste-ready), internship workbook export,
+  and local CV template/photo import.
 
 Keyboard shortcuts (press `?` in the dashboard):
 
 ```text
 ?   Show shortcuts help
-1-5 Switch tabs
+1-6 Switch tabs
 /   Focus job search
 g h 1-click hunt
 g m Multi-source search
@@ -194,9 +200,9 @@ that should change per job are rewritten:
   Time-Series Forecasting…` text stays as-is so the CV reads naturally.
 
 If a LaTeX compiler is visible to the terminal that launched the app, `cv.pdf`
-is built from `cv.tex`. The compiler order is `pdflatex`, `xelatex`,
-`lualatex`, then `latexmk`. This is intentional on Windows: `pdflatex` works
-with MiKTeX directly, while `latexmk` also needs Perl.
+is built from `cv.tex`. When Perl is installed, the compiler order is
+`latexmk`, then `pdflatex`, `xelatex`, and `lualatex`. Without Perl, the app
+prefers `pdflatex` first because MiKTeX can run it directly.
 
 If no compiler is visible, the app still writes the tailored `cv.tex`. For the
 PDF fallback, it first copies `profiles/CV.pdf` if present so your original CV
@@ -222,6 +228,23 @@ Then re-generate the packet:
 ```powershell
 job-agent apply <job-id> --force
 ```
+
+### Import a CV template/photo locally
+
+Use **Profile & API -> CV template import** or the CLI:
+
+```powershell
+job-agent import-cv-template C:\path\to\main.tex
+job-agent import-cv-template C:\path\to\me.jpg
+job-agent import-cv-template C:\path\to\CV.pdf
+```
+
+`.tex` uploads replace `profiles/main.tex` after creating a timestamped
+backup, so future packets preserve that LaTeX layout and only tailor safe
+role-specific text. `.jpg/.jpeg` becomes `profiles/me.jpg`. `.pdf` becomes
+`profiles/CV.pdf`, used as a design fallback if LaTeX compilation ever fails.
+`.docx` is stored as `profiles/source_cv.docx` for reference; exact DOCX/PDF
+to editable LaTeX conversion is not reliable enough to automate silently.
 
 ## France / Paris workflow
 
@@ -300,16 +323,22 @@ URLs with `job-agent add url`.
 
 ```bash
 job-agent france-hunt --location Paris --limit 10
-job-agent france-hunt --location Paris --limit 10 --internships-only
+job-agent france-hunt --location Ile-de-France --limit 10 --internships-only
+job-agent france-hunt --location Paris --radius-km 25 --min-relevance 50 --internships-only
 ```
 
 Tries queries like `data scientist stage`, `machine learning internship`,
 `alternance data science`, `junior data scientist`, etc.
 
+`--min-relevance 50` is the smart cleanup mode: it keeps data/AI/BI roles and
+drops obvious noise such as cancer registry abstractor, product marketing,
+maintenance, non-EU, and senior/PhD-gated jobs. Use `--min-relevance 0` when
+you intentionally want a broad sweep.
+
 ## Multi-source search (no credentials, no boards needed)
 
 ```bash
-job-agent multi-search --query "data scientist" --location Paris --limit 8 --save
+job-agent multi-search --query "data scientist" --location Paris --limit 8 --save --min-relevance 50 --france-eu-only
 ```
 
 Hits Remotive, Remote OK, Himalayas, Arbeitnow, Jobicy, and The Muse at once
@@ -355,7 +384,11 @@ job-agent smart-plan --query "data scientist" --location Paris --limit 8
 ```
 
 Local AI is used for smart query planning, Autopilot search expansion, AI fit
-analysis, dashboard **AI fit**, and packet `ai_fit_brief.md` files.
+analysis, dashboard **AI fit**, per-job chat, and packet `ai_fit_brief.md`
+files. The dashboard separates the heavy analysis model from the fast chat
+model: for example `qwen3.6:latest` for analysis and `llama3.2:3b` for quick
+chat. The Autopilot tab has one-click **Start Ollama** and **Pull fast chat
+model** buttons.
 
 Polishing generated prose is still opt-in. Enable it only when you want the
 model to rewrite CV bullets/paragraphs:
@@ -419,10 +452,18 @@ auto-packet score threshold. Click **Start**. The background loop will:
 3. Deduplicate against the local database.
 4. Score every new job against your profile.
 5. Auto-generate tailored packets for jobs that beat the threshold.
+6. Optionally write a local email-style notification for strong matches.
 
 The autopilot **never** submits applications, never logs in to job boards,
 and never makes network calls beyond the configured public APIs. Stop it any
 time from the same tab.
+
+Email notifications are optional. With **Notify me for strong matches** on,
+Autopilot always writes a local `.eml` file under `.job_agent/notifications`.
+If you also set SMTP env vars (`JOB_AGENT_NOTIFY_EMAIL=1`,
+`JOB_AGENT_NOTIFY_TO`, `JOB_AGENT_SMTP_HOST`, etc.), it sends the same message
+to you. The notification contains the job, score, apply URL, and packet paths;
+it never submits anything.
 
 ## GitHub & LinkedIn enrichment
 
@@ -479,14 +520,15 @@ job-agent france-targets [--limit N]
 job-agent france-hunt [--query ...] [--location Paris] [--limit N] [--packets/--no-packets] [--internships-only]
 job-agent enrich <job-id> [--rome] [--anotea] [--training] [--labour-market] [--territory] [--employer]
 job-agent export internships [--workbook PATH] [--sheet NAME]
+job-agent import-cv-template PATH
 job-agent add paste [--title ...] [--company ...] [--url ...]
 job-agent add file PATH [--title ...] [--company ...] [--url ...]
 job-agent add url URL
 job-agent add rss FEED_URL [--limit N]
 job-agent discover-links URL [--limit N]
 job-agent api-sources
-job-agent multi-search [--query ...] [--location ...] [--sources a,b,c] [--limit N] [--save] [--remote-only] [--internships-only]
-job-agent search-api SOURCE [--query ...] [--location ...] [--country ...] [--board ...] [--limit N] [--remote-only] [--cache/--no-cache] [--save]
+job-agent multi-search [--query ...] [--location ...] [--sources a,b,c] [--limit N] [--save] [--remote-only] [--internships-only] [--min-relevance N] [--france-eu-only/--worldwide]
+job-agent search-api SOURCE [--query ...] [--location ...] [--country ...] [--board ...] [--limit N] [--remote-only] [--min-relevance N] [--radius-km N] [--cache/--no-cache] [--save]
 job-agent hunt SOURCE [--query ...] [--location ...] [--country ...] [--board ...] [--limit N] [--remote-only] [--cache/--no-cache] [--force]
 job-agent list [--status STATUS]
 job-agent show JOB_ID
@@ -496,6 +538,7 @@ job-agent process file PATH [--title ...] [--company ...] [--url ...] [--force]
 job-agent apply-assist PACKET_ID [--no-open-browser]
 job-agent mark-submitted PACKET_ID [--note ...]
 job-agent status JOB_ID STATUS [--note ...]
+job-agent delete-job JOB_ID --yes
 job-agent history JOB_ID
 job-agent packet show JOB_OR_PACKET_ID
 ```

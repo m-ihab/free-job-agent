@@ -41,7 +41,7 @@ Implementation style:
 - Use small, typed modules instead of a giant script.
 
 France-first priorities:
-1. Improve France Travail field mapping and contract/location filters.
+1. Improve France Travail field mapping, radius/region handling, contract filters, and search-quality cleanup.
 2. Add richer CV bullet tagging for data/AI roles (done — bullets are reordered by job-relevance keywords).
 3. Add CAC 40 company-board slug mapping only where public ATS endpoints are stable and safe.
 
@@ -65,11 +65,15 @@ Recently shipped:
 - AI results cached in `ai_cache` SQLite table per (job_id, kind).
 - Autopilot background loop: AI query planner → France Travail + multi-source → score → auto-packet for high-fit jobs. SSE stream for live UI status.
 - Dashboard upgrades: Chart.js charts, light/dark theme toggle, AI badges on job rows, inline TL;DR, AI chat modal, keyboard shortcuts, accessible color tokens, sticky header.
+- Search-quality scoring to hide obvious noise (cancer registry, product marketing, maintenance, non-EU, senior/PhD-gated jobs) without deleting broad-search capability.
+- One-click Ollama launch/pull flow with separate heavy analysis and fast chat models.
+- Local CV template/photo import: editable `.tex` replaces `profiles/main.tex`; PDF/DOCX/image uploads stay in git-ignored `profiles/`.
+- Job removal from dashboard/CLI, inline PDF CV preview, and optional local/email notifications for strong Autopilot matches.
+- Easy Windows launchers: `launch.ps1` and `launch.bat`.
 - Optional npm + Playwright e2e tests (`npm run test:e2e`).
 
 Open ideas worth exploring next:
-- Per-job "preview CV" iframe inline in the dashboard.
-- Email/Slack notification when a high-score job is imported.
 - Diff view between packet versions.
 - Auto-tagging by ROME / O*NET categories using local TF-IDF.
 - Multi-model A/B comparisons for AI fit.
+- Calendar reminders for follow-up dates after manual submission.

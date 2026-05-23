@@ -122,6 +122,7 @@ function renderState() {
     metric("France Travail", profile.france_travail_configured ? "Ready" : "Missing"),
     metric("LaTeX", profile.latex_ready ? profile.latex_compiler : "Missing"),
     metric("Local AI", profile.ollama_ready ? profile.ollama_model : "Offline", profile.ollama_polish_enabled ? "Polish enabled" : "Fit/query AI auto-ready when Ollama runs"),
+    metric("Notifier", profile.email_notifier?.enabled ? "Email on" : "Local outbox", profile.email_notifier?.smtp_configured ? "SMTP configured" : "No SMTP"),
     metric("Tracked jobs", state.jobs.length),
   ].join("");
 
@@ -166,9 +167,13 @@ function pathRow(label, value) {
 }
 
 function searchPayload() {
+  const smartRefine = $("smartRefine") ? $("smartRefine").checked : false;
   return {
     query: $("queryInput").value.trim() || "data scientist",
     location: $("locationInput").value.trim() || "Paris",
+    radius_km: Number($("radiusInput")?.value || 0),
+    min_relevance: smartRefine ? 50 : 0,
+    france_eu_only: $("franceEuOnly") ? $("franceEuOnly").checked : false,
     language: $("languageSelect").value,
     boards: $("boardsSelect").value,
     limit: Number($("variantLimit").value || 8),
@@ -207,6 +212,18 @@ function renderSearchMetrics(payload) {
     metric("Imported", payload.imported ?? "-"),
     metric("Packets", payload.prepared ?? "-"),
   ].join("");
+}
+
+function applyLocationPreset() {
+  const preset = $("locationScopeSelect")?.value || "custom";
+  if (preset && preset !== "custom") {
+    $("locationInput").value = preset;
+  }
+  const radius = $("radiusInput");
+  if (!radius) return;
+  if (preset === "Paris" && !radius.value) radius.value = 25;
+  if (preset === "Ile-de-France") radius.value = 0;
+  if (preset === "France" || preset === "Europe" || preset === "Remote") radius.value = 0;
 }
 
 function renderManualGroups(groups) {
@@ -326,12 +343,13 @@ function jobActions(job) {
   const letter = job.cover_letter_pdf ? `<a href="${fileHref(job.cover_letter_pdf)}" target="_blank">Letter</a>` : "";
   const submitted = job.status === "MANUALLY_SUBMITTED" ? "" : `<button data-action="status" data-status="MANUALLY_SUBMITTED" data-job="${escapeHtml(job.id)}" title="Mark as manually submitted">Submitted</button>`;
   const rejected = job.status === "REJECTED" ? "" : `<button data-action="status" data-status="REJECTED" data-job="${escapeHtml(job.id)}" title="Mark as rejected">Reject</button>`;
+  const remove = `<button data-action="delete-job" data-job="${escapeHtml(job.id)}" title="Remove this job from the local tracker">Remove</button>`;
   return `<div class="row-actions">
     <button data-action="packet" data-job="${escapeHtml(job.id)}" title="Generate tailored CV + cover letter">Optimize</button>
     <button data-action="ai-analyze" data-job="${escapeHtml(job.id)}" title="AI fit analysis">AI fit</button>
     <button data-action="ai-chat" data-job="${escapeHtml(job.id)}" title="Chat about this role">Chat</button>
     <button data-action="enrich" data-job="${escapeHtml(job.id)}" title="Enrich with France Travail data">Enrich</button>
-    ${submitted}${rejected}
+    ${submitted}${rejected}${remove}
     ${apply}${assistant}${cv}${letter}
   </div>`;
 }
@@ -418,6 +436,12 @@ function renderEnrichmentDetails(job) {
   const apply = job.apply_url
     ? `<a href="${escapeHtml(job.apply_url)}" target="_blank" rel="noreferrer">Apply URL</a>`
     : "<span class='muted'>No apply URL.</span>";
+  const cvPreview = job.cv_pdf
+    ? `<iframe class="doc-preview" title="Tailored CV preview" src="${fileHref(job.cv_pdf)}"></iframe>`
+    : `<div class="notice">Generate a packet to preview the tailored CV here.</div>`;
+  const letterLink = job.cover_letter_pdf
+    ? `<a href="${fileHref(job.cover_letter_pdf)}" target="_blank">Open cover letter PDF</a>`
+    : `<span class="muted">No cover letter yet.</span>`;
   $("enrichmentDetails").innerHTML = `
     <div class="detail-block">
       <div class="detail-row"><span>Job</span><strong>${escapeHtml(job.title)}</strong></div>
@@ -450,6 +474,11 @@ function renderEnrichmentDetails(job) {
     <div class="detail-block">
       <h4>Endpoint status</h4>
       <ul>${items.join("") || "<li>No endpoint data.</li>"}</ul>
+    </div>
+    <div class="detail-block">
+      <h4>Tailored CV preview</h4>
+      ${cvPreview}
+      <p>${letterLink}</p>
     </div>
   `;
 }
@@ -711,6 +740,49 @@ async function updateJobStatus(jobId, status, button) {
   }
 }
 
+async function deleteJob(jobId, button) {
+  const job = state.jobs.find((item) => item.id === jobId);
+  const label = job ? `${job.title} at ${job.company}` : jobId;
+  if (!window.confirm(`Remove this job from your local tracker?\n\n${label}`)) return;
+  setBusy(button, true);
+  try {
+    await api("/api/delete-job", { job_id: jobId, note: "Removed from dashboard" });
+    state.selectedJobs.delete(jobId);
+    if (state.activeJobId === jobId) {
+      state.activeJobId = null;
+      renderEnrichmentDetails(null);
+    }
+    toast("Job removed.");
+    await loadJobs();
+    renderState();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function deleteJobsBatch(jobIds) {
+  if (!jobIds.length) {
+    toast("No jobs selected to remove.");
+    return;
+  }
+  if (!window.confirm(`Remove ${jobIds.length} selected job(s) from your local tracker?`)) return;
+  let removed = 0;
+  for (const jobId of jobIds) {
+    try {
+      await api("/api/delete-job", { job_id: jobId, note: "Batch removed from dashboard" });
+      state.selectedJobs.delete(jobId);
+      removed += 1;
+    } catch (error) {
+      console.warn(`Delete failed for ${jobId}: ${error.message}`);
+    }
+  }
+  toast(`Removed ${removed}/${jobIds.length} jobs.`);
+  await loadJobs();
+  renderState();
+}
+
 async function exportInternships() {
   const button = $("exportInternshipsBtn");
   setBusy(button, true);
@@ -721,6 +793,41 @@ async function exportInternships() {
       sheet: $("internshipSheetName").value.trim(),
     });
     setNotice("profileNotice", `Exported ${payload.count} internship applications to ${payload.workbook}`);
+  } catch (error) {
+    setNotice("profileNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function importCvTemplate() {
+  const input = $("cvTemplateFile");
+  const file = input?.files?.[0];
+  if (!file) {
+    setNotice("profileNotice", "Choose a .tex, .pdf, .docx, image, .sty, or .cls file first.", true);
+    return;
+  }
+  const button = $("importCvTemplateBtn");
+  setBusy(button, true);
+  setNotice("profileNotice", "");
+  try {
+    const content = arrayBufferToBase64(await file.arrayBuffer());
+    const payload = await api("/api/import-cv-template", {
+      filename: file.name,
+      content_base64: content,
+    });
+    setNotice("profileNotice", `${payload.note} Stored at ${payload.target}`);
+    await loadState();
   } catch (error) {
     setNotice("profileNotice", error.message, true);
   } finally {
@@ -755,8 +862,6 @@ function renderFunnelChart(funnel) {
   if (!ctx) return;
   const labels = funnel.map((row) => row.label);
   const values = funnel.map((row) => row.count);
-  const accent = readVar("--accent");
-  const accent3 = readVar("--accent-3");
   state.charts.funnel = new Chart(ctx, {
     type: "bar",
     data: {
@@ -900,12 +1005,16 @@ function renderAutopilot(status) {
   if ($("autopilotInterval")) {
     if (cfg.interval_minutes) $("autopilotInterval").value = cfg.interval_minutes;
     if (cfg.location) $("autopilotLocation").value = cfg.location;
+    if (cfg.radius_km != null && $("autopilotRadius")) $("autopilotRadius").value = cfg.radius_km;
     if (cfg.auto_packet_threshold != null) $("autopilotThreshold").value = cfg.auto_packet_threshold;
+    if (cfg.min_relevance != null && $("autopilotMinRelevance")) $("autopilotMinRelevance").value = cfg.min_relevance;
     if (cfg.max_packets_per_cycle != null) $("autopilotMaxPackets").value = cfg.max_packets_per_cycle;
     if (cfg.queries && cfg.queries.length) $("autopilotQueries").value = cfg.queries.join("\n");
     $("autopilotUseFT").checked = cfg.use_france_travail !== false;
     $("autopilotUseMulti").checked = cfg.use_multi_source !== false;
     $("autopilotInternships").checked = cfg.internships_only !== false;
+    if ($("autopilotFranceEuOnly")) $("autopilotFranceEuOnly").checked = cfg.france_eu_only !== false;
+    if ($("autopilotEmailNotify")) $("autopilotEmailNotify").checked = cfg.email_notify === true;
   }
   const summary = status.last_summary;
   if (summary) {
@@ -937,12 +1046,16 @@ function autopilotPayload() {
   return {
     interval_minutes: Number($("autopilotInterval").value || 30),
     location: $("autopilotLocation").value.trim() || "Paris",
+    radius_km: Number($("autopilotRadius")?.value || 0),
     auto_packet_threshold: Number($("autopilotThreshold").value || 75),
+    min_relevance: Number($("autopilotMinRelevance")?.value || 50),
     max_packets_per_cycle: Number($("autopilotMaxPackets").value || 5),
     queries: $("autopilotQueries").value.split("\n").map((q) => q.trim()).filter(Boolean),
     use_france_travail: $("autopilotUseFT").checked,
     use_multi_source: $("autopilotUseMulti").checked,
     internships_only: $("autopilotInternships").checked,
+    france_eu_only: $("autopilotFranceEuOnly") ? $("autopilotFranceEuOnly").checked : true,
+    email_notify: $("autopilotEmailNotify") ? $("autopilotEmailNotify").checked : false,
   };
 }
 
@@ -1104,13 +1217,19 @@ async function launchOllama() {
 async function pullFastModel() {
   const btn = $("pullFastModelBtn");
   setBusy(btn, true);
-  setNotice("aiSetupNotice", "Downloading llama3.2:3b — this can take a few minutes.");
+  setNotice("aiSetupNotice", "Checking llama3.2:3b...");
   try {
     const result = await api("/api/ollama-pull", { model: "llama3.2:3b" });
     if (!result.ok) {
       setNotice("aiSetupNotice", `Pull failed: ${result.reason}`, true);
       return;
     }
+    if (result.state === "success" || result.already_installed) {
+      setNotice("aiSetupNotice", result.already_installed ? "Fast chat model is already installed." : "Fast chat model installed.");
+      await Promise.all([loadAiSetup(), loadAiStatus()]);
+      return;
+    }
+    setNotice("aiSetupNotice", "Downloading llama3.2:3b - this can take a few minutes.");
     // Poll progress until done
     const watcher = window.setInterval(async () => {
       try {
@@ -1345,6 +1464,8 @@ function bindEvents() {
   $("apiSearchBtn").addEventListener("click", runApiSearch);
   $("oneClickBtn").addEventListener("click", oneClickHunt);
   $("multiSearchBtn").addEventListener("click", runMultiSearch);
+  const locationScope = document.getElementById("locationScopeSelect");
+  if (locationScope) locationScope.addEventListener("change", applyLocationPreset);
   $("refreshJobsBtn").addEventListener("click", async () => {
     await loadJobs();
     renderState();
@@ -1381,6 +1502,10 @@ function bindEvents() {
     const visibleIds = Array.from(document.querySelectorAll("[data-job-row]")).map((row) => row.dataset.jobRow);
     await enrichBatch(visibleIds);
   });
+  const removeSelectedBtn = document.getElementById("removeSelectedBtn");
+  if (removeSelectedBtn) removeSelectedBtn.addEventListener("click", async () => {
+    await deleteJobsBatch([...state.selectedJobs]);
+  });
   $("clearSelectionBtn").addEventListener("click", () => {
     state.selectedJobs.clear();
     renderJobs();
@@ -1389,6 +1514,8 @@ function bindEvents() {
   $("addTextBtn").addEventListener("click", addText);
   $("profileRefreshBtn").addEventListener("click", loadState);
   $("exportInternshipsBtn").addEventListener("click", exportInternships);
+  const importCvBtn = document.getElementById("importCvTemplateBtn");
+  if (importCvBtn) importCvBtn.addEventListener("click", importCvTemplate);
   $("copyApiTextBtn").addEventListener("click", async () => {
     const text = `App name: ${$("apiAppName").value}\nURL: ${$("apiAppUrl").value}\nDescription: ${$("apiAppDescription").value}`;
     await navigator.clipboard.writeText(text);
@@ -1461,6 +1588,11 @@ function bindEvents() {
     const statusTarget = event.target.closest("[data-action='status']");
     if (statusTarget) {
       updateJobStatus(statusTarget.dataset.job, statusTarget.dataset.status, statusTarget);
+      return;
+    }
+    const deleteTarget = event.target.closest("[data-action='delete-job']");
+    if (deleteTarget) {
+      deleteJob(deleteTarget.dataset.job, deleteTarget);
       return;
     }
     const checkbox = event.target.closest("[data-select-job]");

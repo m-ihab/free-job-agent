@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from job_agent.fingerprint import compute_fingerprint
 from job_agent.intake.france_market import ROLE_FAMILY_MAP, expand_role_family
+from job_agent.intake.internships import is_internship_listing
 from job_agent.renderer.latex_render import _detect_contract_family, _clean_role_phrase
+from job_agent.search_quality import assess_search_quality
 from job_agent.schemas.job import JobListing
 
 
@@ -69,3 +71,37 @@ def test_clean_role_phrase_extracts_known_role():
     assert _clean_role_phrase("APPRENTISSAGE - Ingénieur ML et Data scientist (H/F)") == "Data Scientist"
     assert _clean_role_phrase("Stage Data Engineer - H/F") == "Data Engineer"
     assert _clean_role_phrase("Alternance Data Scientist/ IA Engineer - Paris (F/H)") == "Data Scientist"
+
+
+def test_stage_entertainment_company_does_not_fake_internship():
+    job = JobListing(title="DevOps Engineer", company="Stage Entertainment", description="Permanent engineering role")
+    assert not is_internship_listing(job)
+
+
+def test_internship_title_still_matches():
+    job = JobListing(title="Stage Data Engineer - H/F", company="X")
+    assert is_internship_listing(job)
+
+
+def test_search_quality_rejects_cancer_data_abstractor_noise():
+    job = JobListing(
+        title="JR-53142 Cancer Data Abstractor 2 - CTR REQUIRED",
+        company="Wellstar Health System",
+        location="United States",
+        description="Graduate of a Cancer Registry program required.",
+    )
+    quality = assess_search_quality(job, query="data scientist", location="Paris")
+    assert quality["score"] < 50
+    assert "off-topic-title" in quality["flags"]
+
+
+def test_search_quality_keeps_data_engineer_stage():
+    job = JobListing(
+        title="Stage Data Engineer - H/F",
+        company="Example",
+        location="75 - Paris",
+        description="Python SQL ETL Power BI",
+    )
+    quality = assess_search_quality(job, query="data scientist", location="Paris")
+    assert quality["score"] >= 50
+    assert quality["role_family"] == "data_engineering"

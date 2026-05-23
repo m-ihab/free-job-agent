@@ -26,6 +26,14 @@ class ApplicationTracker:
             raise ValueError(f"Job not found: {job_id}")
         self.db.log_event(job.id, "STATUS_CHANGED", {"new_status": status.value, "note": note})
 
+    def delete_job(self, job_id: str, note: str = "") -> str:
+        job = self.db.resolve_job(job_id)
+        if not job:
+            raise ValueError(f"Job not found: {job_id}")
+        self.db.log_event(job.id, "JOB_REMOVED", {"title": job.title, "company": job.company, "note": note})
+        self.db.delete_job(job.id)
+        return job.id
+
     def save_packet(self, packet: ApplicationPacket) -> None:
         self.db.save_packet(packet)
         self.db.log_event(packet.job_id, "PACKET_SAVED", {"packet_id": packet.id, "version": packet.version}, packet_id=packet.id)

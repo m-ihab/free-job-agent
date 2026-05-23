@@ -51,6 +51,21 @@
             <input id="locationInput" value="Paris" autocomplete="off" />
           </label>
           <label>
+            Search area
+            <select id="locationScopeSelect">
+              <option value="Paris">Paris</option>
+              <option value="Ile-de-France">Ile-de-France</option>
+              <option value="France">France</option>
+              <option value="Europe">Europe</option>
+              <option value="Remote">Remote</option>
+              <option value="custom">Custom text</option>
+            </select>
+          </label>
+          <label>
+            Radius km
+            <input id="radiusInput" type="number" min="0" max="100" value="25" />
+          </label>
+          <label>
             Language
             <select id="languageSelect">
               <option value="both">English first, then French</option>
@@ -84,6 +99,14 @@
           <label class="check-row">
             <input id="internshipsOnly" type="checkbox" checked />
             Internships only
+          </label>
+          <label class="check-row">
+            <input id="smartRefine" type="checkbox" checked />
+            Smart refine results
+          </label>
+          <label class="check-row">
+            <input id="franceEuOnly" type="checkbox" checked />
+            France/EU only
           </label>
         </form>
 
@@ -174,6 +197,7 @@
           <button id="enrichSelectedBtn" class="primary">Enrich selected</button>
           <button id="packetSelectedBtn">Generate packets</button>
           <button id="enrichVisibleBtn">Enrich visible</button>
+          <button id="removeSelectedBtn">Remove selected</button>
           <button id="clearSelectionBtn">Clear selection</button>
           <span id="selectionCount" class="muted"></span>
         </div>
@@ -216,8 +240,16 @@
                 <input id="autopilotLocation" value="Paris" />
               </label>
               <label>
+                Radius km
+                <input id="autopilotRadius" type="number" min="0" max="100" value="25" />
+              </label>
+              <label>
                 Auto-packet score ≥
                 <input id="autopilotThreshold" type="number" min="0" max="100" value="75" />
+              </label>
+              <label>
+                Min relevance
+                <input id="autopilotMinRelevance" type="number" min="0" max="100" value="50" />
               </label>
             </div>
             <label>
@@ -232,6 +264,8 @@ data engineer</textarea>
               <label class="check-row"><input id="autopilotUseFT" type="checkbox" checked /> Use France Travail</label>
               <label class="check-row"><input id="autopilotUseMulti" type="checkbox" checked /> Use multi-source</label>
               <label class="check-row"><input id="autopilotInternships" type="checkbox" checked /> Internships only</label>
+              <label class="check-row"><input id="autopilotFranceEuOnly" type="checkbox" checked /> France/EU only</label>
+              <label class="check-row"><input id="autopilotEmailNotify" type="checkbox" /> Notify me for strong matches</label>
               <label>
                 Max packets / cycle
                 <input id="autopilotMaxPackets" type="number" min="0" max="20" value="5" />
@@ -395,6 +429,13 @@ data engineer</textarea>
             <dl class="path-list" id="pathList"></dl>
             <div id="profileMessages"></div>
             <div class="notice hidden" id="profileNotice"></div>
+            <hr />
+            <h3>CV template import</h3>
+            <p class="muted" style="margin-top:0">Upload LaTeX to replace <code>profiles/main.tex</code>, a JPG for <code>me.jpg</code>, or a PDF/DOCX as a local reference/fallback.</p>
+            <input id="cvTemplateFile" type="file" accept=".tex,.pdf,.docx,.jpg,.jpeg,.png,.sty,.cls" />
+            <div class="action-row">
+              <button id="importCvTemplateBtn">Import CV template</button>
+            </div>
             <div class="api-readiness">
               <h4>France Travail readiness</h4>
               <div id="apiReadiness"></div>

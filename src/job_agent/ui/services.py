@@ -14,8 +14,10 @@ from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.intake.france_market import board_notes, build_france_search_urls, expand_france_search_queries
 from job_agent.intake.france_travail_endpoints import load_endpoint_base_url, load_endpoint_registry
+from job_agent.notifier import email_notifier_status
 from job_agent.polish import PolishOptions, is_ollama_enabled_and_reachable, ollama_status
 from job_agent.renderer.latex_render import available_latex_compiler
+from job_agent.search_quality import assess_search_quality
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.schemas.packet import ApplicationPacket
 from job_agent.validators import validate_profile_bundle
@@ -79,6 +81,7 @@ def profile_status(config: AppConfig | None = None) -> dict[str, Any]:
     endpoint_enabled = sum(1 for spec in registry.values() if spec.enabled and spec.path)
     polish_options = PolishOptions.from_env()
     ollama = ollama_status(polish_options)
+    notifier = email_notifier_status()
     ollama_ready = bool(ollama["reachable"])
     france_travail_ready = is_france_travail_configured()
     return {
@@ -117,6 +120,7 @@ def profile_status(config: AppConfig | None = None) -> dict[str, Any]:
         "ollama_model": ollama["selected_model"] if ollama_ready else polish_options.model,
         "ollama_models": ollama["models"],
         "ollama_polish_enabled": is_ollama_enabled_and_reachable(polish_options),
+        "email_notifier": notifier,
         "local_tools": {
             "perl": _tool_path("perl"),
             "npm": _tool_path("npm"),
@@ -155,6 +159,7 @@ def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None,
     ai_fit = ai_cache.get("fit") or {}
     ai_summary = ai_cache.get("summary") or {}
     ai_classify = ai_cache.get("classify") or {}
+    quality = assess_search_quality(job)
     return {
         "id": job.id,
         "short_id": job.id[:8],
@@ -191,12 +196,16 @@ def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None,
         "ai_summary": ai_summary.get("tldr") or "",
         "ai_key_signals": ai_summary.get("key_signals") or [],
         "ai_tags": ai_classify.get("tags") or [],
-        "ai_role_family": ai_classify.get("role_family") or "",
+        "ai_role_family": ai_classify.get("role_family") or quality.get("role_family") or "",
         "ai_seniority": ai_classify.get("seniority") or "",
-        "ai_contract": ai_classify.get("contract") or "",
+        "ai_contract": ai_classify.get("contract") or quality.get("contract") or "",
         "ai_remote_mode": ai_classify.get("remote_mode") or "",
         "ai_must_haves": ai_classify.get("must_haves") or [],
         "ai_nice_to_haves": ai_classify.get("nice_to_haves") or [],
+        "search_quality_score": getattr(job, "search_quality_score", None) or quality.get("score"),
+        "search_quality_flags": getattr(job, "search_quality_flags", None) or quality.get("flags") or [],
+        "search_role_family": getattr(job, "search_role_family", None) or quality.get("role_family") or "",
+        "search_contract": getattr(job, "search_contract", None) or quality.get("contract") or "",
     }
 
 

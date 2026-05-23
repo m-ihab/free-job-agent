@@ -8,7 +8,7 @@
     "test:e2e:headed": "playwright test --headed",
     "test:install": "playwright install --with-deps chromium",
     "lint:css": "stylelint \"src/job_agent/ui/static/*.css\"",
-    "lint:js": "eslint \"src/job_agent/ui/static/*.js\" || true"
+    "lint:js": "eslint \"src/job_agent/ui/static/*.js\""
   },
   "devDependencies": {
     "@playwright/test": "^1.46.0",

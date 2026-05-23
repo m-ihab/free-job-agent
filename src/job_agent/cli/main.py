@@ -7,6 +7,7 @@ available. Tests continue to use a tiny local ``click.testing`` shim.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import shutil
 import sys
@@ -50,6 +51,7 @@ except Exception:  # pragma: no cover
             return f"{self.title or ''}\n{self.text}"
 
 from job_agent.config import AppConfig
+from job_agent.cv_template import import_cv_template_upload
 from job_agent.ai_agent import suggest_search_queries
 from job_agent.db.database import Database
 from job_agent.enrichment import EnrichOptions, enrich_job
@@ -242,6 +244,9 @@ def _handle_search_api(args) -> None:
             page=args.page,
             remote_only=args.remote_only,
             internships_only=args.internships_only,
+            min_relevance=args.min_relevance,
+            france_eu_only=args.france_eu_only,
+            radius_km=args.radius_km,
             use_cache=args.cache,
             cache_ttl_hours=args.cache_ttl_hours,
         )
@@ -298,6 +303,9 @@ def _handle_hunt(args) -> None:
             page=args.page,
             remote_only=args.remote_only,
             internships_only=args.internships_only,
+            min_relevance=args.min_relevance,
+            france_eu_only=args.france_eu_only,
+            radius_km=args.radius_km,
             use_cache=args.cache,
             cache_ttl_hours=args.cache_ttl_hours,
         )
@@ -383,7 +391,8 @@ def _handle_ai_status(args) -> None:
     }
     lines = [
         f"Ollama reachable: {'yes' if status['reachable'] else 'no'}",
-        f"Selected model: {status['selected_model'] or '-'}",
+        f"Selected heavy model: {status['selected_model'] or '-'}",
+        f"Selected fast chat model: {status.get('selected_fast_model') or '-'}",
         f"Installed models: {', '.join(status['models']) if status['models'] else '-'}",
         f"Ollama polish opt-in: {'enabled' if status['enabled'] else 'disabled'}",
         "",
@@ -431,6 +440,9 @@ def _handle_multi_search(args) -> None:
         sources=sources,
         remote_only=args.remote_only,
         internships_only=args.internships_only,
+        min_relevance=args.min_relevance,
+        france_eu_only=args.france_eu_only,
+        radius_km=args.radius_km,
         use_cache=args.cache,
     )
     table = Table(title=f"Multi-source results for '{args.query}'", show_header=True, header_style="bold cyan")
@@ -695,6 +707,25 @@ def _handle_export_internships(args) -> None:
     )
 
 
+def _handle_import_cv_template(args) -> None:
+    config = _load_config()
+    config.ensure_dirs()
+    path = Path(args.path)
+    if not path.exists() or not path.is_file():
+        _fail(f"Template file not found: {path}")
+    payload = base64.b64encode(path.read_bytes()).decode("ascii")
+    try:
+        result = import_cv_template_upload(config, filename=path.name, content_base64=payload)
+    except Exception as exc:
+        _fail(f"Could not import CV template: {exc}")
+    console.print(
+        Panel(
+            f"{result['note']}\nStored at: {result['target']}\nBackups: {', '.join(result['backups']) or '-'}",
+            title="CV template imported",
+        )
+    )
+
+
 def _build_enrich_options(args) -> EnrichOptions:
     flags = [
         args.rome,
@@ -829,6 +860,9 @@ def _handle_france_hunt(args) -> None:
                 location=args.location,
                 limit=args.limit,
                 internships_only=args.internships_only,
+                min_relevance=args.min_relevance,
+                france_eu_only=args.france_eu_only,
+                radius_km=args.radius_km,
                 use_cache=args.cache,
                 cache_ttl_hours=6.0,
             )
@@ -991,6 +1025,18 @@ def _handle_status(args) -> None:
     console.print(f"Updated {args.job_id[:8]} -> {status.value}")
 
 
+def _handle_delete_job(args) -> None:
+    tracker = _get_tracker(_load_config())
+    job = tracker.get_job(args.job_id)
+    if not job:
+        _fail(f"Job not found: {args.job_id}")
+    if not args.yes:
+        console.print(f"Refusing to delete without --yes: {job.title} @ {job.company}")
+        return
+    tracker.delete_job(job.id, note=args.note or "CLI removal")
+    console.print(f"Deleted local job: {job.id[:8]} {job.title} @ {job.company}")
+
+
 def _handle_history(args) -> None:
     tracker = _get_tracker(_load_config())
     events = tracker.get_history(args.job_id)
@@ -1145,6 +1191,10 @@ class LocalCLIApp:
         multi_p.add_argument("--sources", default="", help="Comma-separated source list; default uses all keyword-only sources.")
         multi_p.add_argument("--remote-only", action="store_true")
         multi_p.add_argument("--internships-only", action="store_true")
+        multi_p.add_argument("--min-relevance", type=int, default=50, help="Drop obvious noise below this search-quality score; use 0 for broad mode.")
+        multi_p.add_argument("--france-eu-only", action="store_true", default=True, help="Keep France/EU/remote-compatible results.")
+        multi_p.add_argument("--worldwide", dest="france_eu_only", action="store_false", help="Allow worldwide/non-EU locations.")
+        multi_p.add_argument("--radius-km", type=int, default=0, help="France Travail-style radius hint when supported.")
         multi_p.add_argument("--cache", dest="cache", action="store_true")
         multi_p.add_argument("--no-cache", dest="cache", action="store_false")
         multi_p.set_defaults(cache=True)
@@ -1181,6 +1231,10 @@ class LocalCLIApp:
         internships_export.add_argument("--sheet", default=None, help="Optional workbook sheet name.")
         internships_export.set_defaults(handler=_handle_export_internships)
 
+        cv_template_p = sub.add_parser("import-cv-template", help="Import a local CV template/photo into the git-ignored profiles folder.")
+        cv_template_p.add_argument("path", type=Path)
+        cv_template_p.set_defaults(handler=_handle_import_cv_template)
+
         enrich_p = sub.add_parser("enrich", help="Enrich tracked jobs with France Travail APIs.")
         enrich_p.add_argument("job_id", nargs="?", default="")
         enrich_p.add_argument("--status", default="", help="Enrich jobs by status when job_id is omitted.")
@@ -1216,6 +1270,10 @@ class LocalCLIApp:
         fh_p.add_argument("--limit-queries", type=int, default=24)
         fh_p.add_argument("--language", choices=["english", "french", "both"], default="both")
         fh_p.add_argument("--internships-only", action="store_true", help="Keep only internship-like listings from the API results.")
+        fh_p.add_argument("--min-relevance", type=int, default=50, help="Drop obvious noise below this search-quality score; use 0 for broad mode.")
+        fh_p.add_argument("--france-eu-only", action="store_true", default=True, help="Keep France/EU results.")
+        fh_p.add_argument("--worldwide", dest="france_eu_only", action="store_false", help="Allow worldwide/non-EU locations.")
+        fh_p.add_argument("--radius-km", type=int, default=25, help="Radius around Paris when location is Paris (0 disables radius).")
         fh_p.add_argument("--packets", dest="packets", action="store_true")
         fh_p.add_argument("--no-packets", dest="packets", action="store_false")
         fh_p.set_defaults(packets=True)
@@ -1259,6 +1317,12 @@ class LocalCLIApp:
         status_p.add_argument("--note", "-n", default="")
         status_p.set_defaults(handler=_handle_status)
 
+        delete_p = sub.add_parser("delete-job", help="Remove a job from the local tracker.")
+        delete_p.add_argument("job_id")
+        delete_p.add_argument("--yes", action="store_true", help="Confirm deletion.")
+        delete_p.add_argument("--note", default="")
+        delete_p.set_defaults(handler=_handle_delete_job)
+
         history_p = sub.add_parser("history", help="Show event history for a job.")
         history_p.add_argument("job_id")
         history_p.set_defaults(handler=_handle_history)
@@ -1293,6 +1357,9 @@ class LocalCLIApp:
         parser.add_argument("--page", type=int, default=1)
         parser.add_argument("--remote-only", action="store_true")
         parser.add_argument("--internships-only", action="store_true")
+        parser.add_argument("--min-relevance", type=int, default=0, help="Drop obvious noise below this search-quality score; 50 is a good refined mode.")
+        parser.add_argument("--france-eu-only", action="store_true", help="Keep France/EU/remote-compatible results.")
+        parser.add_argument("--radius-km", type=int, default=0, help="Radius around Paris when France Travail supports commune/distance search.")
         parser.add_argument("--cache", dest="cache", action="store_true")
         parser.add_argument("--no-cache", dest="cache", action="store_false")
         parser.set_defaults(cache=True)

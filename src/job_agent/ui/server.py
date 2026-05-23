@@ -22,6 +22,7 @@ from job_agent.ai_agent import (
 from job_agent.analytics import compute_stats, jobs_to_csv
 from job_agent.autopilot import AutopilotConfig, get_autopilot
 from job_agent.config import AppConfig
+from job_agent.cv_template import import_cv_template_upload
 from job_agent.db.database import Database
 from job_agent.enrichment import EnrichOptions, enrich_job
 from job_agent.exporters.internship_workbook import export_applied_internships
@@ -200,6 +201,9 @@ def _multi_source_search(config: AppConfig, payload: dict) -> dict:
     force_packets = bool(payload.get("force_packets", False))
     internships_only = bool(payload.get("internships_only", False))
     remote_only = bool(payload.get("remote_only", False))
+    min_relevance = _safe_int(payload.get("min_relevance"), 0, minimum=0, maximum=100)
+    france_eu_only = bool(payload.get("france_eu_only", False))
+    radius_km = _safe_int(payload.get("radius_km"), 0, minimum=0, maximum=100)
     aggregate = search_all_free_sources(
         query=query,
         location=location,
@@ -207,6 +211,9 @@ def _multi_source_search(config: AppConfig, payload: dict) -> dict:
         sources=sources,
         remote_only=remote_only,
         internships_only=internships_only,
+        min_relevance=min_relevance,
+        france_eu_only=france_eu_only,
+        radius_km=radius_km,
         use_cache=True,
         cache_ttl_hours=6.0,
     )
@@ -238,12 +245,18 @@ def _api_search(config: AppConfig, payload: dict) -> dict:
     prepare_packets = bool(payload.get("prepare_packets", False))
     force_packets = bool(payload.get("force_packets", False))
     internships_only = bool(payload.get("internships_only", False))
+    min_relevance = _safe_int(payload.get("min_relevance"), 0, minimum=0, maximum=100)
+    france_eu_only = bool(payload.get("france_eu_only", False))
+    radius_km = _safe_int(payload.get("radius_km"), 0, minimum=0, maximum=100)
     jobs = search_free_api_jobs(
         source,
         query=query,
         location=location,
         limit=limit,
         internships_only=internships_only,
+        min_relevance=min_relevance,
+        france_eu_only=france_eu_only,
+        radius_km=radius_km,
         use_cache=True,
         cache_ttl_hours=6.0,
     )
@@ -265,6 +278,9 @@ def _one_click_hunt(config: AppConfig, payload: dict) -> dict:
     force_packets = bool(payload.get("force_packets", False))
     internships_only = bool(payload.get("internships_only", False))
     include_multi_source = bool(payload.get("include_multi_source", True))
+    min_relevance = _safe_int(payload.get("min_relevance"), 0, minimum=0, maximum=100)
+    france_eu_only = bool(payload.get("france_eu_only", False))
+    radius_km = _safe_int(payload.get("radius_km"), 0, minimum=0, maximum=100)
     links = _search_links({"query": query, "location": location, "language": language, "limit": limit_queries, "boards": "recommended"})
     try:
         profile, master_cv, _ = load_profile_bundle(config)
@@ -311,6 +327,9 @@ def _one_click_hunt(config: AppConfig, payload: dict) -> dict:
                 location=location,
                 limit=limit_per_query,
                 internships_only=internships_only,
+                min_relevance=min_relevance,
+                france_eu_only=france_eu_only,
+                radius_km=radius_km,
                 use_cache=True,
                 cache_ttl_hours=6.0,
             )
@@ -338,6 +357,9 @@ def _one_click_hunt(config: AppConfig, payload: dict) -> dict:
                     limit_per_source=max(1, min(limit_per_query, 5)),
                     sources=list(KEYWORD_ONLY_SOURCES),
                     internships_only=internships_only,
+                    min_relevance=min_relevance,
+                    france_eu_only=france_eu_only,
+                    radius_km=radius_km,
                     use_cache=True,
                     cache_ttl_hours=6.0,
                 )
@@ -554,10 +576,14 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                     auto_packet_threshold=int(payload.get("auto_packet_threshold") or 75),
                     multi_source_limit=int(payload.get("multi_source_limit") or 5),
                     france_travail_limit=int(payload.get("france_travail_limit") or 8),
+                    radius_km=_safe_int(payload.get("radius_km"), 25, minimum=0, maximum=100),
+                    min_relevance=_safe_int(payload.get("min_relevance"), 50, minimum=0, maximum=100),
+                    france_eu_only=bool(payload.get("france_eu_only", True)),
                     use_france_travail=bool(payload.get("use_france_travail", True)),
                     use_multi_source=bool(payload.get("use_multi_source", True)),
                     max_packets_per_cycle=int(payload.get("max_packets_per_cycle") or 5),
                     internships_only=bool(payload.get("internships_only", True)),
+                    email_notify=bool(payload.get("email_notify", False)),
                 )
                 state = get_autopilot(config).start(autopilot_options)
                 return self._send_json({"state": state.__dict__, "status": get_autopilot(config).status()})
@@ -644,7 +670,6 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 job = db.resolve_job(job_id)
                 if not job:
                     return self._send_error_json("Job not found.", HTTPStatus.NOT_FOUND)
-                from job_agent.validators import load_profile_bundle
                 profile, master_cv, _ = load_profile_bundle(config)
                 analysis = _ai_analyze_fit(job, master_cv, profile, PolishOptions.from_env())
                 if analysis is None:
@@ -673,12 +698,25 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 return self._send_json({"report": report})
             if parsed.path == "/api/export-internships":
                 return self._send_json(_export_internships(config, payload))
+            if parsed.path == "/api/import-cv-template":
+                filename = str(payload.get("filename") or "").strip()
+                content = str(payload.get("content_base64") or "").strip()
+                if not filename or not content:
+                    return self._send_error_json("filename and content_base64 are required.")
+                return self._send_json(import_cv_template_upload(config, filename=filename, content_base64=content))
             if parsed.path == "/api/status":
                 job_id = str(payload.get("job_id") or "")
                 status = JobStatus(str(payload.get("status") or ""))
                 tracker = _tracker(config)
                 tracker.update_status(job_id, status, note=str(payload.get("note") or ""))
                 return self._send_json({"ok": True})
+            if parsed.path == "/api/delete-job":
+                job_id = str(payload.get("job_id") or "")
+                if not job_id:
+                    return self._send_error_json("job_id is required.")
+                tracker = _tracker(config)
+                deleted_id = tracker.delete_job(job_id, note=str(payload.get("note") or "Dashboard removal"))
+                return self._send_json({"ok": True, "deleted_id": deleted_id})
             return self._send_error_json("Unknown API route.", HTTPStatus.NOT_FOUND)
         except FreeApiError as exc:
             return self._send_error_json(str(exc), HTTPStatus.BAD_GATEWAY)

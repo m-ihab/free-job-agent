@@ -22,6 +22,7 @@ from job_agent.intake.france_travail_auth import france_travail_env, france_trav
 from job_agent.intake.url import HEADERS
 from job_agent.intake.internships import is_internship_listing
 from job_agent.normalizer import normalize
+from job_agent.search_quality import assess_search_quality
 from job_agent.schemas.job import JobListing
 from job_agent.utils.html import strip_html
 
@@ -47,6 +48,9 @@ class FreeApiSearch:
     page: int = 1
     remote_only: bool = False
     internships_only: bool = False
+    min_relevance: int = 0
+    france_eu_only: bool = False
+    radius_km: int = 0
     timeout: int = DEFAULT_TIMEOUT
     use_cache: bool = False
     cache_ttl_hours: float = DEFAULT_CACHE_TTL_HOURS
@@ -266,8 +270,10 @@ def _contains_query(job: JobListing, query: str) -> bool:
 
 
 _LOCATION_ALIASES = {
-    "paris": ("paris", "île-de-france", "ile-de-france", "idf", "france"),
-    "île-de-france": ("paris", "île-de-france", "ile-de-france", "idf", "france"),
+    "paris": ("paris", "75 -", "île-de-france", "ile-de-france", "idf", "france"),
+    "île-de-france": ("paris", "75 -", "77 -", "78 -", "91 -", "92 -", "93 -", "94 -", "95 -", "île-de-france", "ile-de-france", "idf", "france"),
+    "ile-de-france": ("paris", "75 -", "77 -", "78 -", "91 -", "92 -", "93 -", "94 -", "95 -", "île-de-france", "ile-de-france", "idf", "france"),
+    "idf": ("paris", "75 -", "77 -", "78 -", "91 -", "92 -", "93 -", "94 -", "95 -", "île-de-france", "ile-de-france", "idf", "france"),
     "france": ("france", "paris", "lyon", "marseille", "lille", "toulouse", "nantes"),
     "europe": ("europe", "france", "germany", "netherlands", "spain", "italy", "uk", "united kingdom", "ireland", "portugal"),
     "remote": ("remote", "worldwide", "anywhere", "global"),
@@ -329,6 +335,15 @@ def _post_filter(jobs: list[JobListing], search: FreeApiSearch, apply_query_filt
         if apply_query_filter and not _contains_query(job, search.query):
             continue
         if not _contains_location(job, search.location):
+            continue
+        quality = assess_search_quality(job, query=search.query, location=search.location)
+        job.search_quality_score = quality["score"]
+        job.search_role_family = quality["role_family"]
+        job.search_contract = quality["contract"]
+        job.search_quality_flags = quality["flags"]
+        if search.france_eu_only and "outside-target-region" in quality["flags"]:
+            continue
+        if search.min_relevance and int(quality["score"]) < int(search.min_relevance):
             continue
         filtered.append(job)
     if search.query.strip():
@@ -905,8 +920,17 @@ def _france_location_params(search: FreeApiSearch) -> dict[str, Any]:
     params: dict[str, Any] = {}
     # France Travail supports department filters. Paris is department 75; this
     # is the safest default for the user's target market.
-    if loc in {"", "paris", "paris 75", "75", "ile-de-france", "île-de-france", "idf"}:
-        params["departement"] = "75" if loc in {"", "paris", "paris 75", "75"} else "75"
+    radius = max(0, min(int(search.radius_km or 0), 100))
+    if loc in {"", "paris", "paris 75", "75"}:
+        if radius:
+            # INSEE code for Paris; distance is the API equivalent of the web
+            # UI radius filter.
+            params["commune"] = "75056"
+            params["distance"] = str(radius)
+        else:
+            params["departement"] = "75"
+    elif loc in {"ile-de-france", "île-de-france", "idf"}:
+        params["region"] = "11"
     elif re.fullmatch(r"\d{2,3}", loc):
         params["departement"] = loc
     else:
@@ -1051,6 +1075,9 @@ def search_free_api_jobs(
     page: int = 1,
     remote_only: bool = False,
     internships_only: bool = False,
+    min_relevance: int = 0,
+    france_eu_only: bool = False,
+    radius_km: int = 0,
     timeout: int = DEFAULT_TIMEOUT,
     use_cache: bool = False,
     cache_ttl_hours: float = DEFAULT_CACHE_TTL_HOURS,
@@ -1075,6 +1102,9 @@ def search_free_api_jobs(
         page=max(1, int(page or 1)),
         remote_only=remote_only,
         internships_only=internships_only,
+        min_relevance=max(0, min(int(min_relevance or 0), 100)),
+        france_eu_only=france_eu_only,
+        radius_km=max(0, min(int(radius_km or 0), 100)),
         timeout=timeout,
         use_cache=use_cache,
         cache_ttl_hours=cache_ttl_hours,
@@ -1101,6 +1131,9 @@ def search_all_free_sources(
     limit_per_source: int = 10,
     remote_only: bool = False,
     internships_only: bool = False,
+    min_relevance: int = 0,
+    france_eu_only: bool = False,
+    radius_km: int = 0,
     sources: list[str] | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     use_cache: bool = True,
@@ -1127,6 +1160,9 @@ def search_all_free_sources(
                 limit=limit_per_source,
                 remote_only=remote_only,
                 internships_only=internships_only,
+                min_relevance=min_relevance,
+                france_eu_only=france_eu_only,
+                radius_km=radius_km,
                 timeout=timeout,
                 use_cache=use_cache,
                 cache_ttl_hours=cache_ttl_hours,

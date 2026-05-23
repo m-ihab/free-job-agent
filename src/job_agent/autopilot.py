@@ -32,6 +32,7 @@ from job_agent.intake.free_apis import (
 )
 from job_agent.intake.france_market import expand_france_search_queries, expand_role_family
 from job_agent.intake.france_travail_auth import france_travail_token
+from job_agent.notifier import notify_packet_ready
 from job_agent.pipeline import add_job_to_tracker, generate_packet_for_job
 from job_agent.schemas.job import JobStatus
 from job_agent.tracker import ApplicationTracker
@@ -50,10 +51,14 @@ class AutopilotConfig:
     auto_packet_threshold: int = 75
     multi_source_limit: int = 5
     france_travail_limit: int = 8
+    radius_km: int = 25
+    min_relevance: int = 50
+    france_eu_only: bool = True
     use_france_travail: bool = True
     use_multi_source: bool = True
     max_packets_per_cycle: int = 5
     internships_only: bool = True
+    email_notify: bool = False
 
 
 @dataclass
@@ -124,10 +129,14 @@ class Autopilot:
                 "auto_packet_threshold": self.opts.auto_packet_threshold,
                 "multi_source_limit": self.opts.multi_source_limit,
                 "france_travail_limit": self.opts.france_travail_limit,
+                "radius_km": self.opts.radius_km,
+                "min_relevance": self.opts.min_relevance,
+                "france_eu_only": self.opts.france_eu_only,
                 "use_france_travail": self.opts.use_france_travail,
                 "use_multi_source": self.opts.use_multi_source,
                 "max_packets_per_cycle": self.opts.max_packets_per_cycle,
                 "internships_only": self.opts.internships_only,
+                "email_notify": self.opts.email_notify,
             },
         }
 
@@ -180,6 +189,9 @@ class Autopilot:
                         location=self.opts.location,
                         limit=self.opts.france_travail_limit,
                         internships_only=self.opts.internships_only,
+                        min_relevance=self.opts.min_relevance,
+                        france_eu_only=self.opts.france_eu_only,
+                        radius_km=self.opts.radius_km,
                         use_cache=True,
                         cache_ttl_hours=2.0,
                     )
@@ -201,6 +213,9 @@ class Autopilot:
                         limit_per_source=self.opts.multi_source_limit,
                         sources=list(KEYWORD_ONLY_SOURCES),
                         internships_only=self.opts.internships_only,
+                        min_relevance=self.opts.min_relevance,
+                        france_eu_only=self.opts.france_eu_only,
+                        radius_km=self.opts.radius_km,
                         use_cache=True,
                         cache_ttl_hours=2.0,
                     )
@@ -220,6 +235,7 @@ class Autopilot:
         # don't waste tailoring cycles.
         packets_built = 0
         ai_skipped = 0
+        notifications: list[dict[str, Any]] = []
         for job_id in added:
             if packets_built >= self.opts.max_packets_per_cycle:
                 break
@@ -233,6 +249,10 @@ class Autopilot:
                 if packet.fit_score is not None and packet.fit_score >= self.opts.auto_packet_threshold:
                     packets.append(packet.id)
                     packets_built += 1
+                    if self.opts.email_notify:
+                        job = db.resolve_job(job_id)
+                        if job:
+                            notifications.append(notify_packet_ready(self.config, job, packet, reason="Autopilot"))
             except Exception as exc:
                 errors.append(f"packet/{job_id[:8]}: {type(exc).__name__}: {exc}")
 
@@ -242,6 +262,7 @@ class Autopilot:
             "jobs_added": len(added),
             "packets_built": packets_built,
             "ai_skipped": ai_skipped,
+            "notifications": notifications[:5],
             "errors": errors[:10],
             "per_query": per_query,
             "queries": search_queries,

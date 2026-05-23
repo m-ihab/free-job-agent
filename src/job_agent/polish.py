@@ -27,7 +27,7 @@ except Exception:  # pragma: no cover - requests is in install_requires
 
 
 DEFAULT_BASE_URL = "http://127.0.0.1:11434"
-DEFAULT_MODEL = "llama3.2:3b"
+DEFAULT_MODEL = "qwen3.6:latest"
 DEFAULT_FAST_MODEL = "llama3.2:3b"
 DEFAULT_TIMEOUT = 45
 
@@ -52,6 +52,14 @@ _PREFERRED_FAST_MODELS = [
     "qwen3:latest",
     "qwen3.6:latest",
 ]
+
+_FAST_MODEL_NAMES = {
+    "llama3.2:3b",
+    "llama3.2:1b",
+    "phi3:mini",
+    "qwen2.5:3b",
+    "gemma3:2b",
+}
 
 
 @dataclass(frozen=True)
@@ -123,7 +131,10 @@ def resolve_ollama_model(options: PolishOptions | None = None) -> str:
     models = available_ollama_models(options)
     if not models:
         return requested or DEFAULT_MODEL
-    if requested in models:
+    # Do not let the quick-chat model become the heavy analysis model just
+    # because the user pulled it from the dashboard. Prefer a larger installed
+    # analysis model when the requested value is the built-in fast default.
+    if requested in models and requested not in _FAST_MODEL_NAMES:
         return requested
     requested_family = requested.split(":", 1)[0] if requested else ""
     if requested_family:
