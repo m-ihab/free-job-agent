@@ -7,24 +7,41 @@ import re
 from job_agent.schemas.job import JobListing
 
 
+# Markers that vary across the same job (gender markers, plural variants).
+_NORMALIZE_NOISE = re.compile(
+    r"\b(h/f|f/h|h-f|f-h|m/f|f/m|h/f/x|m/w/d|w/m/d|x/h/f|\(h/f\)|\(f/h\)|\(h/f/x\)|\.e|·e)\b",
+    re.IGNORECASE,
+)
+_LOCATION_VARIANTS = re.compile(
+    r"\b(paris\s+\d{1,2}(er|ème|e)?\s+arrondissement?|paris\s+\d{1,2}(er|ème|e)?|\d{1,2}(er|ème|e)?\s+arrondissement?|75\d{3})\b",
+    re.IGNORECASE,
+)
+
+
 def _normalize_text(text: str) -> str:
-    """Lowercase, strip punctuation, collapse whitespace."""
+    """Lowercase, strip H/F markers, drop arrondissement, collapse whitespace."""
     text = text.lower()
-    text = re.sub(r'[^\w\s]', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
+    text = _NORMALIZE_NOISE.sub(" ", text)
+    text = _LOCATION_VARIANTS.sub("paris", text)
+    text = re.sub(r"[^\w\s]", " ", text)
+    text = re.sub(r"\s+", " ", text)
     return text.strip()
 
 
+def _short_signature(title: str, company: str, location: str) -> str:
+    """A compact signature on (title, company, normalized location)."""
+    parts = [_normalize_text(title), _normalize_text(company), _normalize_text(location)]
+    return " | ".join(parts)
+
+
 def compute_fingerprint(job: JobListing) -> str:
-    """Create a stable SHA-256 fingerprint based on title + company + location."""
-    parts = [
-        _normalize_text(job.title),
-        _normalize_text(job.company),
-        _normalize_text(job.location or ""),
-    ]
-    desc_snippet = _normalize_text(job.description[:500] if job.description else "")
-    parts.append(desc_snippet)
-    canonical = " | ".join(parts)
+    """Stable SHA-256 fingerprint that ignores cosmetic title/location variants.
+
+    Two listings for the same role that differ only in ``(H/F)`` vs
+    ``(F/H)``, ``Paris`` vs ``Paris 1er Arrondissement``, or slight
+    description rewording, now produce the same fingerprint.
+    """
+    canonical = _short_signature(job.title, job.company, job.location or "")
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 

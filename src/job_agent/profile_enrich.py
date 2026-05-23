@@ -188,18 +188,27 @@ def merge_github_into_profile(
         projects = master_cv.setdefault("projects", [])
         existing_tokens = [_project_signature(p) for p in projects]
         for repo in snapshot.repos:
-            name = repo.get("name") or ""
-            description = repo.get("description") or ""
+            name = (repo.get("name") or "").strip()
+            description = (repo.get("description") or "").strip()
             if not name or not description:
                 continue
             repo_signature = _project_signature({"name": name, "description": description, "url": repo.get("url", "")})
             if any(_signatures_overlap(repo_signature, existing) for existing in existing_tokens):
                 continue
+            # Normalize tech list: keep canonical capitalization for languages,
+            # de-duplicate, drop short noise like single letters.
+            tech_pool: list[str] = []
+            for raw in [repo.get("language")] + list(repo.get("topics") or []):
+                if not raw:
+                    continue
+                pretty = _prettify_tech(str(raw))
+                if pretty and pretty not in tech_pool and len(pretty) > 1:
+                    tech_pool.append(pretty)
             project = {
-                "name": name,
+                "name": _humanize_repo_name(name),
                 "description": description,
                 "url": repo.get("url"),
-                "technologies": [t for t in [repo.get("language")] + (repo.get("topics") or []) if t],
+                "technologies": tech_pool,
                 "bullet_points": [],
             }
             projects.append(project)
@@ -207,6 +216,51 @@ def merge_github_into_profile(
             report["added_projects"].append(name)
 
     return report
+
+
+_TECH_CANONICAL = {
+    "python": "Python",
+    "javascript": "JavaScript",
+    "typescript": "TypeScript",
+    "html": "HTML",
+    "css": "CSS",
+    "scss": "SCSS",
+    "r": "R",
+    "c#": "C#",
+    "c++": "C++",
+    "c": "C",
+    "go": "Go",
+    "rust": "Rust",
+    "java": "Java",
+    "asp.net": "ASP.NET",
+    "shell": "Shell",
+    "powershell": "PowerShell",
+    "jupyter notebook": "Jupyter Notebook",
+    "scikit-learn": "scikit-learn",
+    "tensorflow": "TensorFlow",
+    "pytorch": "PyTorch",
+    "ml": "ML",
+    "ai": "AI",
+    "mlops": "MLOps",
+    "nlp": "NLP",
+    "sql": "SQL",
+}
+
+
+def _prettify_tech(value: str) -> str:
+    key = value.strip().casefold()
+    return _TECH_CANONICAL.get(key, value.strip())
+
+
+def _humanize_repo_name(name: str) -> str:
+    """Turn ``cybersecurity-prediction-app`` into ``Cybersecurity Prediction App``."""
+    cleaned = re.sub(r"[-_.]+", " ", name).strip()
+    if not cleaned:
+        return name
+    words = []
+    for token in cleaned.split():
+        words.append(token if token.isupper() and len(token) <= 4 else token.capitalize())
+    return " ".join(words)
 
 
 def _project_signature(project: dict) -> set[str]:

@@ -360,10 +360,27 @@ function jobMatchesText(job, query) {
   return haystack.includes(query.toLowerCase());
 }
 
+const _AI_VERDICT_RANK = { strong: 3, moderate: 2, weak: 1, "": 0 };
+const _NON_EU_LOCATION_RE = /(united states|usa|canada|mexico|brazil|argentina|chile|peru|colombia|australia|new zealand|india|singapore|japan|china|hong kong|south africa|israel|uae)/i;
+
+function isFranceOrEu(job) {
+  const text = `${job.location || ""} ${job.company || ""}`;
+  if (_NON_EU_LOCATION_RE.test(text)) return false;
+  return true;
+}
+
 function sortJobs(jobs, mode) {
   const list = [...jobs];
   if (mode === "score") {
     return list.sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1));
+  }
+  if (mode === "ai") {
+    return list.sort((a, b) => {
+      const va = _AI_VERDICT_RANK[a.ai_verdict || ""] || 0;
+      const vb = _AI_VERDICT_RANK[b.ai_verdict || ""] || 0;
+      if (vb !== va) return vb - va;
+      return (b.ai_score ?? b.fit_score ?? -1) - (a.ai_score ?? a.fit_score ?? -1);
+    });
   }
   if (mode === "company") {
     return list.sort((a, b) => String(a.company).localeCompare(String(b.company)));
@@ -447,12 +464,27 @@ function renderJobs() {
   const remoteOnly = $("filterRemote").checked;
   const internshipOnly = $("filterInternship").checked;
   const enrichedOnly = $("filterEnriched").checked;
+  const localOnly = $("filterLocalOnly") ? $("filterLocalOnly").checked : false;
+  const hideRejected = $("filterHideRejected") ? $("filterHideRejected").checked : false;
+  const contract = $("filterContract") ? $("filterContract").value : "";
+  const roleFamily = $("filterRoleFamily") ? $("filterRoleFamily").value : "";
+  const aiVerdictFilter = $("filterAiVerdict") ? $("filterAiVerdict").value : "";
+  const minScore = $("filterMinScore") ? Number($("filterMinScore").value || 0) : 0;
   const sortMode = $("jobsSortSelect").value;
 
   let jobs = state.jobs.filter((job) => jobMatchesText(job, text));
   if (remoteOnly) jobs = jobs.filter((job) => job.remote);
   if (internshipOnly) jobs = jobs.filter((job) => isInternship(job));
   if (enrichedOnly) jobs = jobs.filter((job) => job.enriched);
+  if (localOnly) jobs = jobs.filter(isFranceOrEu);
+  if (hideRejected) jobs = jobs.filter((job) => job.status !== "REJECTED");
+  if (contract) jobs = jobs.filter((job) => (job.ai_contract || "").toLowerCase() === contract);
+  if (roleFamily) jobs = jobs.filter((job) => (job.ai_role_family || "") === roleFamily);
+  if (aiVerdictFilter) {
+    if (aiVerdictFilter === "unknown") jobs = jobs.filter((job) => !job.ai_verdict);
+    else jobs = jobs.filter((job) => job.ai_verdict === aiVerdictFilter);
+  }
+  if (minScore > 0) jobs = jobs.filter((job) => (job.fit_score ?? 0) >= minScore);
   jobs = sortJobs(jobs, sortMode);
 
   renderJobsMetrics(jobs);
@@ -841,7 +873,10 @@ function activateTab(name) {
   document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `tab-${name}`));
   if (name === "jobs") renderJobs();
   if (name === "insights" && !state.insightsCache) loadInsights();
-  if (name === "autopilot") loadAutopilot();
+  if (name === "autopilot") {
+    loadAutopilot();
+    loadAiSetup();
+  }
 }
 
 async function loadAutopilot() {
@@ -1005,6 +1040,101 @@ async function loadAiStatus() {
   } catch {
     state.aiStatus = { reachable: false };
     renderState();
+  }
+}
+
+async function loadAiSetup() {
+  try {
+    const install = await api("/api/ollama-install");
+    state.aiInstall = install;
+    renderAiSetup();
+  } catch (error) {
+    setNotice("aiSetupNotice", `Could not query Ollama: ${error.message}`, true);
+  }
+}
+
+function renderAiSetup() {
+  const info = state.aiInstall || {};
+  const status = state.aiStatus || {};
+  const tiles = [
+    metric("Installed", info.installed ? "Yes" : "No", info.binary ? info.binary.split(/[\\/]/).pop() : ""),
+    metric("Daemon", info.reachable ? "Reachable" : "Stopped"),
+    metric("Heavy model", (status.selected_model || "—").replace(":latest", "")),
+    metric("Fast model", (status.selected_fast_model || "—").replace(":latest", "")),
+  ].join("");
+  $("aiSetupMetrics").innerHTML = tiles;
+  const btn = $("launchOllamaBtn");
+  if (info.installed && info.reachable) {
+    btn.disabled = true;
+    btn.textContent = "Ollama running ✓";
+  } else if (info.installed) {
+    btn.disabled = false;
+    btn.textContent = "Start Ollama";
+  } else {
+    btn.disabled = false;
+    btn.textContent = "Install Ollama (opens site)";
+  }
+}
+
+async function launchOllama() {
+  const btn = $("launchOllamaBtn");
+  const info = state.aiInstall || {};
+  if (!info.installed) {
+    window.open("https://ollama.com/download", "_blank", "noreferrer");
+    setNotice("aiSetupNotice", "Opened the Ollama install page in a new tab.");
+    return;
+  }
+  setBusy(btn, true);
+  setNotice("aiSetupNotice", "");
+  try {
+    const result = await api("/api/ollama-launch", {});
+    if (result.ok && result.running) {
+      setNotice("aiSetupNotice", result.started ? "Ollama daemon started. AI features are ready." : "Ollama was already running.", false);
+    } else {
+      setNotice("aiSetupNotice", `Could not start Ollama: ${result.reason || "unknown"}`, true);
+    }
+  } catch (error) {
+    setNotice("aiSetupNotice", error.message, true);
+  } finally {
+    setBusy(btn, false);
+    await Promise.all([loadAiSetup(), loadAiStatus()]);
+  }
+}
+
+async function pullFastModel() {
+  const btn = $("pullFastModelBtn");
+  setBusy(btn, true);
+  setNotice("aiSetupNotice", "Downloading llama3.2:3b — this can take a few minutes.");
+  try {
+    const result = await api("/api/ollama-pull", { model: "llama3.2:3b" });
+    if (!result.ok) {
+      setNotice("aiSetupNotice", `Pull failed: ${result.reason}`, true);
+      return;
+    }
+    // Poll progress until done
+    const watcher = window.setInterval(async () => {
+      try {
+        const status = await api("/api/ollama-pull-status?model=llama3.2:3b");
+        const s = status.status || {};
+        if (s.state === "running") {
+          setNotice("aiSetupNotice", `Downloading… ${s.last_line || ""}`);
+        } else if (s.state === "success") {
+          window.clearInterval(watcher);
+          setNotice("aiSetupNotice", "Fast chat model installed.");
+          await Promise.all([loadAiSetup(), loadAiStatus()]);
+        } else if (s.state === "failed") {
+          window.clearInterval(watcher);
+          setNotice("aiSetupNotice", `Pull failed: ${s.error || "unknown"}`, true);
+        }
+      } catch (error) {
+        window.clearInterval(watcher);
+        setNotice("aiSetupNotice", error.message, true);
+      }
+    }, 2500);
+  } catch (error) {
+    setNotice("aiSetupNotice", error.message, true);
+  } finally {
+    setBusy(btn, false);
   }
 }
 
@@ -1230,6 +1360,12 @@ function bindEvents() {
   $("filterRemote").addEventListener("change", renderJobs);
   $("filterInternship").addEventListener("change", renderJobs);
   $("filterEnriched").addEventListener("change", renderJobs);
+  const extraFilters = ["filterContract", "filterRoleFamily", "filterAiVerdict", "filterMinScore", "filterLocalOnly", "filterHideRejected"];
+  extraFilters.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", renderJobs);
+    if (el && el.tagName === "INPUT" && el.type === "number") el.addEventListener("input", renderJobs);
+  });
   $("selectAllJobs").addEventListener("change", (event) => {
     if (event.target.checked) state.jobs.forEach((job) => state.selectedJobs.add(job.id));
     else state.selectedJobs.clear();
@@ -1266,6 +1402,12 @@ function bindEvents() {
   $("autopilotStartBtn").addEventListener("click", startAutopilot);
   $("autopilotStopBtn").addEventListener("click", stopAutopilot);
   $("autopilotRefreshBtn").addEventListener("click", loadAutopilot);
+  const launchBtn = document.getElementById("launchOllamaBtn");
+  if (launchBtn) launchBtn.addEventListener("click", launchOllama);
+  const pullBtn = document.getElementById("pullFastModelBtn");
+  if (pullBtn) pullBtn.addEventListener("click", pullFastModel);
+  const refreshAiBtn = document.getElementById("refreshAiSetupBtn");
+  if (refreshAiBtn) refreshAiBtn.addEventListener("click", () => { loadAiSetup(); loadAiStatus(); });
   $("enrichGithubBtn").addEventListener("click", enrichGithub);
   $("enrichLinkedinBtn").addEventListener("click", openLinkedinModal);
   $("linkedinSubmitBtn").addEventListener("click", submitLinkedinSkills);

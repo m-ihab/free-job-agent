@@ -273,6 +273,64 @@ def _language_terms(language: str) -> tuple[list[str], list[str]]:
     )
 
 
+# Role-family map: if a user seeds with one of these, expand to the related
+# data/AI roles automatically. Keeps the user from having to know all variants.
+ROLE_FAMILY_MAP: dict[str, list[str]] = {
+    "data scientist": [
+        "data scientist", "data science", "machine learning", "ml engineer",
+        "ai engineer", "data analyst", "data engineer", "applied scientist",
+    ],
+    "data science": [
+        "data science", "data scientist", "machine learning", "ml engineer",
+        "ai engineer", "data analyst", "applied scientist",
+    ],
+    "machine learning": [
+        "machine learning", "ml engineer", "mlops", "deep learning",
+        "ai engineer", "data scientist", "applied ml",
+    ],
+    "ml engineer": [
+        "ml engineer", "machine learning", "mlops", "ai engineer",
+        "deep learning engineer",
+    ],
+    "ai engineer": [
+        "ai engineer", "machine learning", "ml engineer", "ia engineer",
+        "intelligence artificielle",
+    ],
+    "data analyst": [
+        "data analyst", "business intelligence", "bi analyst", "analytics",
+        "analyste data", "analytics engineer",
+    ],
+    "data engineer": [
+        "data engineer", "data engineering", "etl", "analytics engineer",
+        "mlops", "data platform",
+    ],
+    "business intelligence": [
+        "business intelligence", "bi analyst", "data analyst",
+        "analytics engineer", "power bi",
+    ],
+    "ia": [
+        "intelligence artificielle", "ia engineer", "ai engineer",
+        "machine learning", "data scientist",
+    ],
+}
+
+
+def expand_role_family(query: str) -> list[str]:
+    """If the seed query is a known role, return the related role variants.
+
+    Otherwise return ``[query]``. Used by the autopilot's smart-query
+    expansion so a user-entered seed like ``data scientist`` automatically
+    also tries ``data engineer``, ``ml engineer``, ``ai engineer``, etc.
+    """
+    key = " ".join(query.split()).strip().casefold()
+    if not key:
+        return []
+    for family_seed, variants in ROLE_FAMILY_MAP.items():
+        if family_seed == key or family_seed in key:
+            return list(variants)
+    return [query.strip()]
+
+
 def expand_france_search_queries(query: str, limit: int = 28, language: str = "both") -> list[str]:
     """Build bilingual internship/apprenticeship query variants for France."""
     base = " ".join(query.split()).strip()

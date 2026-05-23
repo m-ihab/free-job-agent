@@ -32,7 +32,13 @@ try:
 except Exception:  # pragma: no cover
     requests = None  # type: ignore[assignment]
 
-from job_agent.polish import PolishOptions, _tokens, is_ollama_reachable, resolve_ollama_model
+from job_agent.polish import (
+    PolishOptions,
+    _tokens,
+    is_ollama_reachable,
+    resolve_fast_model,
+    resolve_ollama_model,
+)
 from job_agent.schemas.candidate import CandidateProfile, MasterCV
 from job_agent.schemas.job import JobListing
 
@@ -504,8 +510,10 @@ def chat_about_job(job: JobListing, master_cv: MasterCV, profile: CandidateProfi
               .replace("{question}", question[:600]))
     if requests is None:
         return None
+    # Chat uses the fast tier when a smaller model is installed; otherwise
+    # falls back to the regular resolver.
     payload = {
-        "model": resolve_ollama_model(options),
+        "model": resolve_fast_model(options),
         "prompt": prompt,
         "stream": False,
         "options": {"temperature": 0.4, "num_predict": 512},

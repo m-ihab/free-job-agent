@@ -21,12 +21,16 @@ from job_agent.schemas.packet import ApplicationPacket
 from job_agent.validators import validate_profile_bundle
 
 
-APP_NAME = "Paris Data Career Copilot"
-APP_URL_PLACEHOLDER = "https://github.com/m-ihab/free-job-agent"
-APP_DESCRIPTION = (
+APP_NAME = os.environ.get("JOB_AGENT_APP_NAME", "Paris Data Career Copilot")
+APP_URL_PLACEHOLDER = os.environ.get(
+    "JOB_AGENT_APP_URL",
+    "https://github.com/your-username/free-job-agent",
+)
+APP_DESCRIPTION = os.environ.get(
+    "JOB_AGENT_APP_DESCRIPTION",
     "A local-first career copilot for data science, AI, and analytics roles in France. "
     "It searches public job data, tracks opportunities, scores fit against my profile, "
-    "and prepares tailored CV and cover-letter packets for manual review and submission."
+    "and prepares tailored CV and cover-letter packets for manual review and submission.",
 )
 
 

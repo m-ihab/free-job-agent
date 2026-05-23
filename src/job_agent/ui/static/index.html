@@ -123,13 +123,50 @@
             Sort by
             <select id="jobsSortSelect">
               <option value="score">Score</option>
+              <option value="ai">AI verdict</option>
               <option value="recent">Recent</option>
               <option value="company">Company</option>
             </select>
           </label>
+          <label>
+            Contract
+            <select id="filterContract">
+              <option value="">Any contract</option>
+              <option value="stage">Stage</option>
+              <option value="alternance">Alternance</option>
+              <option value="cdi">CDI / Full-time</option>
+            </select>
+          </label>
+          <label>
+            Role family
+            <select id="filterRoleFamily">
+              <option value="">Any role</option>
+              <option value="data_science">Data Science</option>
+              <option value="machine_learning">Machine Learning</option>
+              <option value="data_engineering">Data Engineering</option>
+              <option value="data_analyst">Data Analyst</option>
+              <option value="software">Software</option>
+            </select>
+          </label>
+          <label>
+            AI verdict
+            <select id="filterAiVerdict">
+              <option value="">Any verdict</option>
+              <option value="strong">Strong</option>
+              <option value="moderate">Moderate</option>
+              <option value="weak">Weak</option>
+              <option value="unknown">Not analyzed</option>
+            </select>
+          </label>
+          <label>
+            Min score
+            <input id="filterMinScore" type="number" min="0" max="100" value="0" />
+          </label>
           <label class="check-row"><input id="filterRemote" type="checkbox" /> Remote only</label>
           <label class="check-row"><input id="filterInternship" type="checkbox" /> Internship only</label>
           <label class="check-row"><input id="filterEnriched" type="checkbox" /> Enriched only</label>
+          <label class="check-row"><input id="filterLocalOnly" type="checkbox" /> France/EU only</label>
+          <label class="check-row"><input id="filterHideRejected" type="checkbox" checked /> Hide rejected</label>
         </div>
 
         <div class="jobs-actions">
@@ -210,11 +247,23 @@ data engineer</textarea>
         </div>
 
         <div class="panel">
-          <h3>Smart features</h3>
+          <h3>AI setup</h3>
           <p class="muted" style="margin:0 0 0.6rem">
-            Local Ollama is used automatically for smart query planning and AI fit analysis when it is running.
-            Set <code>JOB_AGENT_USE_OLLAMA=1</code> only if you also want the app to polish generated prose.
+            One-click local AI. Heavy analysis runs on your largest installed model; chat uses a small fast model when present
+            (e.g. <code>llama3.2:3b</code>).
           </p>
+          <div class="metric-grid" id="aiSetupMetrics"></div>
+          <div class="action-row">
+            <button class="primary" id="launchOllamaBtn">Start Ollama</button>
+            <button id="pullFastModelBtn">Pull fast chat model</button>
+            <button id="refreshAiSetupBtn">Refresh</button>
+          </div>
+          <div class="notice hidden" id="aiSetupNotice"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Profile enrichment</h3>
+          <p class="muted" style="margin:0 0 0.6rem">Pull skills + projects from your public GitHub, or paste the LinkedIn Skills section to add what's missing.</p>
           <div class="action-row">
             <button id="enrichGithubBtn">Enrich from GitHub</button>
             <button id="enrichLinkedinBtn">Add LinkedIn skills</button>

@@ -136,32 +136,212 @@ def _skill_score(skill: Skill, job: JobListing) -> int:
 
 
 def _job_focus_terms(job: JobListing, master_cv: MasterCV, limit: int = 4) -> list[str]:
-    """Pick the top skills/tech that overlap between the job and the candidate."""
-    job_text = " ".join(job.tech_stack + job.requirements + job.responsibilities + [job.title]).casefold()
+    """Pick the top candidate skills that actually appear in the job posting.
+
+    Only terms that are present in the job's tech_stack, requirements,
+    responsibilities, or description are returned. A skill the candidate has
+    but the job never mentions is irrelevant for the closing sentence and
+    would dilute the signal.
+    """
+    job_text = " ".join(
+        job.tech_stack
+        + job.requirements
+        + job.responsibilities
+        + [job.title]
+        + [(job.description or "")[:1500]]
+    ).casefold()
     terms: list[str] = []
     seen: set[str] = set()
-    for skill in sorted(master_cv.skills, key=lambda s: _skill_score(s, job), reverse=True):
+    # Prefer skills with 2+ year experience first, then anything else.
+    sorted_skills = sorted(
+        master_cv.skills,
+        key=lambda s: (s.years_experience or 0, _skill_score(s, job)),
+        reverse=True,
+    )
+    for skill in sorted_skills:
         name = skill.name.strip()
         key = name.casefold()
-        if name and key in job_text and key not in seen:
+        if not name or key in seen:
+            continue
+        pattern = r"\b" + re.escape(key) + r"\b"
+        if re.search(pattern, job_text):
             terms.append(name)
             seen.add(key)
         if len(terms) >= limit:
             break
-    if len(terms) < limit:
-        for raw in job.tech_stack + job.requirements:
-            cleaned = raw.strip(" .,:;")
-            key = cleaned.casefold()
-            if 2 <= len(cleaned) <= 40 and key not in seen:
-                terms.append(cleaned)
-                seen.add(key)
-            if len(terms) >= limit:
-                break
     return terms
 
 
 def _is_french(text: str) -> bool:
     return bool(text and _FRENCH_HINT_RE.search(text))
+
+
+_STAGE_TERMS_RE = re.compile(r"\b(stage|stagiaire|internship|intern|graduate|junior)\b", re.IGNORECASE)
+_ALTERNANCE_TERMS_RE = re.compile(r"\b(alternance|apprentissage|apprenti|apprenticeship|alternant|alternant\.e)\b", re.IGNORECASE)
+_CDI_TERMS_RE = re.compile(r"\b(cdi|permanent|full[- ]time)\b", re.IGNORECASE)
+
+
+def _detect_contract_family(job: JobListing) -> str:
+    """Best-effort detect: 'stage', 'alternance', 'cdi', or 'role'.
+
+    Looks at title, job_type, description, raw_text. Alternance terms win over
+    stage when both appear (alternance is the more specific signal).
+    """
+    haystack = " ".join([
+        job.title or "",
+        job.job_type or "",
+        (job.description or "")[:1000],
+        (job.raw_text or "")[:500],
+    ])
+    if _ALTERNANCE_TERMS_RE.search(haystack):
+        return "alternance"
+    if _STAGE_TERMS_RE.search(haystack):
+        return "stage"
+    if _CDI_TERMS_RE.search(haystack):
+        return "cdi"
+    return "role"
+
+
+def _focus_phrase(focus: list[str], french: bool) -> str:
+    if not focus:
+        return ""
+    if french:
+        return f", avec un focus sur {', '.join(focus)}"
+    return f", with a focus on {', '.join(focus)}"
+
+
+_LOCATION_TOKENS_RE = re.compile(
+    r"\b(paris|île[- ]de[- ]france|ile[- ]de[- ]france|idf|lyon|toulouse|marseille|nantes|lille|bordeaux|"
+    r"london|berlin|munich|amsterdam|madrid|barcelona|france|europe|remote|"
+    r"\d{1,2}(er|ème|e)?\s+arrondissement?|\d{2,5})\b",
+    re.IGNORECASE,
+)
+
+
+_PRIMARY_ROLE_PATTERNS: list[re.Pattern] = [
+    # High-priority data/AI patterns first. The order matters: when a title
+    # like "Ingénieur ML et Data scientist" mentions both, we want
+    # "Data Scientist" to win, not "Ingénieur ML".
+    re.compile(r"\bdata\s+scientist\b", re.IGNORECASE),
+    re.compile(r"\bdata\s+science\b", re.IGNORECASE),
+    re.compile(r"\bdata\s+engineer(ing)?\b", re.IGNORECASE),
+    re.compile(r"\bdata\s+analyst\b", re.IGNORECASE),
+    re.compile(r"\bdata\s+analytics?\b", re.IGNORECASE),
+    re.compile(r"\bdata\s+architect\b", re.IGNORECASE),
+    re.compile(r"\bml\s+engineer\b", re.IGNORECASE),
+    re.compile(r"\bmlops\b", re.IGNORECASE),
+    re.compile(r"\bai\s+engineer\b", re.IGNORECASE),
+    re.compile(r"\bai\s+researcher\b", re.IGNORECASE),
+    re.compile(r"\bia\s+engineer\b", re.IGNORECASE),
+    re.compile(r"\bmachine\s+learning\b", re.IGNORECASE),
+    re.compile(r"\bdeep\s+learning\b", re.IGNORECASE),
+    re.compile(r"\banalytics\s+engineer\b", re.IGNORECASE),
+    re.compile(r"\bbusiness\s+intelligence\b", re.IGNORECASE),
+    re.compile(r"\bdata\s+intelligence\b", re.IGNORECASE),
+    re.compile(r"\banalyste\s+(?:data|donn[ée]es)\b", re.IGNORECASE),
+    # Mid-priority software roles.
+    re.compile(r"\bsoftware\s+engineer\b", re.IGNORECASE),
+    re.compile(r"\bbackend\s+engineer\b", re.IGNORECASE),
+    re.compile(r"\bfullstack\s+engineer\b", re.IGNORECASE),
+    re.compile(r"\bfrontend\s+engineer\b", re.IGNORECASE),
+    re.compile(r"\bcloud\s+engineer\b", re.IGNORECASE),
+    re.compile(r"\bdevops\b", re.IGNORECASE),
+    # Lower-priority French generic engineer roles.
+    re.compile(r"\bingénieur\s+(?:logiciel|données|data|ml|ia)\b", re.IGNORECASE),
+]
+
+
+def _clean_role_phrase(role: str, *, max_words: int = 5) -> str:
+    """Strip noisy tokens from a job title to get a short role phrase.
+
+    Strategy: try the high-priority data/AI role patterns first, then mid /
+    low priority ones. This means "Ingénieur ML et Data scientist" cleans to
+    "Data Scientist", not "Ingénieur ML".
+    """
+    if not role:
+        return ""
+    for pattern in _PRIMARY_ROLE_PATTERNS:
+        match = pattern.search(role)
+        if match:
+            return re.sub(r"\s+", " ", match.group(0)).strip().title()
+    value = role
+    value = re.sub(r"\(H/F\)|\(F/H\)|\(H/F/X\)|\(M/F\)|\(M/W/D\)|H/F|F/H", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\([^)]*\)", "", value)
+    value = _STAGE_TERMS_RE.sub("", value)
+    value = _ALTERNANCE_TERMS_RE.sub("", value)
+    value = re.sub(
+        r"\b(de fin d['’]études|de fin d.études|end[- ]of[- ]studies|sujet de stage|sujet|master|apprentissage|consultant·e|consultant\.e)\b",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = _LOCATION_TOKENS_RE.sub("", value)
+    value = re.sub(r"\s*[-–—:/|]+\s*$", "", value)
+    value = re.sub(r"^\s*[-–—:/|]+\s*", "", value)
+    value = re.sub(r"\s{2,}", " ", value)
+    value = value.strip(" -:,;–—")
+    words = value.split()
+    if len(words) > max_words:
+        value = " ".join(words[:max_words])
+    return value
+
+
+def _contract_aware_tail(job: JobListing, focus: list[str], french: bool) -> str:
+    """Build a natural-sounding closing sentence for the CV summary.
+
+    Wording per contract family:
+    - stage    EN: "Seeking a 6-month {role} internship at {company}"
+               FR: "Recherche un stage de 6 mois en tant que {role} chez {company}"
+    - alternance EN: "Seeking a {role} alternance at {company}"
+                  FR: "Recherche une alternance en tant que {role} chez {company}"
+    - cdi      EN: "Open to {role} opportunities at {company}"
+               FR: "Ouvert à des opportunités de {role} chez {company}"
+    - other    EN: "Applying for the {role} role at {company}"
+               FR: "Candidature pour le poste de {role} chez {company}"
+    """
+    company = (job.company or "").strip()
+    role = _clean_role_phrase(job.title or "")
+    contract = _detect_contract_family(job)
+    # If the cleanup left something that doesn't look like a real role (extra
+    # punctuation, underscores, escape leftovers, very short, or just words
+    # like "de" / "the"), fall back to a candidate-friendly default rather
+    # than print garbage on the CV.
+    looks_clean = bool(re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ\-\.\s]+", role or ""))
+    starts_well = bool(re.match(r"^[A-ZÀ-Ý]", role or ""))
+    if not role or len(role) < 4 or role.count(" ") > 4 or not looks_clean or not starts_well:
+        role = "Data Science / AI" if not french else "Data Science / IA"
+
+    company_suffix = ""
+    if company and company.lower() not in {"france travail", "pole emploi", "pôle emploi", "[to be parsed]", ""}:
+        company_suffix = f" at {company}" if not french else f" chez {company}"
+
+    if contract == "stage":
+        sentence = (
+            f" Recherche un stage de 6 mois en tant que {role}{company_suffix}"
+            if french
+            else f" Seeking a 6-month {role} internship{company_suffix}"
+        )
+    elif contract == "alternance":
+        sentence = (
+            f" Recherche une alternance en tant que {role}{company_suffix}"
+            if french
+            else f" Seeking a {role} alternance{company_suffix}"
+        )
+    elif contract == "cdi":
+        sentence = (
+            f" Ouvert à des opportunités de {role}{company_suffix}"
+            if french
+            else f" Open to {role} opportunities{company_suffix}"
+        )
+    else:
+        sentence = (
+            f" Candidature pour le poste de {role}{company_suffix}"
+            if french
+            else f" Applying for the {role} role{company_suffix}"
+        )
+    sentence += _focus_phrase(focus, french)
+    sentence += "."
+    return sentence
 
 
 def _tailored_summary(
@@ -177,26 +357,25 @@ def _tailored_summary(
     Returns a string of valid LaTeX. The curated body is preserved verbatim so
     existing escapes like ``\\&`` stay intact, and only the appended closing
     sentence (plain text from job/profile data) is LaTeX-escaped.
+
+    The closing sentence is contract-aware: stage / alternance / CDI / role.
     """
     body = original_body.strip()
     if not body:
         body = _escape_latex((profile.summary or master_cv.summary or "").strip())
     body = re.sub(r"\s+", " ", body).strip()
+    # Remove the previous deterministic-closer phrasing if present so we don't
+    # stack "Seeking a 6-month internship in France. Seeking a 6-month..."
+    body = re.sub(
+        r"(?i)\b(seeking|recherche|targeting|candidature)\b[^.]*\.(\s|$)+",
+        "",
+        body,
+    ).strip()
     base = body[:-1] if body.endswith(".") else body
     focus = _job_focus_terms(job, master_cv, limit=4)
-    role = job.title.strip() if job.title else ""
-    company = job.company.strip() if job.company else ""
-    if not (role and company):
+    tail = _contract_aware_tail(job, focus, french)
+    if not tail.strip():
         return base + "."
-    if french:
-        tail = f" Candidature ciblée pour le poste de {role} chez {company}"
-        if focus:
-            tail += f", avec un accent sur {', '.join(focus)}"
-    else:
-        tail = f" Targeting the {role} role at {company}"
-        if focus:
-            tail += f", with strong emphasis on {', '.join(focus)}"
-    tail += "."
     return base + "." + _escape_latex(tail)
 
 

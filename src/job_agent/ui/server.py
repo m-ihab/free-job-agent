@@ -25,6 +25,13 @@ from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.enrichment import EnrichOptions, enrich_job
 from job_agent.exporters.internship_workbook import export_applied_internships
+from job_agent.ollama_manage import (
+    list_all_pulls,
+    ollama_install_status,
+    pull_model as _pull_ollama_model,
+    pull_status as _ollama_pull_status,
+    start_ollama_server,
+)
 from job_agent.polish import PolishOptions, ollama_status, resolve_ollama_model
 from job_agent.profile_enrich import enrich_from_github, enrich_from_linkedin_skills
 from job_agent.intake.free_apis import (
@@ -441,6 +448,12 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             return self._stream_autopilot()
         if parsed.path == "/api/ai-status":
             return self._send_json(ollama_status(PolishOptions.from_env()))
+        if parsed.path == "/api/ollama-install":
+            return self._send_json(ollama_install_status(PolishOptions.from_env()))
+        if parsed.path == "/api/ollama-pull-status":
+            query = parse_qs(parsed.query)
+            model = (query.get("model") or [""])[0]
+            return self._send_json({"status": _ollama_pull_status(model) if model else _ollama_pull_status(), "pulls": list_all_pulls()})
         if parsed.path == "/api/ai-cache":
             query = parse_qs(parsed.query)
             job_id = (query.get("job_id") or [""])[0]
@@ -604,6 +617,12 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
                 return self._send_json({"classification": classification})
+            if parsed.path == "/api/ollama-launch":
+                result = start_ollama_server(PolishOptions.from_env())
+                return self._send_json(result)
+            if parsed.path == "/api/ollama-pull":
+                model = str(payload.get("model") or "").strip() or "llama3.2:3b"
+                return self._send_json(_pull_ollama_model(model, PolishOptions.from_env()))
             if parsed.path == "/api/ai-plan-queries":
                 profile, master_cv, _ = load_profile_bundle(config)
                 plan = suggest_search_queries(

@@ -428,7 +428,7 @@ time from the same tab.
 
 ```bash
 job-agent enrich-github                    # uses contact.github_url, no auth
-job-agent enrich-github --handle m-ihab    # explicit handle
+job-agent enrich-github --handle your-username   # explicit handle override
 job-agent enrich-linkedin --file linkedin_skills.txt
 ```
 

@@ -30,7 +30,7 @@ from job_agent.intake.free_apis import (
     search_all_free_sources,
     search_free_api_jobs,
 )
-from job_agent.intake.france_market import expand_france_search_queries
+from job_agent.intake.france_market import expand_france_search_queries, expand_role_family
 from job_agent.intake.france_travail_auth import france_travail_token
 from job_agent.pipeline import add_job_to_tracker, generate_packet_for_job
 from job_agent.schemas.job import JobStatus
@@ -215,16 +215,21 @@ class Autopilot:
                     errors.append(f"multi/{query}: {type(exc).__name__}: {exc}")
             per_query[query] = cycle_added
 
-        # Auto-tailor for high-fit jobs (newly added or recently scored).
+        # Auto-tailor for high-fit jobs (newly added or recently scored). The
+        # AI fit cache (when available) acts as a second gate so weak-fit jobs
+        # don't waste tailoring cycles.
         packets_built = 0
+        ai_skipped = 0
         for job_id in added:
             if packets_built >= self.opts.max_packets_per_cycle:
                 break
+            ai_cache = db.list_ai_cache_for_job(job_id) if db else {}
+            ai_fit = (ai_cache or {}).get("fit") or {}
+            if ai_fit.get("verdict") == "weak":
+                ai_skipped += 1
+                continue
             try:
                 packet = generate_packet_for_job(self.config, job_id, force=False)
-                # Only count "real" packets — if the score is below threshold
-                # the job moves to SCORED status but we still generate a packet
-                # via the existing flow (no separate gate). Track high-fit ones.
                 if packet.fit_score is not None and packet.fit_score >= self.opts.auto_packet_threshold:
                     packets.append(packet.id)
                     packets_built += 1
@@ -236,6 +241,7 @@ class Autopilot:
         return {
             "jobs_added": len(added),
             "packets_built": packets_built,
+            "ai_skipped": ai_skipped,
             "errors": errors[:10],
             "per_query": per_query,
             "queries": search_queries,
@@ -245,11 +251,36 @@ class Autopilot:
         }
 
     def _planned_queries(self) -> list[str]:
-        """Use local AI to expand the user's seeds, then dedupe conservatively."""
+        """Smart query expansion: role-family + AI + bilingual fallback.
+
+        Order of expansion (best-recall mix):
+        1. ``expand_role_family`` — deterministic data/AI synonyms (works
+           without Ollama; e.g. "data scientist" -> data engineer, ml
+           engineer, ai engineer, data analyst).
+        2. AI ``suggest_search_queries`` if Ollama is reachable.
+        3. ``expand_france_search_queries`` bilingual stage/alternance pack
+           so we always test French internship terms.
+        """
         planned: list[str] = []
+
+        def _add(query: str) -> None:
+            key = (query or "").casefold().strip()
+            if not key or len(query) > 70:
+                return
+            seen = {item.casefold() for item in planned}
+            if key in seen:
+                return
+            planned.append(query.strip())
+
+        # 1) Deterministic role-family expansion always runs.
+        for seed in self.opts.queries:
+            for sibling in expand_role_family(seed):
+                _add(sibling)
+
+        # 2) Local-AI plan when reachable.
         try:
             profile, master_cv, _ = load_profile_bundle(self.config)
-            for seed in self.opts.queries:
+            for seed in self.opts.queries[:3]:
                 plan = suggest_search_queries(
                     profile,
                     master_cv,
@@ -260,22 +291,18 @@ class Autopilot:
                     limit=4,
                 )
                 for query in plan.get("queries", []):
-                    key = str(query).casefold().strip()
-                    if key and key not in {item.casefold() for item in planned}:
-                        planned.append(str(query).strip())
-                if len(planned) >= 12:
-                    break
+                    _add(str(query))
         except Exception:
-            planned = []
-        if not planned:
-            for seed in self.opts.queries:
-                for query in expand_france_search_queries(seed, limit=4, language=self.opts.language):
-                    key = query.casefold().strip()
-                    if key and key not in {item.casefold() for item in planned}:
-                        planned.append(query)
-                    if len(planned) >= 12:
-                        break
-        return planned[:12] or self.opts.queries
+            pass
+
+        # 3) French stage/alternance variants as the final safety net.
+        for seed in self.opts.queries[:4]:
+            for query in expand_france_search_queries(seed, limit=3, language=self.opts.language):
+                _add(query)
+                if len(planned) >= 18:
+                    break
+        # Hard cap so cycles stay reasonably fast.
+        return planned[:18] or self.opts.queries
 
 
 def _now_iso() -> str:

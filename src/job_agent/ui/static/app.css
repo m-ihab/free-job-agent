@@ -546,7 +546,13 @@ textarea {
   margin-bottom: 1rem;
 }
 
-.job-filters,
+.job-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.6rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
 .jobs-actions {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -570,6 +576,16 @@ textarea {
   border-radius: var(--radius-sm);
   padding: 0.85rem;
   margin-bottom: 0.75rem;
+  color: var(--ink);
+}
+
+.detail-block p,
+.detail-block li {
+  color: var(--ink-muted);
+}
+
+html[data-theme="dark"] .detail-block {
+  background: var(--surface-3);
 }
 
 .detail-row {
@@ -698,22 +714,52 @@ textarea {
 
 .notice {
   border-radius: var(--radius-sm);
-  padding: 0.7rem 0.9rem;
+  padding: 0.75rem 0.95rem;
   background: var(--surface-2);
   border: 1px solid var(--line);
-  color: var(--muted);
+  color: var(--ink-muted);
   margin-top: 0.6rem;
   white-space: pre-wrap;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.notice strong {
+  color: var(--ink);
 }
 
 .notice.error {
-  background: rgba(192, 57, 43, 0.08);
-  border-color: rgba(192, 57, 43, 0.28);
+  background: rgba(192, 57, 43, 0.10);
+  border-color: rgba(192, 57, 43, 0.35);
   color: var(--bad);
+}
+
+.notice.success {
+  background: rgba(31, 122, 83, 0.12);
+  border-color: rgba(31, 122, 83, 0.32);
+  color: var(--good);
 }
 
 .notice.hidden {
   display: none;
+}
+
+html[data-theme="dark"] .notice {
+  background: var(--surface-3);
+  border-color: var(--line-strong);
+  color: var(--ink-muted);
+}
+
+html[data-theme="dark"] .notice.error {
+  background: rgba(255, 138, 128, 0.12);
+  border-color: rgba(255, 138, 128, 0.35);
+  color: var(--bad);
+}
+
+html[data-theme="dark"] .notice.success {
+  background: rgba(118, 227, 176, 0.12);
+  border-color: rgba(118, 227, 176, 0.35);
+  color: var(--good);
 }
 
 .results-stack {
@@ -740,15 +786,22 @@ textarea {
   position: fixed;
   bottom: 1.5rem;
   right: 1.5rem;
-  background: var(--ink);
-  border: 1px solid var(--ink);
-  color: white;
+  background: #111726;
+  border: 1px solid #111726;
+  color: #ffffff;
   box-shadow: var(--shadow);
-  padding: 0.8rem 1.1rem;
+  padding: 0.85rem 1.15rem;
   border-radius: var(--radius-sm);
   font-weight: 600;
   max-width: 22rem;
   animation: rise 0.25s ease;
+  z-index: 2000;
+}
+
+html[data-theme="dark"] .toast {
+  background: var(--surface-4);
+  border-color: var(--line-strong);
+  color: var(--ink);
 }
 
 .toast.hidden {
@@ -986,10 +1039,18 @@ textarea {
   border-bottom-left-radius: 4px;
 }
 
+html[data-theme="dark"] .chat-bubble.assistant {
+  background: var(--surface-4);
+}
+
 .chat-bubble.thinking {
   background: var(--surface-2);
   color: var(--muted);
   font-style: italic;
+}
+
+html[data-theme="dark"] .chat-bubble.thinking {
+  background: var(--surface-3);
 }
 
 .chat-input {

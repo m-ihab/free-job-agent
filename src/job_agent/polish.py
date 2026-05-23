@@ -28,6 +28,7 @@ except Exception:  # pragma: no cover - requests is in install_requires
 
 DEFAULT_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "llama3.2:3b"
+DEFAULT_FAST_MODEL = "llama3.2:3b"
 DEFAULT_TIMEOUT = 45
 
 _PREFERRED_MODELS = [
@@ -40,12 +41,25 @@ _PREFERRED_MODELS = [
     "gemma3:latest",
 ]
 
+# Smaller / faster models picked first for the chat path so replies feel snappy.
+_PREFERRED_FAST_MODELS = [
+    "llama3.2:3b",
+    "llama3.2:1b",
+    "phi3:mini",
+    "qwen2.5:3b",
+    "gemma3:2b",
+    "mistral:7b-instruct",
+    "qwen3:latest",
+    "qwen3.6:latest",
+]
+
 
 @dataclass(frozen=True)
 class PolishOptions:
     enabled: bool = False
     base_url: str = DEFAULT_BASE_URL
     model: str = DEFAULT_MODEL
+    fast_model: str = DEFAULT_FAST_MODEL
     timeout: int = DEFAULT_TIMEOUT
     max_length_ratio: float = 1.4
     min_token_overlap: float = 0.55
@@ -56,6 +70,7 @@ class PolishOptions:
             enabled=os.environ.get("JOB_AGENT_USE_OLLAMA", "").strip() in {"1", "true", "yes", "on"},
             base_url=os.environ.get("OLLAMA_BASE_URL", DEFAULT_BASE_URL).rstrip("/"),
             model=os.environ.get("JOB_AGENT_OLLAMA_MODEL", DEFAULT_MODEL),
+            fast_model=os.environ.get("JOB_AGENT_OLLAMA_FAST_MODEL", DEFAULT_FAST_MODEL),
             timeout=int(os.environ.get("JOB_AGENT_OLLAMA_TIMEOUT", str(DEFAULT_TIMEOUT))),
             max_length_ratio=float(os.environ.get("JOB_AGENT_OLLAMA_MAX_RATIO", "1.4")),
             min_token_overlap=float(os.environ.get("JOB_AGENT_OLLAMA_MIN_OVERLAP", "0.55")),
@@ -126,6 +141,37 @@ def resolve_ollama_model(options: PolishOptions | None = None) -> str:
     return models[0]
 
 
+def resolve_fast_model(options: PolishOptions | None = None) -> str:
+    """Pick the smallest installed Ollama model for the chat path.
+
+    Strategy mirrors ``resolve_ollama_model`` but uses a fast-tier preference
+    list. Useful so chat feels snappy while heavy analysis still uses a
+    larger model when one is installed.
+    """
+    options = options or PolishOptions.from_env()
+    requested = (options.fast_model or "").strip()
+    models = available_ollama_models(options)
+    if not models:
+        return requested or DEFAULT_FAST_MODEL
+    if requested in models:
+        return requested
+    requested_family = requested.split(":", 1)[0] if requested else ""
+    if requested_family:
+        for model in models:
+            if model.split(":", 1)[0] == requested_family:
+                return model
+    for preferred in _PREFERRED_FAST_MODELS:
+        if preferred in models:
+            return preferred
+    for preferred in _PREFERRED_FAST_MODELS:
+        preferred_family = preferred.split(":", 1)[0]
+        for model in models:
+            if model.split(":", 1)[0] == preferred_family:
+                return model
+    # Last resort: fall back to whatever resolve_ollama_model picks.
+    return resolve_ollama_model(options)
+
+
 def is_ollama_reachable(options: PolishOptions | None = None) -> bool:
     """Return True when a local Ollama server responds, regardless of opt-in."""
     return bool(available_ollama_models(options or PolishOptions.from_env()))
@@ -136,11 +182,13 @@ def ollama_status(options: PolishOptions | None = None) -> dict:
     options = options or PolishOptions.from_env()
     models = available_ollama_models(options)
     selected = resolve_ollama_model(options) if models else options.model
+    selected_fast = resolve_fast_model(options) if models else options.fast_model
     return {
         "enabled": options.enabled,
         "reachable": bool(models),
         "ready": bool(models),
         "selected_model": selected,
+        "selected_fast_model": selected_fast,
         "models": models,
         "base_url": options.base_url,
     }
