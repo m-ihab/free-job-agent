@@ -108,6 +108,7 @@ function renderState() {
   const badgesHtml = [
     renderBadge(profile.valid ? "Profile ready" : "Profile needs review", profile.valid ? "good" : "bad"),
     renderBadge(profile.france_travail_configured ? "France Travail ready" : "France Travail off", profile.france_travail_configured ? "good" : "warn"),
+    renderBadge(profile.apprentissage_configured ? "Alternance API ready" : "Alternance API off", profile.apprentissage_configured ? "good" : "warn"),
     renderBadge(profile.latex_ready ? `LaTeX: ${compiler}` : "LaTeX missing", profile.latex_ready ? "good" : "warn"),
     ollamaBadge,
     renderBadge(`${state.jobs.length} jobs`, "good"),
@@ -123,6 +124,7 @@ function renderState() {
   $("profileMetrics").innerHTML = [
     metric("Profile", profile.valid ? "Ready" : "Review"),
     metric("France Travail", profile.france_travail_configured ? "Ready" : "Missing"),
+    metric("Alternance API", profile.apprentissage_configured ? "Ready" : "Missing"),
     metric("LaTeX", profile.latex_ready ? profile.latex_compiler : "Missing"),
     metric("Local AI", profile.ollama_ready ? profile.ollama_model : "Offline", profile.ollama_polish_enabled ? "Polish enabled" : "Fit/query AI auto-ready when Ollama runs"),
     metric("Notifier", profile.email_notifier?.enabled ? "Email on" : "Local outbox", profile.email_notifier?.smtp_configured ? "SMTP configured" : "No SMTP"),
@@ -131,6 +133,7 @@ function renderState() {
 
   $("apiReadiness").innerHTML = [
     readinessRow("Job search (ID + secret)", profile.france_travail_configured ? "Ready" : "Set FRANCE_TRAVAIL_CLIENT_ID/SECRET"),
+    readinessRow("La bonne alternance token", profile.apprentissage_configured ? "Ready" : "Set APPRENTISSAGE_API_TOKEN"),
     readinessRow(".env.local", profile.env_local_present ? "Loaded" : "Optional"),
     readinessRow("OpenClaw", profile.local_tools?.openclaw ? "Installed" : "Not on PATH"),
     readinessRow("npm", profile.local_tools?.npm ? "Installed" : "Not on PATH"),
@@ -162,7 +165,8 @@ function readinessRow(label, value) {
 
 function metric(label, value, sub = "") {
   const subLine = sub ? `<div class="muted" style="margin-top:0.2rem">${escapeHtml(sub)}</div>` : "";
-  return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${subLine}</div>`;
+  const long = String(value ?? "").length > 42 ? " metric-long" : "";
+  return `<div class="metric${long}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${subLine}</div>`;
 }
 
 function pathRow(label, value) {
@@ -1031,6 +1035,7 @@ function activateTab(name) {
     loadStudioAssets();
     loadStudioGithubProjects();
   }
+  if (name === "portfolio") loadPortfolio();
   if (name === "coach" && !state.coachCache) renderCoachShell();
 }
 
@@ -1094,7 +1099,7 @@ async function studioCompile() {
       return;
     }
     const iframe = document.getElementById("studioPreview");
-    if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}`;
+    if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}#view=FitH`;
     toast("Preview rebuilt.");
   } catch (error) {
     setNotice("studioNotice", error.message, true);
@@ -1414,6 +1419,38 @@ async function autoFitStudioDraft() {
   }
 }
 
+async function analyzeStudioAtsKeywords() {
+  const button = document.getElementById("studioAtsBtn");
+  const textarea = document.getElementById("studioTextarea");
+  const role = document.getElementById("studioAtsRole")?.value || "data_scientist";
+  const target = document.getElementById("studioAtsResult");
+  if (!textarea || !target) return;
+  setBusy(button, true);
+  target.innerHTML = "Scanning the current draft...";
+  try {
+    const result = await api("/api/cv-studio/ats-keywords", { text: textarea.value, role });
+    if (!result.ok) {
+      target.innerHTML = `<span class="notice error">${escapeHtml(result.reason || "ATS scan failed")}</span>`;
+      return;
+    }
+    const chips = (result.present || []).map((kw) => `<span class="chip good">${escapeHtml(kw)}</span>`).join("");
+    const missing = (result.missing || []).map((kw) => `<span class="chip warn">${escapeHtml(kw)}</span>`).join("");
+    const suggestions = (result.suggestions || []).map((item) => `<li>
+      <div><span class="coach-title">${escapeHtml(item.keyword)}</span><span class="coach-sub">${escapeHtml(item.note)} Suggested place: ${escapeHtml(item.where)}.</span></div>
+      <strong>gap</strong>
+    </li>`).join("");
+    target.innerHTML = `
+      <div><span class="badge ${result.coverage >= 70 ? "good" : "warn"}">${result.coverage}% coverage</span></div>
+      <p class="muted" style="margin:0.5rem 0 0.25rem">Present</p><div class="chips">${chips || "<span class='muted'>None yet.</span>"}</div>
+      <p class="muted" style="margin:0.7rem 0 0.25rem">Missing / optional</p><div class="chips">${missing || "<span class='muted'>No obvious gaps.</span>"}</div>
+      <ol class="coach-list" style="margin-top:0.7rem">${suggestions}</ol>`;
+  } catch (error) {
+    target.innerHTML = `<span class="notice error">${escapeHtml(error.message)}</span>`;
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function studioApplyReorder() {
   const list = document.getElementById("studioSections");
   const textarea = document.getElementById("studioTextarea");
@@ -1529,8 +1566,13 @@ async function applyIconPack() {
       if (notice) notice.textContent = `Applied ${result.label}. Recompile to preview.`;
       toast("Icon pack updated.");
       const ta = document.getElementById("studioTextarea");
-      if (ta) delete ta.dataset.dirty;
-      await loadStudio();
+      if (ta && result.text) {
+        ta.value = result.text;
+        ta.dataset.dirty = "1";
+      } else if (ta) {
+        delete ta.dataset.dirty;
+        await loadStudio();
+      }
       await loadStudioAssets();
     } else if (notice) {
       notice.textContent = `Failed: ${result.reason}`;
@@ -1550,8 +1592,18 @@ async function importGithubProject() {
   try {
     const result = await api("/api/cv-studio/import-github-project", { name: select.value });
     if (result.ok) {
-      if (notice) notice.textContent = `Promoted "${result.promoted}" to top of projects. Tailor a CV to see it.`;
+      if (notice) notice.textContent = result.draft_updated
+        ? `Promoted "${result.promoted}" and updated the preview draft. Compile to see it.`
+        : `Promoted "${result.promoted}" to top of projects. ${result.note || ""}`;
       toast("Project promoted.");
+      if (result.text) {
+        const ta = document.getElementById("studioTextarea");
+        if (ta) {
+          ta.value = result.text;
+          ta.dataset.dirty = "1";
+        }
+        renderStudioSections(state.studio?.sections || []);
+      }
       await loadStudioGithubProjects();
       if (state.studioActiveAsset === "master_cv.json") await openStudioAsset("master_cv.json");
     } else if (notice) {
@@ -1600,6 +1652,13 @@ async function saveStudioProject() {
     if (result.ok) {
       if (notice) notice.textContent = `Saved "${result.project?.name || name}" locally and promoted it.`;
       toast("Project saved to local profile.");
+      if (result.text) {
+        const ta = document.getElementById("studioTextarea");
+        if (ta) {
+          ta.value = result.text;
+          ta.dataset.dirty = "1";
+        }
+      }
       await loadStudioGithubProjects();
       if (state.studioActiveAsset === "master_cv.json") await openStudioAsset("master_cv.json");
     } else if (notice) {
@@ -1607,6 +1666,123 @@ async function saveStudioProject() {
     }
   } catch (error) {
     if (notice) notice.textContent = error.message;
+  }
+}
+
+// ===== Portfolio Builder =====
+function renderPortfolioOptions(data) {
+  const theme = document.getElementById("portfolioTheme");
+  const font = document.getElementById("portfolioFont");
+  if (theme && data.themes) {
+    const current = theme.value || "signal";
+    theme.innerHTML = data.themes.map((item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`).join("");
+    theme.value = data.themes.some((item) => item.key === current) ? current : "signal";
+  }
+  if (font && data.fonts) {
+    const current = font.value || "inter";
+    font.innerHTML = data.fonts.map((item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`).join("");
+    font.value = data.fonts.some((item) => item.key === current) ? current : "inter";
+  }
+  const path = document.getElementById("portfolioPath");
+  if (path) path.textContent = data.path ? `Local folder: ${data.path}` : "";
+}
+
+function setPortfolioEditors(data) {
+  const htmlEditor = document.getElementById("portfolioHtmlEditor");
+  const cssEditor = document.getElementById("portfolioCssEditor");
+  if (htmlEditor && data.html) htmlEditor.value = data.html;
+  if (cssEditor && data.css) cssEditor.value = data.css;
+  const iframe = document.getElementById("portfolioPreview");
+  if (iframe) iframe.src = `/api/portfolio/preview?t=${Date.now()}`;
+}
+
+async function loadPortfolio() {
+  try {
+    const data = await api("/api/portfolio");
+    state.portfolio = data;
+    renderPortfolioOptions(data);
+    setPortfolioEditors(data);
+  } catch (error) {
+    setNotice("portfolioNotice", error.message, true);
+  }
+}
+
+async function generatePortfolio() {
+  const button = document.getElementById("portfolioGenerateBtn");
+  setBusy(button, true);
+  setNotice("portfolioNotice", "");
+  try {
+    const data = await api("/api/portfolio/generate", {
+      theme: document.getElementById("portfolioTheme")?.value || "signal",
+      font: document.getElementById("portfolioFont")?.value || "inter",
+    });
+    state.portfolio = data;
+    setPortfolioEditors(data);
+    renderPortfolioOptions(data);
+    toast("Portfolio regenerated locally.");
+  } catch (error) {
+    setNotice("portfolioNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function savePortfolioEdits() {
+  const button = document.getElementById("portfolioSaveBtn");
+  const htmlEditor = document.getElementById("portfolioHtmlEditor");
+  const cssEditor = document.getElementById("portfolioCssEditor");
+  setBusy(button, true);
+  try {
+    const result = await api("/api/portfolio/save", {
+      html: htmlEditor ? htmlEditor.value : "",
+      css: cssEditor ? cssEditor.value : "",
+    });
+    if (result.ok) {
+      const iframe = document.getElementById("portfolioPreview");
+      if (iframe) iframe.src = `/api/portfolio/preview?t=${Date.now()}`;
+      toast("Portfolio edits saved.");
+    }
+  } catch (error) {
+    setNotice("portfolioNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function suggestPortfolioDesign() {
+  const button = document.getElementById("portfolioSuggestBtn");
+  const list = document.getElementById("portfolioSuggestions");
+  setBusy(button, true);
+  if (list) list.innerHTML = "<li class='muted'>Thinking locally...</li>";
+  try {
+    const result = await api("/api/portfolio/suggest", {});
+    const items = result.suggestions || [];
+    if (list) {
+      list.innerHTML = items.length
+        ? items.map((item) => `<li><div><span class="coach-title">${escapeHtml(item.title || "")}</span><span class="coach-sub">${escapeHtml(item.detail || "")}</span></div><strong>${result.available ? "AI" : "local"}</strong></li>`).join("")
+        : "<li class='muted'>No suggestions yet.</li>";
+    }
+  } catch (error) {
+    if (list) list.innerHTML = `<li class="notice error">${escapeHtml(error.message)}</li>`;
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function buildPublishGuide() {
+  const button = document.getElementById("portfolioPublishBtn");
+  const target = document.getElementById("portfolioPublishResult");
+  setBusy(button, true);
+  try {
+    const result = await api("/api/portfolio/publish-guide", {});
+    if (target) target.innerHTML = result.ok
+      ? `Created local checklist: <code>${escapeHtml(result.path)}</code>`
+      : `Failed: ${escapeHtml(result.reason || "unknown")}`;
+    toast("Publish checklist ready.");
+  } catch (error) {
+    if (target) target.textContent = error.message;
+  } finally {
+    setBusy(button, false);
   }
 }
 
@@ -1641,7 +1817,7 @@ function renderCoachPlan(plan) {
     metric("Tracked jobs", total),
     metric("Avg fit", plan.avg_score ?? "—"),
     metric("Top gap", plan.top_gap || "—"),
-    metric("Next move", plan.headline ? plan.headline.slice(0, 60) + (plan.headline.length > 60 ? "…" : "") : "—"),
+    metric("Next move", plan.headline || "—"),
   ].join("");
   const rankSimple = (id, items, valueKey = "count") => {
     const node = document.getElementById(id);
@@ -2150,7 +2326,7 @@ function toggleShortcuts(show) {
 }
 
 function bindKeyboardShortcuts() {
-  const tabOrder = ["search", "jobs", "autopilot", "studio", "coach", "insights", "add", "profile"];
+  const tabOrder = ["search", "jobs", "autopilot", "studio", "portfolio", "coach", "insights", "add", "profile"];
   document.addEventListener("keydown", (event) => {
     const target = event.target;
     const inEditable = target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
@@ -2195,6 +2371,10 @@ function bindKeyboardShortcuts() {
       }
       if (event.key === "a") {
         activateTab("autopilot");
+        return;
+      }
+      if (event.key === "p") {
+        activateTab("portfolio");
         return;
       }
     }
@@ -2347,12 +2527,28 @@ function bindEvents() {
   if (studioSinglePageBtn) studioSinglePageBtn.addEventListener("click", checkSinglePage);
   const studioAutoFitBtn = document.getElementById("studioAutoFitBtn");
   if (studioAutoFitBtn) studioAutoFitBtn.addEventListener("click", autoFitStudioDraft);
+  const studioAtsBtn = document.getElementById("studioAtsBtn");
+  if (studioAtsBtn) studioAtsBtn.addEventListener("click", analyzeStudioAtsKeywords);
   const studioAssetTextarea = document.getElementById("studioAssetTextarea");
   if (studioAssetTextarea) studioAssetTextarea.addEventListener("input", () => { studioAssetTextarea.dataset.dirty = "1"; });
   const studioProjectAddBtn = document.getElementById("studioProjectAddBtn");
   if (studioProjectAddBtn) studioProjectAddBtn.addEventListener("click", saveStudioProject);
   const studioProjectDeepLearningBtn = document.getElementById("studioProjectDeepLearningBtn");
   if (studioProjectDeepLearningBtn) studioProjectDeepLearningBtn.addEventListener("click", fillDeepLearningProjectTemplate);
+
+  // Portfolio Builder
+  const portfolioGenerateBtn = document.getElementById("portfolioGenerateBtn");
+  if (portfolioGenerateBtn) portfolioGenerateBtn.addEventListener("click", generatePortfolio);
+  const portfolioSaveBtn = document.getElementById("portfolioSaveBtn");
+  if (portfolioSaveBtn) portfolioSaveBtn.addEventListener("click", savePortfolioEdits);
+  const portfolioSuggestBtn = document.getElementById("portfolioSuggestBtn");
+  if (portfolioSuggestBtn) portfolioSuggestBtn.addEventListener("click", suggestPortfolioDesign);
+  const portfolioPublishBtn = document.getElementById("portfolioPublishBtn");
+  if (portfolioPublishBtn) portfolioPublishBtn.addEventListener("click", buildPublishGuide);
+  const portfolioTheme = document.getElementById("portfolioTheme");
+  if (portfolioTheme) portfolioTheme.addEventListener("change", generatePortfolio);
+  const portfolioFont = document.getElementById("portfolioFont");
+  if (portfolioFont) portfolioFont.addEventListener("change", generatePortfolio);
 
   // Studio suggestion apply / reset / dismiss (delegated)
   document.body.addEventListener("click", (event) => {

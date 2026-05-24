@@ -85,6 +85,7 @@ def profile_status(config: AppConfig | None = None) -> dict[str, Any]:
     notifier = email_notifier_status()
     ollama_ready = bool(ollama["reachable"])
     france_travail_ready = is_france_travail_configured()
+    apprentissage_ready = bool(os.environ.get("APPRENTISSAGE_API_TOKEN") or os.environ.get("LABONNEALTERNANCE_API_TOKEN"))
     return {
         "valid": not report.errors,
         "errors": report.errors,
@@ -93,6 +94,7 @@ def profile_status(config: AppConfig | None = None) -> dict[str, Any]:
         "data_dir": str(config.data_dir),
         "outputs_dir": str(config.outputs_dir),
         "france_travail_configured": france_travail_ready,
+        "apprentissage_configured": apprentissage_ready,
         "env_local_present": env_path.exists(),
         "endpoints_file_present": endpoints_path.exists(),
         "endpoints_file": str(endpoints_path) if endpoints_path.exists() else "",
@@ -107,6 +109,7 @@ def profile_status(config: AppConfig | None = None) -> dict[str, Any]:
             "the core job search already works."
         ),
         "search_ready": france_travail_ready,
+        "alternance_search_ready": apprentissage_ready,
         "enrichment_ready": france_travail_ready and endpoints_path.exists(),
         "endpoints_summary": {
             "total": endpoint_total,

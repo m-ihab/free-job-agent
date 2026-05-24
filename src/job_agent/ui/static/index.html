@@ -24,6 +24,7 @@
       <button class="tab" data-tab="jobs">Jobs</button>
       <button class="tab" data-tab="autopilot">Autopilot</button>
       <button class="tab" data-tab="studio">CV Studio</button>
+      <button class="tab" data-tab="portfolio">Portfolio</button>
       <button class="tab" data-tab="coach">Career Coach</button>
       <button class="tab" data-tab="insights">Insights</button>
       <button class="tab" data-tab="add">Add Job</button>
@@ -344,7 +345,10 @@ data engineer</textarea>
             <div class="notice hidden" id="studioNotice"></div>
           </section>
           <section class="panel studio-preview">
-            <h3>Live preview</h3>
+            <div class="studio-toolbar">
+              <h3 style="margin:0">Live preview</h3>
+              <a class="button-link" href="/api/cv-studio/preview-pdf" target="_blank" rel="noreferrer">Open full PDF</a>
+            </div>
             <iframe id="studioPreview" title="CV preview"></iframe>
             <p class="muted" style="font-size:0.78rem;margin-top:0.5rem">Click Compile preview after edits. PDF stays on your machine.</p>
           </section>
@@ -383,6 +387,20 @@ data engineer</textarea>
               <button id="studioAutoFitBtn">Auto-fit layout</button>
             </div>
             <div id="studioSinglePageResult" class="muted" style="margin-top:0.5rem">Not checked yet.</div>
+          </section>
+          <section class="panel">
+            <h3>ATS keyword radar</h3>
+            <p class="muted" style="margin-bottom:0.5rem">Role-aware keyword coverage without stuffing. It points to evidence gaps, not fake claims.</p>
+            <div class="action-row">
+              <select id="studioAtsRole">
+                <option value="data_scientist">Data Scientist</option>
+                <option value="ml_engineer">ML / AI Engineer</option>
+                <option value="data_engineer">Data Engineer</option>
+                <option value="data_analyst">Data Analyst</option>
+              </select>
+              <button id="studioAtsBtn" class="primary-soft">Analyze keywords</button>
+            </div>
+            <div id="studioAtsResult" class="muted" style="margin-top:0.5rem">Not analyzed yet.</div>
           </section>
         </div>
 
@@ -445,6 +463,66 @@ data engineer</textarea>
           </details>
           <div id="studioGithubNotice" class="muted" style="margin-top:0.4rem"></div>
         </section>
+      </section>
+
+      <section id="tab-portfolio" class="tab-panel">
+        <div class="section-header">
+          <div>
+            <h2>Portfolio Builder</h2>
+            <p>Generate a local publish-ready portfolio from your CV, GitHub projects, and profile. Preview, edit, export, then publish only when you choose.</p>
+          </div>
+          <div class="action-row">
+            <button class="primary" id="portfolioGenerateBtn">Generate portfolio</button>
+            <a id="portfolioExportBtn" class="button-link" href="/api/portfolio/export" download>Export ZIP</a>
+            <button id="portfolioPublishBtn">Publish checklist</button>
+          </div>
+        </div>
+
+        <div class="portfolio-command">
+          <label>
+            Theme
+            <select id="portfolioTheme"></select>
+          </label>
+          <label>
+            Font
+            <select id="portfolioFont"></select>
+          </label>
+          <button id="portfolioSuggestBtn">AI design ideas</button>
+          <button id="portfolioSaveBtn" class="primary-soft">Save edits</button>
+          <span id="portfolioPath" class="muted"></span>
+        </div>
+        <div class="notice hidden" id="portfolioNotice"></div>
+
+        <div class="portfolio-grid">
+          <section class="panel portfolio-preview-panel">
+            <div class="studio-toolbar">
+              <h3 style="margin:0">Live site preview</h3>
+              <span class="muted">Static HTML/CSS in <code>.job_agent/portfolio</code></span>
+            </div>
+            <iframe id="portfolioPreview" title="Portfolio preview"></iframe>
+          </section>
+          <section class="panel portfolio-editor-panel">
+            <h3>Source editor</h3>
+            <label class="muted">HTML</label>
+            <textarea id="portfolioHtmlEditor" class="portfolio-code" spellcheck="false" wrap="off"></textarea>
+            <label class="muted">CSS</label>
+            <textarea id="portfolioCssEditor" class="portfolio-code css" spellcheck="false" wrap="off"></textarea>
+          </section>
+        </div>
+
+        <div class="split">
+          <section class="panel">
+            <h3>AI design notes</h3>
+            <ul id="portfolioSuggestions" class="coach-list">
+              <li class="muted">Click AI design ideas for local suggestions.</li>
+            </ul>
+          </section>
+          <section class="panel">
+            <h3>Publish controls</h3>
+            <p class="muted">Export ZIP gives you a static site. Publish checklist creates local steps for GitHub Pages, Netlify, or Vercel without uploading secrets.</p>
+            <div id="portfolioPublishResult" class="muted">No publish checklist yet.</div>
+          </section>
+        </div>
       </section>
 
       <section id="tab-coach" class="tab-panel">
@@ -700,11 +778,12 @@ SQL
         </div>
         <dl class="shortcuts-list">
           <dt><kbd>?</kbd></dt><dd>Show this help</dd>
-          <dt><kbd>1</kbd>-<kbd>6</kbd></dt><dd>Switch tabs</dd>
+          <dt><kbd>1</kbd>-<kbd>9</kbd></dt><dd>Switch tabs</dd>
           <dt><kbd>/</kbd></dt><dd>Focus job search</dd>
           <dt><kbd>g</kbd> <kbd>h</kbd></dt><dd>1-click hunt</dd>
           <dt><kbd>g</kbd> <kbd>m</kbd></dt><dd>Multi-source search</dd>
           <dt><kbd>g</kbd> <kbd>a</kbd></dt><dd>Open Autopilot tab</dd>
+          <dt><kbd>g</kbd> <kbd>p</kbd></dt><dd>Open Portfolio Builder</dd>
           <dt><kbd>r</kbd></dt><dd>Refresh jobs</dd>
           <dt><kbd>Esc</kbd></dt><dd>Close dialogs</dd>
         </dl>

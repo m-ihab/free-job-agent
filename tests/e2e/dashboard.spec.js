@@ -6,7 +6,7 @@ test("dashboard loads and tabs are navigable", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("h1")).toContainText("Paris Data Career Copilot");
 
-  const tabs = ["search", "jobs", "autopilot", "insights", "add", "profile"];
+  const tabs = ["search", "jobs", "autopilot", "studio", "portfolio", "coach", "insights", "add", "profile"];
   for (const name of tabs) {
     await page.click(`button.tab[data-tab="${name}"]`);
     await expect(page.locator(`#tab-${name}`)).toBeVisible();
@@ -17,6 +17,18 @@ test("dashboard loads and tabs are navigable", async ({ page }) => {
 
   await page.click('button.tab[data-tab="insights"]');
   await expect(page.locator("#insightsMetrics")).toBeVisible();
+});
+
+test("portfolio builder previews and exports local static site", async ({ page, request }) => {
+  await page.goto("/");
+  await page.click('button.tab[data-tab="portfolio"]');
+  await expect(page.locator("#portfolioPreview")).toBeVisible();
+  await expect(page.locator("#portfolioHtmlEditor")).toHaveValue(/<!doctype html>/i);
+  await expect(page.locator("#portfolioPath")).toContainText(".job_agent");
+
+  const preview = await request.get("/api/portfolio/preview");
+  expect(preview.ok()).toBeTruthy();
+  expect(await preview.text()).toContain("<!doctype html>");
 });
 
 test("cv studio keeps assets separate from the LaTeX draft", async ({ page }) => {

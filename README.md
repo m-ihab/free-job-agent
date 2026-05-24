@@ -44,6 +44,16 @@ Anotea employer reviews, Open Training, Labour Market). The dashboard now
 shows this clearly: with just the ID/secret you're fully set for job search,
 scoring, and packet generation.
 
+For apprenticeship/alternance opportunities from La bonne alternance, add this
+local-only variable to `.env.local`:
+
+```text
+APPRENTISSAGE_API_TOKEN=your-token
+```
+
+That token is used with `Authorization: Bearer ...` against
+`api.apprentissage.beta.gouv.fr`. `.env.local` is gitignored.
+
 ## What it does
 
 - **France-first job intake:** paste text, import local files, fetch public
@@ -52,7 +62,8 @@ scoring, and packet generation.
 - **France Travail API:** when you set free credentials, the dashboard pulls
   data straight from the official Offres d'emploi API.
 - **Multi-source search:** one button to query Remotive, Remote OK, Himalayas,
-  Arbeitnow, Jobicy, and The Muse at once, deduplicating results.
+  Arbeitnow, Jobicy, The Muse, and La bonne alternance when its local token is
+  configured, deduplicating results.
 - **Company ATS feeds:** Greenhouse, Lever, Ashby, Recruitee, SmartRecruiters,
   Workable, Personio — all free and credential-free, just point at the
   company slug.
@@ -74,6 +85,12 @@ scoring, and packet generation.
   layout, photo, language toggle, and curated skills narrative are preserved;
   only role-relevant text (summary closer, experience-bullet ordering, top
   project) is updated per job.
+- **CV Studio:** local LaTeX workbench with a larger split preview, isolated
+  asset editor, icon-pack switching, project promotion, one-page guard, and ATS
+  keyword radar.
+- **Portfolio Builder:** generates a local static portfolio site from your CV,
+  GitHub/profile projects, photo, skills, and experience. Edit HTML/CSS, switch
+  themes/fonts, preview locally, export ZIP, and create a publish checklist.
 - **Cover letter:** concise, role-specific, grounded only in your profile,
   CV, and the job posting — never invents sponsorship or visa facts.
 - **Locked screening answers:** uses `master_qa_profile.json`; unknown
@@ -167,7 +184,11 @@ Tabs:
   panel, and a CV preview for packet-ready roles.
 - **CV Studio:** edit the LaTeX draft, inspect profile assets in a separate
   asset editor, compile a PDF preview, swap contact icon packs, upload/remove
-  the photo, add/promote GitHub projects, and run the one-page guard.
+  the photo, add/promote GitHub projects, run the one-page guard, and scan
+  ATS keyword coverage.
+- **Portfolio:** generate a local static portfolio, preview it, edit the
+  HTML/CSS, switch themes and fonts, export ZIP, and create a publish
+  checklist.
 - **Career Coach:** market-skill analysis from tracked jobs, evidence-aware
   skill gaps, free/audit certification ideas, portfolio project ideas, and a
   dated weekly plan.
@@ -182,10 +203,11 @@ Keyboard shortcuts (press `?` in the dashboard):
 
 ```text
 ?   Show shortcuts help
-1-6 Switch tabs
+1-9 Switch tabs
 /   Focus job search
 g h 1-click hunt
 g m Multi-source search
+g p Open Portfolio Builder
 r   Refresh jobs
 Esc Close dialogs
 ```
@@ -202,7 +224,22 @@ The Studio has two editors on purpose:
 This prevents JSON/profile assets from being accidentally compiled as LaTeX.
 If you add a team project that is not under your own GitHub account, use
 **Import a GitHub project -> Add / update a project locally**, then promote it.
-The project is saved only in your local `profiles/master_cv.json`.
+The project is saved only in your local `profiles/master_cv.json`, and the
+active Studio draft is updated immediately so **Compile preview** shows it.
+
+### Portfolio Builder
+
+The Portfolio tab generates a static site in:
+
+```text
+.job_agent/portfolio/
+```
+
+Use **Generate portfolio** after choosing a theme/font. The preview is served
+locally, and the HTML/CSS editors write back to the same folder. **Export ZIP**
+creates `.job_agent/portfolio/portfolio_export.zip`. **Publish checklist**
+creates `.job_agent/portfolio/PUBLISHING.md` with local steps for GitHub
+Pages, Netlify, or Vercel. Nothing is uploaded automatically.
 
 ## LaTeX CV output
 
@@ -375,8 +412,9 @@ job-agent api-sources
 Supported sources:
 
 ```text
-arbeitnow, ashby, francetravail, greenhouse, himalayas, jobicy, lever,
-personio, recruitee, remoteok, remotive, smartrecruiters, themuse, workable
+arbeitnow, ashby, francetravail, greenhouse, himalayas, jobicy,
+labonnealternance, lever, personio, recruitee, remoteok, remotive,
+smartrecruiters, themuse, workable
 ```
 
 For company ATS boards, pass the slug:
@@ -389,6 +427,12 @@ job-agent search-api recruitee --board examplecompany --query "data" --save
 job-agent search-api smartrecruiters --board examplecompany --query "data" --save
 job-agent search-api workable --board examplecompany --query "data" --save
 job-agent search-api personio --board examplecompany --query "data" --save
+```
+
+For La bonne alternance (apprentissage/alternance), no board slug is needed:
+
+```bash
+job-agent search-api labonnealternance --query "data scientist" --location "Ile-de-France" --radius-km 30 --internships-only --save
 ```
 
 ## Local AI with Ollama

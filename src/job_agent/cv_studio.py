@@ -503,8 +503,51 @@ ICON_PACKS = {
 }
 
 
+_ICON_BLOCK_RE = re.compile(
+    r"% --- BEGIN CV-STUDIO ICON PACK ---.*?% --- END CV-STUDIO ICON PACK ---\n?",
+    flags=re.DOTALL,
+)
+
+
+def _active_cv_text(config: AppConfig) -> tuple[str, Path | None, str]:
+    """Return the editable CV source, preferring the Studio draft."""
+    draft = _draft_path(config)
+    if draft.exists():
+        return draft.read_text(encoding="utf-8"), draft, "draft"
+    main = _main_tex_path(config)
+    if main and main.exists():
+        return main.read_text(encoding="utf-8"), main, "main"
+    return "", None, "empty"
+
+
+def _write_draft(config: AppConfig, text: str) -> Path:
+    draft = _draft_path(config)
+    draft.write_text(text or "", encoding="utf-8")
+    return draft
+
+
+def _icon_pack_block(pack: str, pack_data: dict[str, Any]) -> str:
+    block_lines = ["% --- BEGIN CV-STUDIO ICON PACK ---", str(pack_data["snippet"]).rstrip()]
+    if pack == "fontawesome":
+        block_lines.extend([pack_data["phone"], pack_data["email"], pack_data["linkedin"], pack_data["github"]])
+    elif pack == "academicons":
+        # Academicons doesn't redefine moderncv hooks; the chosen pack remains
+        # visible in source and can be extended when academicons.sty is present.
+        pass
+    block_lines.append("% --- END CV-STUDIO ICON PACK ---")
+    return "\n".join(block_lines) + "\n"
+
+
+def _apply_icon_pack_to_text(text: str, pack: str, pack_data: dict[str, Any]) -> str:
+    text = _ICON_BLOCK_RE.sub("", text or "")
+    block = _icon_pack_block(pack, pack_data)
+    if r"\begin{document}" in text:
+        return text.replace(r"\begin{document}", block + r"\begin{document}", 1)
+    return text.rstrip() + "\n\n" + block
+
+
 def apply_icon_pack(config: AppConfig, pack: str) -> dict[str, Any]:
-    """Inject the chosen icon pack's renewcommand directives into main.tex."""
+    """Inject the chosen icon pack's directives into main.tex and the draft."""
     try:
         root = _profiles_root(config)
     except ValueError as exc:
@@ -515,37 +558,81 @@ def apply_icon_pack(config: AppConfig, pack: str) -> dict[str, Any]:
     pack_data = ICON_PACKS.get(pack)
     if not pack_data:
         return {"ok": False, "reason": "unknown_pack"}
-    text = main.read_text(encoding="utf-8")
-    # Strip prior CV-Studio-managed icon block.
-    text = re.sub(
-        r"% --- BEGIN CV-STUDIO ICON PACK ---.*?% --- END CV-STUDIO ICON PACK ---\n?",
-        "",
-        text,
-        flags=re.DOTALL,
-    )
-    block_lines = ["% --- BEGIN CV-STUDIO ICON PACK ---", pack_data["snippet"].rstrip()]
-    if pack == "fontawesome":
-        block_lines.extend([pack_data["phone"], pack_data["email"], pack_data["linkedin"], pack_data["github"]])
-    elif pack == "academicons":
-        # Academicons doesn't redefine moderncv hooks; we keep them but add the package.
-        pass
-    block_lines.append("% --- END CV-STUDIO ICON PACK ---")
-    block = "\n".join(block_lines) + "\n"
+    original_main = main.read_text(encoding="utf-8")
+    main_text = _apply_icon_pack_to_text(original_main, pack, pack_data)
+    main.with_suffix(".tex.bak").write_text(original_main, encoding="utf-8")
+    main.write_text(main_text, encoding="utf-8")
 
-    # Insert before \begin{document}. If not found, append after the last
-    # \usepackage line.
-    if r"\begin{document}" in text:
-        text = text.replace(r"\begin{document}", block + r"\begin{document}", 1)
+    # Compile Preview reads the Studio draft when it exists. Keep the draft in
+    # sync so choosing an icon pack has an immediate visible effect.
+    active_text, active_path, origin = _active_cv_text(config)
+    preview_text = main_text
+    if active_path and origin == "draft":
+        preview_text = _apply_icon_pack_to_text(active_text, pack, pack_data)
+        active_path.with_suffix(".tex.bak").write_text(active_text, encoding="utf-8")
+        active_path.write_text(preview_text, encoding="utf-8")
     else:
-        text += "\n" + block
-    main.with_suffix(".tex.bak").write_text(main.read_text(encoding="utf-8"), encoding="utf-8")
-    main.write_text(text, encoding="utf-8")
-    return {"ok": True, "pack": pack, "label": pack_data["label"]}
+        _write_draft(config, main_text)
+
+    return {"ok": True, "pack": pack, "label": pack_data["label"], "text": preview_text}
 
 
 # -----------------------------------------------------------------------------
 # GitHub project import
 # -----------------------------------------------------------------------------
+
+
+def _latex_escape_text(value: Any) -> str:
+    text = str(value or "").strip()
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+    return "".join(replacements.get(ch, ch) for ch in text)
+
+
+def _project_to_projone_line(project: dict[str, Any]) -> str:
+    name = _latex_escape_text(project.get("name") or "Selected project")
+    desc = _latex_escape_text(project.get("description") or "")
+    bullets = [_latex_escape_text(item) for item in (project.get("bullet_points") or []) if str(item).strip()]
+    tech = [_latex_escape_text(item) for item in (project.get("technologies") or []) if str(item).strip()]
+    pieces: list[str] = []
+    if desc:
+        pieces.append(desc.rstrip(".") + ".")
+    pieces.extend(item.rstrip(".") + "." for item in bullets[:3])
+    if tech:
+        pieces.append(r"\textit{Stack: " + ", ".join(tech[:8]) + ".}")
+    body = " ".join(pieces) or "Relevant data/AI project selected from the local profile."
+    return rf"\newcommand{{\projone}}{{\cvitem{{\textbf{{{name}}}}}{{{body}}}}}"
+
+
+def _sync_project_into_draft(config: AppConfig, project: dict[str, Any]) -> tuple[bool, str, str]:
+    text, _, _ = _active_cv_text(config)
+    if not text:
+        return False, "", "no_cv_source"
+    line = _project_to_projone_line(project)
+    # Remove any previous fallback line we may have injected before the
+    # document. The real template defines \projone inside language branches.
+    text = re.sub(r"(?m)^\\newcommand\{\\projone\}\{.*\}\n?", "", text)
+    pattern = re.compile(r"(?m)^(\s*)\\newcommand\{\\projone\}\{.*\}$")
+    rewritten, count = pattern.subn(lambda match: match.group(1) + line, text)
+    if count == 0:
+        marker = r"\begin{document}"
+        if marker in text:
+            rewritten = text.replace(marker, line + "\n" + marker, 1)
+            count = 1
+        else:
+            return False, text, "projone_not_found"
+    _write_draft(config, rewritten)
+    return True, rewritten, f"updated_{count}_projone_command"
 
 
 def import_github_project(config: AppConfig, project_name: str) -> dict[str, Any]:
@@ -575,7 +662,14 @@ def import_github_project(config: AppConfig, project_name: str) -> dict[str, Any
     others = [p for p in master.get("projects", []) if p is not project]
     master["projects"] = [project] + others
     master_cv_path.write_text(json.dumps(master, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {"ok": True, "promoted": project.get("name")}
+    synced, text, sync_note = _sync_project_into_draft(config, project)
+    return {
+        "ok": True,
+        "promoted": project.get("name"),
+        "text": text if synced else "",
+        "draft_updated": synced,
+        "note": sync_note,
+    }
 
 
 def save_project(config: AppConfig, project: dict[str, Any], *, promote: bool = True) -> dict[str, Any]:
@@ -627,7 +721,19 @@ def save_project(config: AppConfig, project: dict[str, Any], *, promote: bool = 
     except Exception:
         pass
     master_cv_path.write_text(json.dumps(master, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {"ok": True, "action": action, "project": clean_project}
+    synced = False
+    text = ""
+    sync_note = ""
+    if promote:
+        synced, text, sync_note = _sync_project_into_draft(config, clean_project)
+    return {
+        "ok": True,
+        "action": action,
+        "project": clean_project,
+        "text": text if synced else "",
+        "draft_updated": synced,
+        "note": sync_note,
+    }
 
 
 # -----------------------------------------------------------------------------
@@ -747,4 +853,51 @@ def auto_fit_one_page(config: AppConfig, text: str) -> dict[str, Any]:
         "single_page": after.get("single_page"),
         "steps": steps or ["No safe layout changes were found."],
         "log": after.get("log", ""),
+    }
+
+
+_ATS_ROLE_PACKS = {
+    "data_scientist": [
+        "Python", "SQL", "Machine Learning", "Statistics", "Predictive Modeling",
+        "Feature Engineering", "Model Evaluation", "scikit-learn", "Pandas",
+        "Time Series", "NLP", "Data Visualization",
+    ],
+    "ml_engineer": [
+        "Python", "Deep Learning", "PyTorch", "TensorFlow", "Transformers",
+        "Docker", "FastAPI", "MLOps", "Model Deployment", "CI/CD",
+        "Experiment Tracking", "APIs",
+    ],
+    "data_engineer": [
+        "Python", "SQL", "ETL", "Data Pipelines", "Spark", "Airflow",
+        "APIs", "Docker", "Cloud", "Data Modeling", "Automation",
+    ],
+    "data_analyst": [
+        "SQL", "Power BI", "Tableau", "Excel", "Statistics", "Dashboards",
+        "Data Cleaning", "KPI", "Reporting", "Python", "Pandas",
+    ],
+}
+
+
+def ats_keyword_radar(config: AppConfig, text: str, role: str = "data_scientist") -> dict[str, Any]:
+    """Compare the current CV draft against a role-specific ATS keyword pack."""
+    pack = _ATS_ROLE_PACKS.get(role) or _ATS_ROLE_PACKS["data_scientist"]
+    haystack = (text or "").casefold()
+    present = [kw for kw in pack if kw.casefold() in haystack]
+    missing = [kw for kw in pack if kw.casefold() not in haystack]
+    coverage = round((len(present) / max(1, len(pack))) * 100)
+    suggestions = [
+        {
+            "keyword": kw,
+            "where": "skills" if kw in {"Docker", "FastAPI", "MLOps", "Power BI", "Tableau", "Spark", "Airflow"} else "projects",
+            "note": "Add only if true; recruiters reward evidence more than keyword stuffing.",
+        }
+        for kw in missing[:8]
+    ]
+    return {
+        "ok": True,
+        "role": role,
+        "coverage": coverage,
+        "present": present,
+        "missing": missing,
+        "suggestions": suggestions,
     }

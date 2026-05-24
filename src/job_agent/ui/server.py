@@ -31,6 +31,7 @@ from job_agent.maintenance import (
 )
 from job_agent.cv_studio import (
     ICON_PACKS as _STUDIO_ICON_PACKS,
+    ats_keyword_radar as _studio_ats_radar,
     auto_fit_one_page as _studio_auto_fit,
     apply_icon_pack as _studio_apply_icon_pack,
     compile_preview as _studio_compile_preview,
@@ -59,6 +60,15 @@ from job_agent.ollama_manage import (
     pull_model as _pull_ollama_model,
     pull_status as _ollama_pull_status,
     start_ollama_server,
+)
+from job_agent.portfolio_builder import (
+    export_portfolio_zip as _portfolio_export_zip,
+    generate_portfolio as _portfolio_generate,
+    portfolio_suggestions as _portfolio_suggest,
+    publish_guide as _portfolio_publish_guide,
+    read_portfolio as _portfolio_read,
+    save_portfolio as _portfolio_save,
+    portfolio_state as _portfolio_state,
 )
 from job_agent.polish import PolishOptions, ollama_status, resolve_ollama_model
 from job_agent.profile_enrich import enrich_from_github, enrich_from_linkedin_skills
@@ -550,6 +560,46 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 pass
             return None
+        if parsed.path == "/api/portfolio":
+            return self._send_json(_portfolio_read(self._config()))
+        if parsed.path == "/api/portfolio/preview":
+            data = _portfolio_read(self._config())
+            body = str(data.get("html") or "").encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return None
+        if parsed.path == "/api/portfolio/style.css":
+            data = _portfolio_read(self._config())
+            body = str(data.get("css") or "").encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/css; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return None
+        if parsed.path.startswith("/api/portfolio/"):
+            name = Path(parsed.path.rsplit("/", 1)[-1]).name
+            root = Path(_portfolio_state(self._config())["path"]).resolve()
+            asset = (root / name).resolve()
+            if root in asset.parents and asset.exists() and asset.is_file():
+                return self._send_file(str(asset))
+            return self._send_error_json("Portfolio asset not found.", HTTPStatus.NOT_FOUND)
+        if parsed.path == "/api/portfolio/export":
+            zip_path = _portfolio_export_zip(self._config())
+            body = zip_path.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", 'attachment; filename="portfolio_export.zip"')
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return None
         if parsed.path == "/api/ai-status":
             return self._send_json(ollama_status(PolishOptions.from_env()))
         if parsed.path == "/api/ollama-install":
@@ -674,6 +724,22 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 return self._send_json({"state": state.__dict__, "status": get_autopilot(config).status()})
             if parsed.path == "/api/coach-plan":
                 return self._send_json(_coach_plan(config))
+            if parsed.path == "/api/portfolio/generate":
+                return self._send_json(_portfolio_generate(
+                    config,
+                    theme=str(payload.get("theme") or "signal"),
+                    font=str(payload.get("font") or "inter"),
+                ))
+            if parsed.path == "/api/portfolio/save":
+                return self._send_json(_portfolio_save(
+                    config,
+                    str(payload.get("html") or ""),
+                    str(payload.get("css") or ""),
+                ))
+            if parsed.path == "/api/portfolio/suggest":
+                return self._send_json(_portfolio_suggest(config))
+            if parsed.path == "/api/portfolio/publish-guide":
+                return self._send_json(_portfolio_publish_guide(config))
             if parsed.path == "/api/maintenance/rescan-companies":
                 dry = bool(payload.get("dry_run"))
                 return self._send_json(_rescan_companies(config, dry_run=dry))
@@ -716,6 +782,10 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/cv-studio/auto-fit":
                 text = str(payload.get("text") or "")
                 return self._send_json(_studio_auto_fit(config, text))
+            if parsed.path == "/api/cv-studio/ats-keywords":
+                text = str(payload.get("text") or "")
+                role = str(payload.get("role") or "data_scientist")
+                return self._send_json(_studio_ats_radar(config, text, role))
             if parsed.path == "/api/cv-studio/save":
                 text = str(payload.get("text") or "")
                 return self._send_json(_studio_save(config, text))
