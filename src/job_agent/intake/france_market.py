@@ -148,24 +148,22 @@ FRENCH_SEARCH_BOARDS: list[SearchBoard] = [
         "Useful for cadres/junior professional roles.",
     ),
     SearchBoard(
-        "indeed-fr",
-        "Indeed France",
-        "https://fr.indeed.com/jobs?q={q}&l={loc}",
-        "Indeed has no free personal API; this URL opens their search page. Browse + use Add URL to import a posting.",
-        recommended=False,
-    ),
-    SearchBoard(
         "indeed-fr-stage",
         "Indeed France · Stages",
         "https://fr.indeed.com/jobs?q={q}&l={loc}&jt=internship",
-        "Indeed internship filter shortcut.",
-        recommended=False,
+        "Indeed internship filter — heavily used by French employers.",
     ),
     SearchBoard(
         "indeed-fr-alternance",
         "Indeed France · Alternance",
         "https://fr.indeed.com/jobs?q={q}+alternance&l={loc}",
-        "Indeed alternance shortcut — combine with 'alternance' keyword.",
+        "Indeed alternance shortcut.",
+    ),
+    SearchBoard(
+        "indeed-fr",
+        "Indeed France",
+        "https://fr.indeed.com/jobs?q={q}&l={loc}",
+        "Indeed general search — broad fallback.",
         recommended=False,
     ),
     SearchBoard(

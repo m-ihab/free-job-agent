@@ -23,14 +23,29 @@ from job_agent.analytics import compute_stats, jobs_to_csv
 from job_agent.autopilot import AutopilotConfig, get_autopilot
 from job_agent.config import AppConfig
 from job_agent.coach import build_coach_plan as _coach_plan
+from job_agent.maintenance import (
+    clear_broken_sources as _clear_broken_sources,
+    dedupe_jobs as _dedupe_jobs,
+    rescan_companies as _rescan_companies,
+    validate_cac40_sources as _validate_cac40_sources,
+)
 from job_agent.cv_studio import (
+    ICON_PACKS as _STUDIO_ICON_PACKS,
+    apply_icon_pack as _studio_apply_icon_pack,
     compile_preview as _studio_compile_preview,
+    import_github_project as _studio_import_project,
+    list_assets as _studio_list_assets,
     load_studio as _studio_load,
     promote_draft_to_main as _studio_promote_main,
+    read_asset as _studio_read_asset,
+    remove_photo as _studio_remove_photo,
     reorder_sections as _studio_reorder,
+    replace_photo as _studio_replace_photo,
     reset_studio_draft as _studio_reset,
     save_studio_draft as _studio_save,
+    single_page_guard as _studio_single_page,
     suggest_edits as _studio_suggest,
+    write_asset as _studio_write_asset,
 )
 from job_agent.cv_template import import_cv_template_upload
 from job_agent.db.database import Database
@@ -507,6 +522,17 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             return self._stream_autopilot()
         if parsed.path == "/api/cv-studio":
             return self._send_json(_studio_load(self._config()))
+        if parsed.path == "/api/cv-studio/assets":
+            return self._send_json({"assets": _studio_list_assets(self._config()), "icon_packs": [{"key": k, "label": v["label"]} for k, v in _STUDIO_ICON_PACKS.items()]})
+        if parsed.path == "/api/cv-studio/asset":
+            query = parse_qs(parsed.query)
+            name = (query.get("name") or [""])[0]
+            if not name:
+                return self._send_error_json("name is required.")
+            try:
+                return self._send_json(_studio_read_asset(self._config(), name))
+            except ValueError as exc:
+                return self._send_error_json(str(exc))
         if parsed.path == "/api/cv-studio/preview-pdf":
             studio = Path(self._config().data_dir or Path.cwd() / ".job_agent") / "cv_studio" / "preview.pdf"
             if not studio.exists():
@@ -646,6 +672,36 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 return self._send_json({"state": state.__dict__, "status": get_autopilot(config).status()})
             if parsed.path == "/api/coach-plan":
                 return self._send_json(_coach_plan(config))
+            if parsed.path == "/api/maintenance/rescan-companies":
+                dry = bool(payload.get("dry_run"))
+                return self._send_json(_rescan_companies(config, dry_run=dry))
+            if parsed.path == "/api/maintenance/dedupe":
+                dry = bool(payload.get("dry_run"))
+                return self._send_json(_dedupe_jobs(config, dry_run=dry))
+            if parsed.path == "/api/maintenance/validate-sources":
+                return self._send_json(_validate_cac40_sources(config))
+            if parsed.path == "/api/maintenance/clear-broken":
+                return self._send_json(_clear_broken_sources(config))
+            if parsed.path == "/api/cv-studio/asset-save":
+                name = str(payload.get("name") or "")
+                text = str(payload.get("text") or "")
+                try:
+                    return self._send_json(_studio_write_asset(config, name, text))
+                except ValueError as exc:
+                    return self._send_error_json(str(exc))
+            if parsed.path == "/api/cv-studio/replace-photo":
+                name = str(payload.get("name") or "me.jpg")
+                data = str(payload.get("data") or "")
+                return self._send_json(_studio_replace_photo(config, name, data))
+            if parsed.path == "/api/cv-studio/remove-photo":
+                return self._send_json(_studio_remove_photo(config, str(payload.get("name") or "me.jpg")))
+            if parsed.path == "/api/cv-studio/icon-pack":
+                return self._send_json(_studio_apply_icon_pack(config, str(payload.get("pack") or "moderncv")))
+            if parsed.path == "/api/cv-studio/import-github-project":
+                return self._send_json(_studio_import_project(config, str(payload.get("name") or "")))
+            if parsed.path == "/api/cv-studio/single-page-check":
+                text = payload.get("text")
+                return self._send_json(_studio_single_page(config, text if isinstance(text, str) else None))
             if parsed.path == "/api/cv-studio/save":
                 text = str(payload.get("text") or "")
                 return self._send_json(_studio_save(config, text))

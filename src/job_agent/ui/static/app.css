@@ -1227,3 +1227,85 @@ html[data-theme="dark"] .chat-bubble.thinking {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- Career Coach ---- */
+.coach-list {
+  list-style: decimal-leading-zero inside;
+  padding: 0;
+  margin: 0;
+  font-size: 0.9rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.coach-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  align-items: start;
+}
+
+.coach-list li strong {
+  white-space: normal;
+  text-align: right;
+  align-self: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.78rem;
+}
+
+.coach-list li .coach-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.coach-list li .coach-sub {
+  display: block;
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-top: 0.2rem;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.coach-list li a {
+  color: var(--accent-3);
+  text-decoration: underline dotted;
+}
+
+html[data-theme="dark"] .coach-list li {
+  background: var(--surface-3);
+}
+
+.suggest-edit-label {
+  display: block;
+  margin: 0.4rem 0 0.15rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
+.suggest-edit-label .row-tag.warn {
+  background: rgba(244, 184, 96, 0.18);
+  color: var(--warn);
+  border-color: rgba(176, 94, 0, 0.32);
+}
+
+.suggest-after-edit {
+  width: 100%;
+  min-height: 64px;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.55rem;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  background: var(--surface);
+  resize: vertical;
+}

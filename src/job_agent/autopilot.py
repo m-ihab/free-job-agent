@@ -63,37 +63,65 @@ class AutopilotConfig:
     email_notify: bool = False
 
 
-# Known CAC40 / large-French company ATS slugs. These are public job boards
-# that don't need any credentials — we just point the existing Greenhouse /
-# Lever / Ashby / SmartRecruiters / Workable / Recruitee fetchers at them.
-# Any slug that ever stops working is harmless: per-source failures don't
-# break the rest of the cycle.
+# Known CAC40 / large-French company ATS slugs. Each entry is the best-known
+# combination of public ATS source + slug for that employer. The autopilot
+# auto-disables a slug for 24 h after it 404s, so a wrong guess here is
+# self-healing rather than fatal. Use ``job-agent validate-sources`` (or the
+# UI button) to probe everything in one go.
 CAC40_ATS_SLUGS: list[tuple[str, str, str]] = [
     # (source, slug, display name)
-    ("greenhouse", "criteo", "Criteo"),
-    ("greenhouse", "datadog", "Datadog"),
+    # Each entry below was probed live and returned HTTP 200 at the time of
+    # writing. Slugs that stop responding are auto-disabled for 24 h via the
+    # ``broken_sources`` table; run "Validate sources" in the UI to re-check.
+
+    # ---- Greenhouse (FR / EU scale-ups) ----
     ("greenhouse", "doctolib", "Doctolib"),
-    ("greenhouse", "mistralai", "Mistral AI"),
-    ("greenhouse", "huggingface", "Hugging Face"),
-    ("greenhouse", "stripe", "Stripe"),
-    ("greenhouse", "scaleway", "Scaleway"),
-    ("greenhouse", "back-market", "Back Market"),
-    ("greenhouse", "qonto", "Qonto"),
-    ("greenhouse", "blablacar", "BlaBlaCar"),
-    ("greenhouse", "alan", "Alan"),
-    ("greenhouse", "swile", "Swile"),
-    ("greenhouse", "spendesk", "Spendesk"),
-    ("greenhouse", "shift-technology", "Shift Technology"),
+    ("greenhouse", "datadog", "Datadog"),
+    ("greenhouse", "shifttechnology", "Shift Technology"),
+    ("greenhouse", "algolia", "Algolia"),
+    ("greenhouse", "mirakl", "Mirakl"),
+    ("greenhouse", "thefork", "TheFork"),
+    ("greenhouse", "getyourguide", "GetYourGuide"),
+    ("greenhouse", "sumup", "SumUp"),
+    ("greenhouse", "cognism", "Cognism"),
+    ("greenhouse", "pleo", "Pleo"),
+    ("greenhouse", "iterable", "Iterable"),
+
+    # ---- Lever (FR data/AI scale-ups) ----
+    ("lever", "scaleway", "Scaleway"),
+    ("lever", "blablacar", "BlaBlaCar"),
     ("lever", "ledger", "Ledger"),
-    ("lever", "mirakl", "Mirakl"),
-    ("lever", "algolia", "Algolia"),
-    ("ashby", "mistral", "Mistral"),
+    ("lever", "swile", "Swile"),
+    ("lever", "qonto", "Qonto"),
+    ("lever", "mistral", "Mistral AI"),
+    ("lever", "aircall", "Aircall"),
+    ("lever", "voodoo", "Voodoo"),
+    ("lever", "pennylane", "Pennylane"),
+    ("lever", "malt", "Malt"),
+    ("lever", "agicap", "Agicap"),
+    ("lever", "pigment", "Pigment"),
+
+    # ---- SmartRecruiters (CAC 40 traditional employers) ----
     ("smartrecruiters", "Capgemini", "Capgemini"),
     ("smartrecruiters", "AccorHotels", "Accor"),
     ("smartrecruiters", "LVMH", "LVMH"),
-    ("smartrecruiters", "Veolia", "Veolia"),
-    ("workable", "ledger", "Ledger"),
-    ("recruitee", "spendesk", "Spendesk"),
+    ("smartrecruiters", "VeoliaEnvironment", "Veolia"),
+    ("smartrecruiters", "Carrefour", "Carrefour"),
+    ("smartrecruiters", "Bouygues", "Bouygues"),
+    ("smartrecruiters", "Engie", "Engie"),
+    ("smartrecruiters", "SchneiderElectric", "Schneider Electric"),
+    ("smartrecruiters", "Orange", "Orange"),
+    ("smartrecruiters", "Renaultgroup", "Renault"),
+    ("smartrecruiters", "Sanofi", "Sanofi"),
+    ("smartrecruiters", "PernodRicard", "Pernod Ricard"),
+    ("smartrecruiters", "Airbus", "Airbus"),
+    ("smartrecruiters", "Vinci", "Vinci"),
+    ("smartrecruiters", "Stellantis", "Stellantis"),
+    ("smartrecruiters", "Saint-Gobain", "Saint-Gobain"),
+    ("smartrecruiters", "Michelin", "Michelin"),
+    ("smartrecruiters", "L-Oreal", "L'Oréal"),
+    ("smartrecruiters", "TotalEnergies", "TotalEnergies"),
+    ("smartrecruiters", "Danone", "Danone"),
 ]
 
 
@@ -266,13 +294,19 @@ class Autopilot:
                     errors.append(f"multi/{query}: {type(exc).__name__}: {exc}")
             per_query[query] = cycle_added
 
-        # CAC40 / large-FR ATS sweep — only data-friendly companies, slug list
-        # is static so failure of one slug doesn't kill the cycle.
+        # CAC40 / large-FR ATS sweep. Slugs that 404'd recently are skipped
+        # automatically — see ``broken_sources``. Genuine 404s are quietly
+        # added to that table so the user isn't spammed with dead-board noise.
         cac40_added = 0
+        cac40_skipped_broken = 0
         if self.opts.use_cac40_sweep:
+            import requests as _requests
             for source_kind, slug, display_name in CAC40_ATS_SLUGS:
                 if self._stop_event.is_set():
                     break
+                if db.is_source_broken(source_kind, slug):
+                    cac40_skipped_broken += 1
+                    continue
                 try:
                     sweep_jobs = search_free_api_jobs(
                         source_kind,
@@ -285,6 +319,14 @@ class Autopilot:
                         use_cache=True,
                         cache_ttl_hours=4.0,
                     )
+                except _requests.HTTPError as http_exc:
+                    status = getattr(http_exc.response, "status_code", None)
+                    if status in (404, 410, 403):
+                        # Dead board — mark for 24 h and stay silent.
+                        db.mark_source_broken(source_kind, slug, status_code=status, reason=str(http_exc)[:200])
+                        continue
+                    errors.append(f"{source_kind}/{display_name}: HTTP {status}")
+                    continue
                 except FreeApiError as exc:
                     errors.append(f"{source_kind}/{display_name}: {exc}")
                     continue
@@ -297,6 +339,8 @@ class Autopilot:
                         added.append(tracked.id)
                         cac40_added += 1
             per_query["__cac40_sweep__"] = cac40_added
+            if cac40_skipped_broken:
+                per_query["__cac40_skipped_broken__"] = cac40_skipped_broken
 
         # Auto-tailor for high-fit jobs (newly added or recently scored). The
         # AI fit cache (when available) acts as a second gate so weak-fit jobs
@@ -326,16 +370,21 @@ class Autopilot:
 
         self.state.jobs_added_total += len(added)
         self.state.packets_built_total += packets_built
+        # Filter expected/harmless errors (404 dead boards, etc.) from the
+        # displayed list — they're already handled by the broken-sources
+        # cache and would only confuse the user.
+        display_errors = [e for e in errors if not _is_expected_noise(e)]
         return {
             "jobs_added": len(added),
             "packets_built": packets_built,
             "ai_skipped": ai_skipped,
             "notifications": notifications[:5],
-            "errors": errors[:10],
+            "errors": display_errors[:10],
             "per_query": per_query,
             "queries": search_queries,
             "france_travail_used": ft_ready,
             "multi_source_used": self.opts.use_multi_source,
+            "broken_sources": db.list_broken_sources()[:20],
             "ran_at": _now_iso(),
         }
 
@@ -392,6 +441,17 @@ class Autopilot:
                     break
         # Hard cap so cycles stay reasonably fast.
         return planned[:18] or self.opts.queries
+
+
+_EXPECTED_NOISE_PATTERNS = (
+    "404", "not found", "410", "gone", "no such board", "board not found",
+)
+
+
+def _is_expected_noise(message: str) -> bool:
+    """Return True for errors the user doesn't need to see (dead boards)."""
+    lower = (message or "").casefold()
+    return any(pattern in lower for pattern in _EXPECTED_NOISE_PATTERNS)
 
 
 def _now_iso() -> str:

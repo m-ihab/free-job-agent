@@ -135,6 +135,19 @@ class Database:
                     FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
                 );
                 CREATE INDEX IF NOT EXISTS idx_ai_cache_kind ON ai_cache(kind);
+
+                -- Sources (ATS slugs etc.) that have recently 404'd. The
+                -- autopilot consults this to skip dead boards without nagging
+                -- the user. Auto-expires after broken_until passes.
+                CREATE TABLE IF NOT EXISTS broken_sources (
+                    source TEXT NOT NULL,
+                    slug TEXT NOT NULL,
+                    status_code INTEGER,
+                    reason TEXT NOT NULL DEFAULT '',
+                    broken_at TEXT NOT NULL,
+                    broken_until TEXT NOT NULL,
+                    PRIMARY KEY (source, slug)
+                );
             """)
 
     # ---- Job methods ----
@@ -453,6 +466,43 @@ class Database:
                 payload["updated_at"] = row["updated_at"]
                 result.setdefault(row["job_id"], {})[row["kind"]] = payload
         return result
+
+    # ---- Broken sources (ATS slugs that 404'd) ----
+
+    def mark_source_broken(self, source: str, slug: str, *, status_code: int = 0, reason: str = "", hours: float = 24.0) -> None:
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        until = now + timedelta(hours=hours)
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO broken_sources (source, slug, status_code, reason, broken_at, broken_until) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(source, slug) DO UPDATE SET status_code=excluded.status_code, "
+                "reason=excluded.reason, broken_at=excluded.broken_at, broken_until=excluded.broken_until",
+                (source, slug, int(status_code or 0), reason, now.isoformat(), until.isoformat()),
+            )
+
+    def clear_broken_source(self, source: str, slug: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM broken_sources WHERE source=? AND slug=?", (source, slug))
+
+    def is_source_broken(self, source: str, slug: str) -> bool:
+        from datetime import datetime, timezone
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT broken_until FROM broken_sources WHERE source=? AND slug=? AND broken_until > ?",
+                (source, slug, now_iso),
+            ).fetchone()
+        return bool(row)
+
+    def list_broken_sources(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT source, slug, status_code, reason, broken_at, broken_until FROM broken_sources "
+                "ORDER BY broken_until DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def bulk_latest_packets(self, job_ids: list[str]) -> dict[str, ApplicationPacket]:
         """Return the newest packet per job for the given list."""

@@ -42,13 +42,23 @@ _PREFERRED_MODELS = [
 ]
 
 # Smaller / faster models picked first for the chat path so replies feel snappy.
+# Order rationale:
+# 1. llama3.2:3b — fastest decent-quality model, default
+# 2. phi3:mini  — best structured-output for its size
+# 3. mistral:7b-instruct — best FR, JSON output; slower but acceptable
+# 4. qwen2.5:3b / 7b — strong FR support
+# 5. gemma3:2b — fallback
 _PREFERRED_FAST_MODELS = [
     "llama3.2:3b",
     "llama3.2:1b",
     "phi3:mini",
-    "qwen2.5:3b",
-    "gemma3:2b",
+    "phi3.5:mini",
     "mistral:7b-instruct",
+    "mistral:latest",
+    "qwen2.5:3b",
+    "qwen2.5:7b",
+    "gemma3:2b",
+    "gemma3:latest",
     "qwen3:latest",
     "qwen3.6:latest",
 ]

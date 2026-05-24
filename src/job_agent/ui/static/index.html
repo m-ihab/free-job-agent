@@ -203,6 +203,10 @@
           <button id="clearSelectionBtn">Clear selection</button>
           <span id="selectionCount" class="muted"></span>
         </div>
+        <div class="action-row" style="margin-bottom:0.6rem">
+          <button id="rescanCompaniesBtn" title="Find the real employer for jobs currently showing as 'France Travail' / aggregator">Refresh real company names</button>
+          <button id="dedupeJobsBtn" title="Collapse duplicates (H/F variants, arrondissement noise)">Deduplicate jobs</button>
+        </div>
 
         <div class="metric-grid" id="jobsMetrics"></div>
         <div class="split">
@@ -279,6 +283,13 @@ data engineer</textarea>
             <div id="autopilotLastSummary" class="muted">Autopilot has not run yet.</div>
             <h3 style="margin-top:1rem">Errors</h3>
             <div id="autopilotErrors" class="muted">None.</div>
+            <h3 style="margin-top:1rem">Dead boards</h3>
+            <p class="muted" style="margin:0 0 0.5rem;font-size:0.82rem">ATS slugs that returned 404 — auto-skipped for 24 h. Use "Validate sources" to re-probe them.</p>
+            <div id="autopilotBrokenSources" class="muted">None recorded.</div>
+            <div class="action-row" style="margin-top:0.5rem">
+              <button id="validateSourcesBtn" title="Probe every ATS slug; mark dead ones, clear healthy ones">Validate sources</button>
+              <button id="clearBrokenBtn" title="Try every slug again now">Clear list</button>
+            </div>
           </section>
         </div>
 
@@ -347,9 +358,61 @@ data engineer</textarea>
           </section>
           <section class="panel">
             <h3>AI suggestions</h3>
-            <div id="studioSuggestionList" class="muted">Click "AI suggestions" after Ollama is running to get concrete edits.</div>
+            <div id="studioSuggestionList" class="muted">Click "AI suggestions" after Ollama is running to get concrete edits. Each suggestion can be edited inline before you apply it.</div>
           </section>
         </div>
+
+        <div class="split">
+          <section class="panel">
+            <h3>Assets</h3>
+            <ul id="studioAssetList" class="studio-section-list muted">Loading…</ul>
+            <div class="action-row" style="margin-top:0.5rem">
+              <button id="studioAssetReloadBtn">Refresh</button>
+              <button class="primary-soft" id="studioAssetSaveBtn">Save edited asset</button>
+              <span id="studioAssetActive" class="muted"></span>
+            </div>
+          </section>
+          <section class="panel">
+            <h3>One-page guard</h3>
+            <p class="muted" style="margin-bottom:0.5rem">Compile your draft and check if it fits a single page. We'll suggest what to trim if it doesn't.</p>
+            <button id="studioSinglePageBtn" class="primary-soft">Check single page</button>
+            <div id="studioSinglePageResult" class="muted" style="margin-top:0.5rem">Not checked yet.</div>
+          </section>
+        </div>
+
+        <div class="split">
+          <section class="panel">
+            <h3>Photo</h3>
+            <p class="muted" style="margin-bottom:0.5rem">Upload a new photo or remove it. The original is backed up as <code>me.jpg.bak</code>.</p>
+            <input type="file" id="studioPhotoInput" accept="image/jpeg,image/png" />
+            <div class="action-row" style="margin-top:0.5rem">
+              <button class="primary-soft" id="studioPhotoUploadBtn">Use as CV photo</button>
+              <button id="studioPhotoRemoveBtn">Remove photo</button>
+            </div>
+            <div id="studioPhotoNotice" class="muted" style="margin-top:0.4rem"></div>
+          </section>
+          <section class="panel">
+            <h3>Icon pack</h3>
+            <p class="muted" style="margin-bottom:0.5rem">Choose how contact lines render (text labels, FontAwesome icons, …).</p>
+            <select id="studioIconPack">
+              <option value="moderncv">moderncv default (text)</option>
+              <option value="fontawesome">FontAwesome 5 (icons)</option>
+              <option value="academicons">Academicons (research icons)</option>
+            </select>
+            <button class="primary-soft" id="studioIconPackApplyBtn" style="margin-left:0.4rem">Apply to main.tex</button>
+            <div id="studioIconPackNotice" class="muted" style="margin-top:0.4rem">A <code>.bak</code> is saved each time.</div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <h3>Import a GitHub project</h3>
+          <p class="muted" style="margin-bottom:0.5rem">Pick a project from your enriched <code>master_cv.json</code> to promote it to the top of the Projects section. Re-run <em>Tailor CV</em> on a job to see it in the output.</p>
+          <div class="action-row">
+            <select id="studioGithubProjectSelect"><option value="">— select a project —</option></select>
+            <button class="primary-soft" id="studioGithubImportBtn">Promote project</button>
+          </div>
+          <div id="studioGithubNotice" class="muted" style="margin-top:0.4rem"></div>
+        </section>
       </section>
 
       <section id="tab-coach" class="tab-panel">
@@ -379,13 +442,29 @@ data engineer</textarea>
         <div class="split">
           <section class="panel">
             <h3>Focus areas (this month)</h3>
-            <ol id="coachFocus" class="rank-list"></ol>
+            <ol id="coachFocus" class="coach-list"></ol>
           </section>
           <section class="panel">
             <h3>Concrete next steps</h3>
-            <ol id="coachSteps" class="rank-list"></ol>
+            <ol id="coachSteps" class="coach-list"></ol>
           </section>
         </div>
+
+        <div class="split">
+          <section class="panel">
+            <h3>Free / audited certifications worth getting</h3>
+            <ol id="coachCerts" class="coach-list"></ol>
+          </section>
+          <section class="panel">
+            <h3>Portfolio projects that close the gap</h3>
+            <ol id="coachProjects" class="coach-list"></ol>
+          </section>
+        </div>
+
+        <section class="panel">
+          <h3>Scheduled plan (next 4 weeks)</h3>
+          <ol id="coachSchedule" class="coach-list"></ol>
+        </section>
 
         <div class="notice hidden" id="coachNotice"></div>
       </section>

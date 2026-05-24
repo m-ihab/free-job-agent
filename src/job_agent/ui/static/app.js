@@ -1014,7 +1014,11 @@ function activateTab(name) {
     loadAutopilot();
     loadAiSetup();
   }
-  if (name === "studio") loadStudio();
+  if (name === "studio") {
+    loadStudio();
+    loadStudioAssets();
+    loadStudioGithubProjects();
+  }
   if (name === "coach" && !state.coachCache) renderCoachShell();
 }
 
@@ -1138,16 +1142,22 @@ async function studioSuggest() {
       if (target) target.innerHTML = "<div class='muted'>No suggestions — your CV already looks tight.</div>";
       return;
     }
-    if (target) target.innerHTML = items.map((s) => `
-      <div class="studio-suggestion">
+    state.studioSuggestions = items;
+    if (target) target.innerHTML = items.map((s, idx) => `
+      <div class="studio-suggestion" data-suggest-idx="${idx}">
         <div class="suggest-head">
           <strong>${escapeHtml(s.title)}</strong>
           <span class="row-tag">${escapeHtml(s.priority || "")} · ${escapeHtml(s.section || "")}</span>
         </div>
         <p class="muted" style="margin:0 0 0.3rem">${escapeHtml(s.rationale || "")}</p>
-        ${s.before ? `<code>${escapeHtml(s.before)}</code>` : ""}
-        ${s.after ? `<code style="border-color:var(--accent)">${escapeHtml(s.after)}</code>` : ""}
-        ${s.before && s.after ? `<button data-suggest-apply="${escapeHtml(s.before)}|||${escapeHtml(s.after)}">Apply</button>` : ""}
+        ${s.before ? `<code class="suggest-before" title="Current text in your CV">${escapeHtml(s.before)}</code>` : ""}
+        ${s.after ? `<label class="suggest-edit-label">Edit before applying${/\[[A-Za-z0-9_\- ]+\]/.test(s.after) ? ' <span class="row-tag warn">has placeholders</span>' : ""}</label>` : ""}
+        ${s.after ? `<textarea class="suggest-after-edit" data-suggest-after-edit="${idx}" rows="3">${escapeHtml(s.after)}</textarea>` : ""}
+        ${s.before && s.after ? `<div class="action-row" style="margin-top:0.4rem">
+          <button data-suggest-apply-idx="${idx}" class="primary-soft">Apply</button>
+          <button data-suggest-reset-idx="${idx}">Reset edit</button>
+          <button data-suggest-dismiss-idx="${idx}">Dismiss</button>
+        </div>` : ""}
       </div>
     `).join("");
   } catch (error) {
@@ -1167,6 +1177,200 @@ function studioApplySuggestion(before, after) {
   textarea.value = textarea.value.replace(before, after);
   textarea.dataset.dirty = "1";
   toast("Suggestion applied. Click Compile preview to render.");
+}
+
+// ===== Studio v2: assets, photo, icon pack, single-page, GitHub import =====
+async function loadStudioAssets() {
+  const node = document.getElementById("studioAssetList");
+  if (!node) return;
+  try {
+    const data = await api("/api/cv-studio/assets");
+    state.studioAssets = data.assets || [];
+    if (!state.studioAssets.length) {
+      node.innerHTML = "<li class='muted'>No assets found in profiles/.</li>";
+      return;
+    }
+    node.innerHTML = state.studioAssets.map((a) => {
+      const size = a.kind === "image" ? `${Math.round(a.size / 1024)} KB` : `${a.size} B`;
+      return `<li data-asset="${escapeHtml(a.name)}"><span class="coach-title">${escapeHtml(a.name)}</span><span class="row-tag">${escapeHtml(a.kind)} · ${size}</span></li>`;
+    }).join("");
+    Array.from(node.querySelectorAll("li[data-asset]")).forEach((li) => {
+      li.addEventListener("click", () => openStudioAsset(li.dataset.asset));
+    });
+    const select = document.getElementById("studioIconPack");
+    if (select && data.icon_packs) {
+      select.innerHTML = data.icon_packs.map((p) => `<option value="${escapeHtml(p.key)}">${escapeHtml(p.label)}</option>`).join("");
+    }
+  } catch (error) {
+    node.innerHTML = `<li class="notice error">${escapeHtml(error.message)}</li>`;
+  }
+}
+
+async function openStudioAsset(name) {
+  if (!name) return;
+  state.studioActiveAsset = name;
+  const status = document.getElementById("studioAssetActive");
+  if (status) status.textContent = `Editing ${name}`;
+  try {
+    const data = await api(`/api/cv-studio/asset?name=${encodeURIComponent(name)}`);
+    if (!data.ok) {
+      toast(`Could not open ${name}: ${data.reason}`);
+      return;
+    }
+    if (data.kind === "text") {
+      const textarea = document.getElementById("studioTextarea");
+      if (textarea) {
+        textarea.value = data.text || "";
+        textarea.dataset.dirty = "1";
+      }
+      toast(`Loaded ${name} into the editor.`);
+    } else {
+      toast(`${name} is an image — use the photo panel to replace.`);
+    }
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function saveStudioAsset() {
+  const name = state.studioActiveAsset;
+  if (!name) {
+    toast("Open an asset from the list first.");
+    return;
+  }
+  const textarea = document.getElementById("studioTextarea");
+  try {
+    const result = await api("/api/cv-studio/asset-save", { name, text: textarea ? textarea.value : "" });
+    if (result.ok) {
+      toast(`Saved ${name}.`);
+      if (textarea) delete textarea.dataset.dirty;
+    } else {
+      toast(`Could not save: ${result.reason}`);
+    }
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function uploadStudioPhoto() {
+  const input = document.getElementById("studioPhotoInput");
+  const notice = document.getElementById("studioPhotoNotice");
+  if (!input || !input.files || !input.files[0]) {
+    if (notice) notice.textContent = "Pick a JPG or PNG first.";
+    return;
+  }
+  const file = input.files[0];
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const result = await api("/api/cv-studio/replace-photo", {
+        name: file.name,
+        data: reader.result,
+      });
+      if (result.ok) {
+        toast(`Photo updated (${Math.round(result.bytes / 1024)} KB).`);
+        if (notice) notice.textContent = "Recompile to see the new photo.";
+        loadStudioAssets();
+      } else {
+        if (notice) notice.textContent = `Failed: ${result.reason}`;
+      }
+    } catch (error) {
+      if (notice) notice.textContent = error.message;
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+async function removeStudioPhoto() {
+  if (!window.confirm("Remove the CV photo and comment out \\photo{...} in main.tex?")) return;
+  const result = await api("/api/cv-studio/remove-photo", {});
+  toast(result.ok ? "Photo removed (backup kept)." : `Failed: ${result.reason}`);
+  loadStudioAssets();
+}
+
+async function applyIconPack() {
+  const select = document.getElementById("studioIconPack");
+  const notice = document.getElementById("studioIconPackNotice");
+  if (!select) return;
+  try {
+    const result = await api("/api/cv-studio/icon-pack", { pack: select.value });
+    if (result.ok) {
+      if (notice) notice.textContent = `Applied ${result.label}. Recompile to preview.`;
+      toast(`Icon pack updated.`);
+      await loadStudio();
+    } else {
+      if (notice) notice.textContent = `Failed: ${result.reason}`;
+    }
+  } catch (error) {
+    if (notice) notice.textContent = error.message;
+  }
+}
+
+async function loadStudioGithubProjects() {
+  try {
+    const data = await api(`/api/cv-studio/asset?name=master_cv.json`);
+    if (!data.ok || data.kind !== "text") return;
+    let parsed;
+    try { parsed = JSON.parse(data.text); } catch { return; }
+    const projects = (parsed.projects || []).map((p) => p.name).filter(Boolean);
+    const select = document.getElementById("studioGithubProjectSelect");
+    if (!select) return;
+    select.innerHTML = '<option value="">— select a project —</option>' + projects.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+  } catch {}
+}
+
+async function importGithubProject() {
+  const select = document.getElementById("studioGithubProjectSelect");
+  const notice = document.getElementById("studioGithubNotice");
+  if (!select || !select.value) {
+    if (notice) notice.textContent = "Pick a project first.";
+    return;
+  }
+  try {
+    const result = await api("/api/cv-studio/import-github-project", { name: select.value });
+    if (result.ok) {
+      if (notice) notice.textContent = `Promoted "${result.promoted}" to top of projects. Tailor a CV to see it.`;
+      toast("Project promoted.");
+    } else {
+      if (notice) notice.textContent = `Failed: ${result.reason}`;
+    }
+  } catch (error) {
+    if (notice) notice.textContent = error.message;
+  }
+}
+
+async function checkSinglePage() {
+  const button = document.getElementById("studioSinglePageBtn");
+  const target = document.getElementById("studioSinglePageResult");
+  const textarea = document.getElementById("studioTextarea");
+  if (!target) return;
+  setBusy(button, true);
+  target.innerHTML = "Compiling and counting pages…";
+  try {
+    const result = await api("/api/cv-studio/single-page-check", { text: textarea ? textarea.value : null });
+    if (!result.ok) {
+      target.innerHTML = `<span class="notice error">${escapeHtml(result.reason)}</span>`;
+      return;
+    }
+    if (result.single_page) {
+      target.innerHTML = `<span class="badge good">✓ Fits on 1 page (${result.page_count})</span>`;
+      return;
+    }
+    if (result.single_page === null) {
+      target.innerHTML = `<span class="muted">Could not count pages — compile succeeded though.</span>`;
+      return;
+    }
+    target.innerHTML = `<div><span class="badge warn">Overflowing (${result.page_count} pages)</span></div>
+      <p class="muted" style="margin:0.5rem 0">Try these conservative trims in order:</p>
+      <ol class="coach-list">${(result.trims || []).map((t) => `<li>
+        <div><span class="coach-title">${escapeHtml(t.title)}</span><span class="coach-sub">${escapeHtml(t.note)} — search for <code>${escapeHtml(t.where)}</code></span></div>
+        <strong></strong>
+      </li>`).join("")}</ol>`;
+  } catch (error) {
+    target.innerHTML = `<span class="notice error">${escapeHtml(error.message)}</span>`;
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 async function studioApplyReorder() {
@@ -1217,27 +1421,82 @@ function renderCoachPlan(plan) {
     metric("Tracked jobs", total),
     metric("Avg fit", plan.avg_score ?? "—"),
     metric("Top gap", plan.top_gap || "—"),
-    metric("Next move", plan.headline || "—"),
+    metric("Next move", plan.headline ? plan.headline.slice(0, 60) + (plan.headline.length > 60 ? "…" : "") : "—"),
   ].join("");
-  const rank = (id, items, valueKey = "count") => {
+  const rankSimple = (id, items, valueKey = "count") => {
     const node = document.getElementById(id);
     if (!node) return;
     if (!items || !items.length) {
       node.innerHTML = "<li class='muted'>No data yet.</li>";
       return;
     }
-    node.innerHTML = items.map((row) => `<li><span>${escapeHtml(row.name || row.label || "")}</span><strong>${escapeHtml(String(row[valueKey] ?? row.value ?? ""))}</strong></li>`).join("");
+    node.innerHTML = items.map((row) =>
+      `<li><span class="coach-title">${escapeHtml(row.name || row.label || "")}</span><strong>${escapeHtml(String(row[valueKey] ?? row.value ?? ""))}</strong></li>`
+    ).join("");
   };
-  rank("coachMarketSkills", plan.market_skills || []);
-  rank("coachGapSkills", plan.gap_skills || []);
+  rankSimple("coachMarketSkills", plan.market_skills || []);
+  rankSimple("coachGapSkills", plan.gap_skills || []);
+
   const focus = plan.focus || [];
   document.getElementById("coachFocus").innerHTML = focus.length
-    ? focus.map((row) => `<li><span>${escapeHtml(row.title || row.name || "")}</span><strong>${escapeHtml(row.why || "")}</strong></li>`).join("")
+    ? focus.map((row) => `<li>
+        <div>
+          <span class="coach-title">${escapeHtml(row.title || row.name || "")}</span>
+          <span class="coach-sub">${escapeHtml(row.why || "")}</span>
+        </div>
+        <strong>focus</strong>
+      </li>`).join("")
     : "<li class='muted'>No data yet.</li>";
+
   const steps = plan.steps || [];
   document.getElementById("coachSteps").innerHTML = steps.length
-    ? steps.map((step) => `<li><span>${escapeHtml(step.title || step.text || "")}</span><strong>${escapeHtml(step.deadline || step.eta || "")}</strong></li>`).join("")
+    ? steps.map((step) => `<li>
+        <span class="coach-title">${escapeHtml(step.title || step.text || "")}</span>
+        <strong>${escapeHtml(step.deadline || step.eta || "")}</strong>
+      </li>`).join("")
     : "<li class='muted'>No data yet.</li>";
+
+  const certs = plan.certifications || [];
+  const certsNode = document.getElementById("coachCerts");
+  if (certsNode) {
+    certsNode.innerHTML = certs.length
+      ? certs.map((cert) => `<li>
+          <div>
+            <span class="coach-title">${cert.url ? `<a href="${escapeHtml(cert.url)}" target="_blank" rel="noreferrer">${escapeHtml(cert.name)}</a>` : escapeHtml(cert.name)}</span>
+            <span class="coach-sub">Closes <em>${escapeHtml(cert.because || "")}</em> gap. ${escapeHtml(cert.free_path || "")}</span>
+          </div>
+          <strong>${escapeHtml(cert.duration || "")}</strong>
+        </li>`).join("")
+      : "<li class='muted'>Strong skill match — no obvious certs to chase.</li>";
+  }
+
+  const projects = plan.projects || [];
+  const projectsNode = document.getElementById("coachProjects");
+  if (projectsNode) {
+    projectsNode.innerHTML = projects.length
+      ? projects.map((p) => `<li>
+          <div>
+            <span class="coach-title">${escapeHtml(p.title || "")}</span>
+            <span class="coach-sub">${escapeHtml(p.summary || "")} <br>Deliverable: ${escapeHtml(p.deliverable || "")}</span>
+          </div>
+          <strong>${escapeHtml(p.duration || "")}</strong>
+        </li>`).join("")
+      : "<li class='muted'>No project ideas — you already cover the main gaps.</li>";
+  }
+
+  const schedule = plan.schedule || [];
+  const scheduleNode = document.getElementById("coachSchedule");
+  if (scheduleNode) {
+    scheduleNode.innerHTML = schedule.length
+      ? schedule.map((row) => `<li>
+          <div>
+            <span class="coach-title">${escapeHtml(row.title || "")}</span>
+            <span class="coach-sub">${escapeHtml(row.deadline || "")}</span>
+          </div>
+          <strong>${escapeHtml(row.week || "")}</strong>
+        </li>`).join("")
+      : "<li class='muted'>Generate a plan to see the schedule.</li>";
+  }
 }
 
 async function loadAutopilot() {
@@ -1295,6 +1554,17 @@ function renderAutopilot(status) {
     $("autopilotErrors").innerHTML = errs.map(escapeHtml).join("<br>");
   } else {
     $("autopilotErrors").innerHTML = "None.";
+  }
+  const brokenNode = document.getElementById("autopilotBrokenSources");
+  if (brokenNode) {
+    const broken = (summary && summary.broken_sources) || status.broken_sources || [];
+    if (!broken.length) {
+      brokenNode.innerHTML = "None recorded.";
+    } else {
+      brokenNode.innerHTML = broken.map((b) =>
+        `<div class="detail-row"><span>${escapeHtml(b.source)}/${escapeHtml(b.slug)}</span><strong>HTTP ${b.status_code || "?"} · until ${escapeHtml((b.broken_until || "").slice(0, 16))}</strong></div>`
+      ).join("");
+    }
   }
 }
 
@@ -1840,11 +2110,57 @@ function bindEvents() {
   const studioTextarea = document.getElementById("studioTextarea");
   if (studioTextarea) studioTextarea.addEventListener("input", () => { studioTextarea.dataset.dirty = "1"; });
 
-  // Studio suggestion apply (delegated)
+  // Studio v2 hooks
+  const studioAssetReloadBtn = document.getElementById("studioAssetReloadBtn");
+  if (studioAssetReloadBtn) studioAssetReloadBtn.addEventListener("click", loadStudioAssets);
+  const studioAssetSaveBtn = document.getElementById("studioAssetSaveBtn");
+  if (studioAssetSaveBtn) studioAssetSaveBtn.addEventListener("click", saveStudioAsset);
+  const studioPhotoUploadBtn = document.getElementById("studioPhotoUploadBtn");
+  if (studioPhotoUploadBtn) studioPhotoUploadBtn.addEventListener("click", uploadStudioPhoto);
+  const studioPhotoRemoveBtn = document.getElementById("studioPhotoRemoveBtn");
+  if (studioPhotoRemoveBtn) studioPhotoRemoveBtn.addEventListener("click", removeStudioPhoto);
+  const studioIconPackApplyBtn = document.getElementById("studioIconPackApplyBtn");
+  if (studioIconPackApplyBtn) studioIconPackApplyBtn.addEventListener("click", applyIconPack);
+  const studioGithubImportBtn = document.getElementById("studioGithubImportBtn");
+  if (studioGithubImportBtn) studioGithubImportBtn.addEventListener("click", importGithubProject);
+  const studioSinglePageBtn = document.getElementById("studioSinglePageBtn");
+  if (studioSinglePageBtn) studioSinglePageBtn.addEventListener("click", checkSinglePage);
+
+  // Studio suggestion apply / reset / dismiss (delegated)
   document.body.addEventListener("click", (event) => {
-    const apply = event.target.closest("[data-suggest-apply]");
+    const apply = event.target.closest("[data-suggest-apply-idx]");
     if (apply) {
-      const [before, after] = apply.dataset.suggestApply.split("|||");
+      const idx = Number(apply.dataset.suggestApplyIdx);
+      const suggestion = (state.studioSuggestions || [])[idx];
+      if (!suggestion) return;
+      const editEl = document.querySelector(`[data-suggest-after-edit="${idx}"]`);
+      const after = editEl ? editEl.value : suggestion.after;
+      if (/\[[A-Za-z0-9_\- ]+\]/.test(after)) {
+        if (!window.confirm("Your text still contains placeholders like [X]. Apply anyway?")) return;
+      }
+      studioApplySuggestion(suggestion.before, after);
+      const card = apply.closest("[data-suggest-idx]");
+      if (card) card.style.opacity = "0.55";
+      return;
+    }
+    const reset = event.target.closest("[data-suggest-reset-idx]");
+    if (reset) {
+      const idx = Number(reset.dataset.suggestResetIdx);
+      const suggestion = (state.studioSuggestions || [])[idx];
+      const editEl = document.querySelector(`[data-suggest-after-edit="${idx}"]`);
+      if (suggestion && editEl) editEl.value = suggestion.after;
+      return;
+    }
+    const dismiss = event.target.closest("[data-suggest-dismiss-idx]");
+    if (dismiss) {
+      const card = dismiss.closest("[data-suggest-idx]");
+      if (card) card.remove();
+      return;
+    }
+    // Backward-compat: the old data-suggest-apply attribute may still exist.
+    const legacy = event.target.closest("[data-suggest-apply]");
+    if (legacy) {
+      const [before, after] = legacy.dataset.suggestApply.split("|||");
       studioApplySuggestion(before, after);
     }
   });
@@ -1852,6 +2168,63 @@ function bindEvents() {
   // Career Coach
   const coachBtn = document.getElementById("coachRefreshBtn");
   if (coachBtn) coachBtn.addEventListener("click", generateCoachPlan);
+
+  // Maintenance
+  const rescanBtn = document.getElementById("rescanCompaniesBtn");
+  if (rescanBtn) rescanBtn.addEventListener("click", async () => {
+    if (!window.confirm("Re-extract the real employer name from each job's description? Old aggregator-only entries (France Travail etc.) get updated.")) return;
+    setBusy(rescanBtn, true);
+    try {
+      const result = await api("/api/maintenance/rescan-companies", {});
+      toast(`Updated ${result.updated} / ${result.checked} jobs.`);
+      await loadJobs();
+    } catch (error) {
+      toast(`Rescan failed: ${error.message}`);
+    } finally {
+      setBusy(rescanBtn, false);
+    }
+  });
+  const validateSourcesBtn = document.getElementById("validateSourcesBtn");
+  if (validateSourcesBtn) validateSourcesBtn.addEventListener("click", async () => {
+    setBusy(validateSourcesBtn, true);
+    try {
+      const result = await api("/api/maintenance/validate-sources", {});
+      toast(`Validated ${result.total} boards · ${result.healthy} OK · ${result.broken} marked dead.`);
+      await loadAutopilot();
+    } catch (error) {
+      toast(`Validate failed: ${error.message}`);
+    } finally {
+      setBusy(validateSourcesBtn, false);
+    }
+  });
+  const clearBrokenBtn = document.getElementById("clearBrokenBtn");
+  if (clearBrokenBtn) clearBrokenBtn.addEventListener("click", async () => {
+    setBusy(clearBrokenBtn, true);
+    try {
+      const result = await api("/api/maintenance/clear-broken", {});
+      toast(`Cleared ${result.cleared} dead-board entries.`);
+      await loadAutopilot();
+    } catch (error) {
+      toast(`Clear failed: ${error.message}`);
+    } finally {
+      setBusy(clearBrokenBtn, false);
+    }
+  });
+
+  const dedupeBtn = document.getElementById("dedupeJobsBtn");
+  if (dedupeBtn) dedupeBtn.addEventListener("click", async () => {
+    if (!window.confirm("Collapse duplicate jobs using the new fingerprint? Older copies will be deleted; newest copy is kept.")) return;
+    setBusy(dedupeBtn, true);
+    try {
+      const result = await api("/api/maintenance/dedupe", {});
+      toast(`Removed ${result.removed} duplicates (${result.fingerprints_refreshed} fingerprints refreshed).`);
+      await loadJobs();
+    } catch (error) {
+      toast(`Dedupe failed: ${error.message}`);
+    } finally {
+      setBusy(dedupeBtn, false);
+    }
+  });
 
   document.body.addEventListener("click", (event) => {
     const target = event.target.closest("[data-action='packet']");

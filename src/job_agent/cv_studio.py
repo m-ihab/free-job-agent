@@ -4,11 +4,21 @@ The Studio tab lets the user load their ``main.tex``, edit a draft directly in
 the browser, compile it on demand, and pull AI suggestions. All work stays
 local. The user's original ``profiles/main.tex`` is never modified unless they
 explicitly click "Save as main.tex".
+
+This module also supports:
+- listing profile assets (main.tex, photo, .sty, .cls, .pdf, .json),
+- reading / writing them safely (sandboxed to profiles/),
+- replacing the photo with an upload,
+- swapping the contact-icon pack (FontAwesome / academicons / text),
+- importing a GitHub project into the CV's projects section,
+- a single-page guard that trims content if the compiled PDF exceeds 1 page.
 """
 from __future__ import annotations
 
+import base64
+import binascii
+import re
 import shutil
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -308,4 +318,323 @@ __all__ = [
     "compile_preview",
     "suggest_edits",
     "reorder_sections",
+    "list_assets",
+    "read_asset",
+    "write_asset",
+    "replace_photo",
+    "remove_photo",
+    "apply_icon_pack",
+    "import_github_project",
+    "single_page_guard",
 ]
+
+
+# -----------------------------------------------------------------------------
+# Asset management
+# -----------------------------------------------------------------------------
+
+
+_TEXT_ASSET_SUFFIXES = {".tex", ".sty", ".cls", ".bib", ".json", ".md", ".txt"}
+_IMAGE_ASSET_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".pdf"}
+
+
+def _profiles_root(config: AppConfig) -> Path:
+    if not config.profiles_dir:
+        raise ValueError("Profiles directory is not configured.")
+    return Path(config.profiles_dir).resolve()
+
+
+def _safe_asset_path(config: AppConfig, name: str) -> Path:
+    """Return the safe path for ``name`` inside ``profiles/`` or raise."""
+    root = _profiles_root(config)
+    # No directory traversal — strip any leading slashes and ".."
+    cleaned = Path(name).name
+    if not cleaned:
+        raise ValueError("Asset name required.")
+    candidate = (root / cleaned).resolve()
+    if root not in candidate.parents and candidate != root:
+        raise ValueError("Asset must live in profiles/.")
+    return candidate
+
+
+def list_assets(config: AppConfig) -> list[dict[str, Any]]:
+    """Return all asset files in the profiles directory."""
+    try:
+        root = _profiles_root(config)
+    except ValueError:
+        return []
+    items: list[dict[str, Any]] = []
+    for path in sorted(root.iterdir()):
+        if path.is_dir():
+            continue
+        if path.suffix.lower() not in _TEXT_ASSET_SUFFIXES | _IMAGE_ASSET_SUFFIXES:
+            continue
+        items.append({
+            "name": path.name,
+            "kind": "text" if path.suffix.lower() in _TEXT_ASSET_SUFFIXES else "image",
+            "size": path.stat().st_size,
+            "modified": path.stat().st_mtime,
+        })
+    return items
+
+
+def read_asset(config: AppConfig, name: str) -> dict[str, Any]:
+    """Read a text asset's contents (returns base64 for images)."""
+    path = _safe_asset_path(config, name)
+    if not path.exists():
+        return {"ok": False, "reason": "not_found"}
+    kind = "text" if path.suffix.lower() in _TEXT_ASSET_SUFFIXES else "image"
+    if kind == "text":
+        return {"ok": True, "kind": "text", "name": path.name, "text": path.read_text(encoding="utf-8", errors="replace")}
+    return {"ok": True, "kind": "image", "name": path.name, "url": f"/file?path={path}"}
+
+
+def write_asset(config: AppConfig, name: str, text: str) -> dict[str, Any]:
+    """Overwrite a text asset under profiles/. Keeps a .bak of the previous content."""
+    path = _safe_asset_path(config, name)
+    if path.suffix.lower() not in _TEXT_ASSET_SUFFIXES:
+        return {"ok": False, "reason": "binary_asset"}
+    if path.exists():
+        try:
+            shutil.copyfile(path, path.with_suffix(path.suffix + ".bak"))
+        except Exception:
+            pass
+    path.write_text(text or "", encoding="utf-8")
+    return {"ok": True, "name": path.name, "size": path.stat().st_size}
+
+
+def replace_photo(config: AppConfig, name: str, base64_data: str) -> dict[str, Any]:
+    """Replace (or create) a CV photo from a base64-encoded data URL."""
+    try:
+        root = _profiles_root(config)
+    except ValueError as exc:
+        return {"ok": False, "reason": str(exc)}
+    # Strip "data:image/jpeg;base64,..." prefix if present.
+    payload = base64_data or ""
+    if "," in payload[:80]:
+        payload = payload.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError):
+        return {"ok": False, "reason": "invalid_base64"}
+    safe_name = Path(name or "me.jpg").name
+    if Path(safe_name).suffix.lower() not in {".jpg", ".jpeg", ".png"}:
+        safe_name = "me.jpg"
+    target = root / safe_name
+    if target.exists():
+        try:
+            shutil.copyfile(target, target.with_suffix(target.suffix + ".bak"))
+        except Exception:
+            pass
+    target.write_bytes(raw)
+    return {"ok": True, "name": safe_name, "bytes": len(raw)}
+
+
+def remove_photo(config: AppConfig, name: str = "me.jpg") -> dict[str, Any]:
+    """Comment out the ``\\photo{...}`` line in main.tex and delete the photo file."""
+    try:
+        root = _profiles_root(config)
+    except ValueError as exc:
+        return {"ok": False, "reason": str(exc)}
+    main = root / "main.tex"
+    if main.exists():
+        text = main.read_text(encoding="utf-8")
+        new_text = re.sub(r"^(\\photo\[[^\]]*\])?\{[^}]+\}", lambda m: "% " + m.group(0), text, count=1, flags=re.MULTILINE)
+        if new_text != text:
+            main.with_suffix(".tex.bak").write_text(text, encoding="utf-8")
+            main.write_text(new_text, encoding="utf-8")
+    safe_name = Path(name or "me.jpg").name
+    photo = root / safe_name
+    if photo.exists():
+        try:
+            shutil.copyfile(photo, photo.with_suffix(photo.suffix + ".bak"))
+            photo.unlink()
+        except Exception:
+            pass
+    return {"ok": True}
+
+
+# -----------------------------------------------------------------------------
+# Icon pack picker
+# -----------------------------------------------------------------------------
+
+
+ICON_PACKS = {
+    "moderncv": {
+        "label": "moderncv default (text)",
+        "phone": r"\phone[mobile]{",
+        "email": r"\email{",
+        "linkedin": r"\social[linkedin]{",
+        "github": r"\social[github]{",
+        "snippet": "% moderncv default contact lines (text labels).",
+    },
+    "fontawesome": {
+        "label": "FontAwesome 5 (icons)",
+        "snippet": (
+            "% Replaces text contact labels with FontAwesome icons.\n"
+            "\\usepackage{fontawesome5}\n"
+        ),
+        # Drop-in renames keep the moderncv layout intact.
+        "phone": r"\renewcommand*\phonesymbol{\faIcon{mobile-alt}~}",
+        "email": r"\renewcommand*\emailsymbol{\faIcon{envelope}~}",
+        "linkedin": r"\renewcommand*\linkedinsocialsymbol{\faIcon{linkedin}~}",
+        "github": r"\renewcommand*\githubsocialsymbol{\faIcon{github}~}",
+    },
+    "academicons": {
+        "label": "Academicons (research icons)",
+        "snippet": (
+            "% Adds ORCID/Google Scholar-style icons. Requires academicons.sty.\n"
+            "\\usepackage{academicons}\n"
+        ),
+        "phone": r"% phone icon kept as moderncv default",
+        "email": r"% email icon kept as moderncv default",
+        "linkedin": r"% linkedin icon kept as moderncv default",
+        "github": r"% github icon kept as moderncv default",
+    },
+}
+
+
+def apply_icon_pack(config: AppConfig, pack: str) -> dict[str, Any]:
+    """Inject the chosen icon pack's renewcommand directives into main.tex."""
+    try:
+        root = _profiles_root(config)
+    except ValueError as exc:
+        return {"ok": False, "reason": str(exc)}
+    main = root / "main.tex"
+    if not main.exists():
+        return {"ok": False, "reason": "no_main_tex"}
+    pack_data = ICON_PACKS.get(pack)
+    if not pack_data:
+        return {"ok": False, "reason": "unknown_pack"}
+    text = main.read_text(encoding="utf-8")
+    # Strip prior CV-Studio-managed icon block.
+    text = re.sub(
+        r"% --- BEGIN CV-STUDIO ICON PACK ---.*?% --- END CV-STUDIO ICON PACK ---\n?",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    block_lines = ["% --- BEGIN CV-STUDIO ICON PACK ---", pack_data["snippet"].rstrip()]
+    if pack == "fontawesome":
+        block_lines.extend([pack_data["phone"], pack_data["email"], pack_data["linkedin"], pack_data["github"]])
+    elif pack == "academicons":
+        # Academicons doesn't redefine moderncv hooks; we keep them but add the package.
+        pass
+    block_lines.append("% --- END CV-STUDIO ICON PACK ---")
+    block = "\n".join(block_lines) + "\n"
+
+    # Insert before \begin{document}. If not found, append after the last
+    # \usepackage line.
+    if r"\begin{document}" in text:
+        text = text.replace(r"\begin{document}", block + r"\begin{document}", 1)
+    else:
+        text += "\n" + block
+    main.with_suffix(".tex.bak").write_text(main.read_text(encoding="utf-8"), encoding="utf-8")
+    main.write_text(text, encoding="utf-8")
+    return {"ok": True, "pack": pack, "label": pack_data["label"]}
+
+
+# -----------------------------------------------------------------------------
+# GitHub project import
+# -----------------------------------------------------------------------------
+
+
+def import_github_project(config: AppConfig, project_name: str) -> dict[str, Any]:
+    """Inject one of the enriched GitHub projects into the CV's ``\\projone``."""
+    try:
+        root = _profiles_root(config)
+    except ValueError as exc:
+        return {"ok": False, "reason": str(exc)}
+    import json
+    master_cv_path = root / "master_cv.json"
+    if not master_cv_path.exists():
+        return {"ok": False, "reason": "no_master_cv"}
+    try:
+        master = json.loads(master_cv_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"ok": False, "reason": f"bad_json: {exc}"}
+    project_lookup = {p.get("name", "").casefold(): p for p in master.get("projects", []) if isinstance(p, dict)}
+    project = project_lookup.get((project_name or "").casefold())
+    if not project:
+        return {"ok": False, "reason": "project_not_found"}
+    main_tex = root / "main.tex"
+    if not main_tex.exists():
+        return {"ok": False, "reason": "no_main_tex"}
+    # We don't rewrite main.tex content here — the LaTeX renderer already
+    # picks the top 3 ranked projects per job. Instead we ensure the project
+    # is at the *top* of master_cv.json so the renderer prefers it.
+    others = [p for p in master.get("projects", []) if p is not project]
+    master["projects"] = [project] + others
+    master_cv_path.write_text(json.dumps(master, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"ok": True, "promoted": project.get("name")}
+
+
+# -----------------------------------------------------------------------------
+# Single-page guard
+# -----------------------------------------------------------------------------
+
+
+def _count_pdf_pages(pdf_path: Path) -> int | None:
+    """Cheap PDF page count: read the ``/Type /Page`` markers from the bytes.
+
+    This avoids a hard dependency on pypdf. Good enough for moderncv output
+    where the page tree is uncompressed.
+    """
+    try:
+        data = pdf_path.read_bytes()
+    except Exception:
+        return None
+    # Count /Type /Page (not /Pages) occurrences.
+    return data.count(b"/Type /Page") - data.count(b"/Type /Pages")
+
+
+def single_page_guard(config: AppConfig, text: str | None = None) -> dict[str, Any]:
+    """Compile a draft and report whether it fits on one page.
+
+    When it doesn't, we return a list of conservative trim suggestions the
+    user can apply with one click (the actual trimming stays manual).
+    """
+    result = compile_preview(config, text)
+    if not result.get("ok"):
+        return {"ok": False, "reason": result.get("reason", "compile_failed"), "log": result.get("log", "")}
+    pdf_path = Path(result["pdf_path"])
+    page_count = _count_pdf_pages(pdf_path)
+    if page_count is None:
+        return {"ok": True, "page_count": None, "single_page": None, "trims": []}
+    if page_count <= 1:
+        return {"ok": True, "page_count": page_count, "single_page": True, "trims": []}
+    # Build deterministic trim suggestions: tighten skills, drop oldest bullet,
+    # trim summary to two sentences, drop second project.
+    trims = [
+        {
+            "title": "Tighten summary to two sentences",
+            "where": "\\newcommand{\\mysummary}{",
+            "note": "Pick the two strongest sentences and delete the rest.",
+        },
+        {
+            "title": "Drop the oldest job's least-relevant bullet",
+            "where": "\\expthree",
+            "note": "Keep technologies-line; remove one earlier bullet.",
+        },
+        {
+            "title": "Limit Projects to your top one",
+            "where": "\\projone",
+            "note": "Keep the single most relevant project; remove the others.",
+        },
+        {
+            "title": "Switch geometry margins to 0.85cm",
+            "where": "\\usepackage{geometry}",
+            "note": "Add \\usepackage[margin=0.85cm]{geometry} for an extra ~5 lines.",
+        },
+        {
+            "title": "Switch font size to 10pt",
+            "where": "\\documentclass[",
+            "note": "Change 11pt to 10pt in the documentclass options.",
+        },
+    ]
+    return {
+        "ok": True,
+        "page_count": page_count,
+        "single_page": False,
+        "trims": trims,
+    }
