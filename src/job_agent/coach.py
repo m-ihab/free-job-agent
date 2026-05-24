@@ -601,4 +601,99 @@ def build_coach_plan(config: AppConfig) -> dict[str, Any]:
         else:
             plan["headline"] = "Keep applying — the data shows you're already tracking strong matches."
     plan["schedule"] = _weekly_schedule(plan["steps"])
+    plan["interview_prep"] = _interview_prep(profile, master_cv, gaps)
     return plan
+
+
+# ---------------------------------------------------------------------------
+# Interview prep — likely questions + STAR scaffolds for the user's top role.
+# ---------------------------------------------------------------------------
+
+
+_INTERVIEW_QUESTION_BANK = {
+    "data_science": [
+        "Walk me through a project where you applied a statistical or ML model end-to-end.",
+        "How would you detect concept drift in production?",
+        "Pick a deep-learning project of yours: what was the validation strategy and what went wrong first?",
+        "Explain bias-variance trade-off using one of your past models.",
+        "How do you handle class imbalance? What did you actually try last time?",
+        "Explain a time you had to compromise model accuracy for latency or interpretability.",
+    ],
+    "machine_learning": [
+        "Describe an MLOps pipeline you would build for one of your projects.",
+        "How do you decide between a baseline model, a tree ensemble, and deep learning?",
+        "Walk me through hyper-parameter tuning on your most demanding project.",
+        "How do you monitor a deployed model? What metrics matter and why?",
+        "Describe an end-to-end retraining cadence for a time-series forecaster.",
+    ],
+    "data_engineering": [
+        "Sketch a daily pipeline from a public API to an analytical dashboard.",
+        "Where would you draw the line between Pandas and Spark on a 50 GB dataset?",
+        "Describe ETL versus ELT — which fits your last project and why?",
+        "What's your data-quality strategy for upstream data you don't own?",
+        "Walk me through an incident in a pipeline you owned: detection, mitigation, fix.",
+    ],
+    "data_analyst": [
+        "Take a metric you reported and explain why a stakeholder should trust it.",
+        "Walk me through an A/B test you ran: hypothesis, design, post-analysis.",
+        "Show me a dashboard you'd build for a finance team and the questions it answers.",
+        "How do you handle conflicting numbers from two business owners?",
+    ],
+}
+
+
+def _star_scaffold(experience_items: list, projects: list, query: str) -> list[dict[str, str]]:
+    """Pre-fill STAR scaffolds anchored on the candidate's real artifacts."""
+    scaffolds: list[dict[str, str]] = []
+    for item in experience_items[:3]:
+        title = getattr(item, "title", "") or ""
+        company = getattr(item, "company", "") or ""
+        scaffolds.append({
+            "label": f"From experience: {title} at {company}",
+            "situation": f"Context: my role as {title} at {company}.",
+            "task": "Task: what business problem or technical goal did you own?",
+            "action": "Action: which 2-3 concrete steps did you take?",
+            "result": "Result: how did it land (qualitative is fine if you don't track metrics)?",
+        })
+    for project in projects[:2]:
+        name = getattr(project, "name", "") or ""
+        scaffolds.append({
+            "label": f"From project: {name}",
+            "situation": f"Why you started {name}: motivation + stakeholders.",
+            "task": "Specific technical challenge you tackled in that project.",
+            "action": "Modelling/engineering decisions you made — pros and cons of each.",
+            "result": "What you learned, what you'd do differently.",
+        })
+    return scaffolds
+
+
+def _interview_prep(profile, master_cv, gaps: list[dict]) -> dict[str, Any]:
+    """Return likely interview questions + STAR scaffolds for the user.
+
+    Heuristic role pick: choose the role family the user most often targets
+    based on the candidate target_roles. Fall back to data_science.
+    """
+    target_text = " ".join((getattr(profile, "target_roles", None) or []) + [profile.summary or ""]).casefold()
+    role = "data_science"
+    if "data engineer" in target_text or "data engineering" in target_text:
+        role = "data_engineering"
+    elif "ml" in target_text or "machine learning" in target_text:
+        role = "machine_learning"
+    elif "analyst" in target_text or "analytics" in target_text:
+        role = "data_analyst"
+    questions = list(_INTERVIEW_QUESTION_BANK.get(role, _INTERVIEW_QUESTION_BANK["data_science"]))
+    # Mix in gap-driven questions so the user practices what they're weakest on.
+    for gap in gaps[:3]:
+        questions.append(f"How would you ramp up on {gap['name']} in 30 days for a Paris-based team?")
+    # Behavioural / fit questions French employers ask.
+    questions.extend([
+        "Why this team specifically — not a general 'data science' answer?",
+        "Describe a time you disagreed with a manager / professor. What did you do?",
+        "Decrivez vous brièvement en français.",
+    ])
+    scaffolds = _star_scaffold(master_cv.experience or [], master_cv.projects or [], target_text)
+    return {
+        "primary_role": role,
+        "questions": questions[:10],
+        "star_scaffolds": scaffolds,
+    }

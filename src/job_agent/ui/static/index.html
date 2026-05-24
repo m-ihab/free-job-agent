@@ -487,11 +487,47 @@ data engineer</textarea>
             Font
             <select id="portfolioFont"></select>
           </label>
+          <label>
+            Hero layout
+            <select id="portfolioLayout"></select>
+          </label>
+          <label>
+            Accent (custom)
+            <input id="portfolioAccent" type="color" value="#2563eb" />
+          </label>
+          <label class="check-row"><input id="portfolioDarkToggle" type="checkbox" checked /> Visitor dark toggle</label>
+          <label class="check-row"><input id="portfolioAnimations" type="checkbox" checked /> Scroll animations</label>
+        </div>
+        <div class="portfolio-command">
+          <label style="flex:2">
+            Tagline (above name)
+            <input id="portfolioTagline" placeholder="Building data-driven systems…" />
+          </label>
+          <button id="portfolioAiTaglineBtn" class="primary-soft" title="Ask Ollama for a tagline">AI tagline</button>
+          <label>
+            Site URL (for SEO)
+            <input id="portfolioSiteUrl" placeholder="https://your-name.github.io/" />
+          </label>
+        </div>
+        <div class="portfolio-command" id="portfolioSections">
+          <span class="muted">Optional sections:</span>
+        </div>
+        <div class="portfolio-command">
           <button id="portfolioSuggestBtn">AI design ideas</button>
           <button id="portfolioSaveBtn" class="primary-soft">Save edits</button>
+          <button id="portfolioGithubLoadBtn">Load my GitHub repos</button>
           <span id="portfolioPath" class="muted"></span>
         </div>
         <div class="notice hidden" id="portfolioNotice"></div>
+        <div id="portfolioGithubPanel" class="panel hidden" style="margin-bottom:0.75rem">
+          <h3 style="margin:0 0 0.4rem">Pick GitHub projects to promote</h3>
+          <p class="muted" style="margin:0 0 0.5rem">Tick the repos you want highlighted. They're added to the top of <code>master_cv.json</code>.</p>
+          <div id="portfolioGithubRepos" class="muted">No repos loaded yet.</div>
+          <div class="action-row" style="margin-top:0.5rem">
+            <button id="portfolioGithubImportBtn" class="primary-soft">Add selected to portfolio</button>
+            <button id="portfolioGithubCloseBtn">Close</button>
+          </div>
+        </div>
 
         <div class="portfolio-grid">
           <section class="panel portfolio-preview-panel">
@@ -576,6 +612,21 @@ data engineer</textarea>
           <ol id="coachSchedule" class="coach-list"></ol>
         </section>
 
+        <section class="panel">
+          <h3>Interview prep</h3>
+          <p class="muted" style="margin-bottom:0.6rem">Likely questions for your top role family + STAR scaffolds anchored on your real experience. Use these in a mirror or with a friend.</p>
+          <div class="split">
+            <div>
+              <h4 style="margin-top:0">Questions to rehearse</h4>
+              <ol id="coachQuestions" class="coach-list"><li class="muted">Generate a plan to see questions.</li></ol>
+            </div>
+            <div>
+              <h4 style="margin-top:0">STAR scaffolds</h4>
+              <ol id="coachStarScaffolds" class="coach-list"><li class="muted">Generate a plan to see scaffolds.</li></ol>
+            </div>
+          </div>
+        </section>
+
         <div class="notice hidden" id="coachNotice"></div>
       </section>
 
@@ -622,6 +673,11 @@ data engineer</textarea>
             <div class="chart-wrap"><canvas id="scoreChart"></canvas></div>
           </section>
         </div>
+        <section class="panel">
+          <h3>Pipeline flow</h3>
+          <p class="muted" style="margin-bottom:0.6rem">Tracked → Scored → Packet → Submitted → Interview → Offer. Hover a bar for conversion ratios.</p>
+          <div class="chart-wrap" style="height:260px"><canvas id="pipelineChart"></canvas></div>
+        </section>
       </section>
 
       <section id="tab-add" class="tab-panel">

@@ -1466,3 +1466,6 @@ html[data-theme="dark"] .coach-list li {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- Global utility: hide any element with .hidden ---- */
+.hidden { display: none !important; }
