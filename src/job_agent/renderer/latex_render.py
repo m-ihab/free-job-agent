@@ -218,36 +218,46 @@ _LOCATION_TOKENS_RE = re.compile(
 )
 
 
-_PRIMARY_ROLE_PATTERNS: list[re.Pattern] = [
-    # High-priority data/AI patterns first. The order matters: when a title
-    # like "Ingénieur ML et Data scientist" mentions both, we want
-    # "Data Scientist" to win, not "Ingénieur ML".
-    re.compile(r"\bdata\s+scientist\b", re.IGNORECASE),
-    re.compile(r"\bdata\s+science\b", re.IGNORECASE),
-    re.compile(r"\bdata\s+engineer(ing)?\b", re.IGNORECASE),
-    re.compile(r"\bdata\s+analyst\b", re.IGNORECASE),
-    re.compile(r"\bdata\s+analytics?\b", re.IGNORECASE),
-    re.compile(r"\bdata\s+architect\b", re.IGNORECASE),
-    re.compile(r"\bml\s+engineer\b", re.IGNORECASE),
-    re.compile(r"\bmlops\b", re.IGNORECASE),
-    re.compile(r"\bai\s+engineer\b", re.IGNORECASE),
-    re.compile(r"\bai\s+researcher\b", re.IGNORECASE),
-    re.compile(r"\bia\s+engineer\b", re.IGNORECASE),
-    re.compile(r"\bmachine\s+learning\b", re.IGNORECASE),
-    re.compile(r"\bdeep\s+learning\b", re.IGNORECASE),
-    re.compile(r"\banalytics\s+engineer\b", re.IGNORECASE),
-    re.compile(r"\bbusiness\s+intelligence\b", re.IGNORECASE),
-    re.compile(r"\bdata\s+intelligence\b", re.IGNORECASE),
-    re.compile(r"\banalyste\s+(?:data|donn[ée]es)\b", re.IGNORECASE),
-    # Mid-priority software roles.
-    re.compile(r"\bsoftware\s+engineer\b", re.IGNORECASE),
-    re.compile(r"\bbackend\s+engineer\b", re.IGNORECASE),
-    re.compile(r"\bfullstack\s+engineer\b", re.IGNORECASE),
-    re.compile(r"\bfrontend\s+engineer\b", re.IGNORECASE),
-    re.compile(r"\bcloud\s+engineer\b", re.IGNORECASE),
-    re.compile(r"\bdevops\b", re.IGNORECASE),
-    # Lower-priority French generic engineer roles.
-    re.compile(r"\bingénieur\s+(?:logiciel|données|data|ml|ia)\b", re.IGNORECASE),
+_PRIMARY_ROLE_PATTERNS: list[tuple[re.Pattern, str]] = [
+    # (pattern, canonical label) — first match wins. Order matters so that
+    # "Ingénieur ML et Data scientist" cleans to "Data Scientist", not
+    # "Ingénieur ML". French titles are mapped to readable English labels.
+    (re.compile(r"\bdata\s+scientist\b", re.IGNORECASE), "Data Scientist"),
+    (re.compile(r"\bdata\s+science\b", re.IGNORECASE), "Data Science"),
+    (re.compile(r"\bdata\s+engineering\b", re.IGNORECASE), "Data Engineering"),
+    (re.compile(r"\bdata\s+engineer\b", re.IGNORECASE), "Data Engineer"),
+    (re.compile(r"\bdata\s+analyst\b", re.IGNORECASE), "Data Analyst"),
+    (re.compile(r"\bdata\s+analytics?\b", re.IGNORECASE), "Data Analytics"),
+    (re.compile(r"\bdata\s+architect\b", re.IGNORECASE), "Data Architect"),
+    (re.compile(r"\bml\s+engineer\b", re.IGNORECASE), "Machine Learning Engineer"),
+    (re.compile(r"\bmlops\b", re.IGNORECASE), "MLOps Engineer"),
+    (re.compile(r"\bai\s+engineer\b", re.IGNORECASE), "AI Engineer"),
+    (re.compile(r"\bai\s+researcher\b", re.IGNORECASE), "AI Researcher"),
+    (re.compile(r"\bia\s+engineer\b", re.IGNORECASE), "AI Engineer"),
+    (re.compile(r"\bmachine\s+learning\b", re.IGNORECASE), "Machine Learning"),
+    (re.compile(r"\bdeep\s+learning\b", re.IGNORECASE), "Deep Learning"),
+    (re.compile(r"\banalytics\s+engineer\b", re.IGNORECASE), "Analytics Engineer"),
+    (re.compile(r"\bbusiness\s+intelligence\b", re.IGNORECASE), "Business Intelligence"),
+    (re.compile(r"\bdata\s+intelligence\b", re.IGNORECASE), "Data Intelligence"),
+    (re.compile(r"\banalyste\s+(?:data|donn[ée]es)\b", re.IGNORECASE), "Data Analyst"),
+    # French generic engineer phrases — map onto crisp English equivalents so
+    # the CV reads "Seeking a Data Engineering alternance" instead of
+    # "Seeking a Ingénieur en science des données alternance".
+    (re.compile(r"\bingénieur\s+en\s+science\s+des\s+donn[ée]es\b", re.IGNORECASE), "Data Engineering"),
+    (re.compile(r"\bingénieur\s+(?:données|data)\b", re.IGNORECASE), "Data Engineering"),
+    (re.compile(r"\bingénieur\s+ml\b", re.IGNORECASE), "Machine Learning Engineer"),
+    (re.compile(r"\bingénieur\s+(?:ia|ai)\b", re.IGNORECASE), "AI Engineer"),
+    (re.compile(r"\bingénieur\s+logiciel\b", re.IGNORECASE), "Software Engineer"),
+    (re.compile(r"\bscience\s+des\s+donn[ée]es\b", re.IGNORECASE), "Data Science"),
+    (re.compile(r"\bd[ée]veloppeur\s+(?:fullstack|full[- ]stack)\b", re.IGNORECASE), "Full-Stack Developer"),
+    (re.compile(r"\bd[ée]veloppeur\s+backend\b", re.IGNORECASE), "Backend Developer"),
+    # Mid-priority English software roles.
+    (re.compile(r"\bsoftware\s+engineer\b", re.IGNORECASE), "Software Engineer"),
+    (re.compile(r"\bbackend\s+engineer\b", re.IGNORECASE), "Backend Engineer"),
+    (re.compile(r"\bfullstack\s+engineer\b", re.IGNORECASE), "Full-Stack Engineer"),
+    (re.compile(r"\bfrontend\s+engineer\b", re.IGNORECASE), "Frontend Engineer"),
+    (re.compile(r"\bcloud\s+engineer\b", re.IGNORECASE), "Cloud Engineer"),
+    (re.compile(r"\bdevops\b", re.IGNORECASE), "DevOps Engineer"),
 ]
 
 
@@ -260,10 +270,9 @@ def _clean_role_phrase(role: str, *, max_words: int = 5) -> str:
     """
     if not role:
         return ""
-    for pattern in _PRIMARY_ROLE_PATTERNS:
-        match = pattern.search(role)
-        if match:
-            return re.sub(r"\s+", " ", match.group(0)).strip().title()
+    for pattern, label in _PRIMARY_ROLE_PATTERNS:
+        if pattern.search(role):
+            return label
     value = role
     value = re.sub(r"\(H/F\)|\(F/H\)|\(H/F/X\)|\(M/F\)|\(M/W/D\)|H/F|F/H", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\([^)]*\)", "", value)
@@ -299,7 +308,13 @@ def _contract_aware_tail(job: JobListing, focus: list[str], french: bool) -> str
     - other    EN: "Applying for the {role} role at {company}"
                FR: "Candidature pour le poste de {role} chez {company}"
     """
-    company = (job.company or "").strip()
+    # Resolve the real employer name when the listing was published via an
+    # aggregator (France Travail etc.). Falls back to the source company.
+    try:
+        from job_agent.generator.company_extract import resolve_company_for_letter
+        company = resolve_company_for_letter(job).strip()
+    except Exception:
+        company = (job.company or "").strip()
     role = _clean_role_phrase(job.title or "")
     contract = _detect_contract_family(job)
     # If the cleanup left something that doesn't look like a real role (extra
@@ -312,7 +327,7 @@ def _contract_aware_tail(job: JobListing, focus: list[str], french: bool) -> str
         role = "Data Science / AI" if not french else "Data Science / IA"
 
     company_suffix = ""
-    if company and company.lower() not in {"france travail", "pole emploi", "pôle emploi", "[to be parsed]", ""}:
+    if company and company.lower() not in {"france travail", "pole emploi", "pôle emploi", "[to be parsed]", "the hiring team", ""}:
         company_suffix = f" at {company}" if not french else f" chez {company}"
 
     if contract == "stage":
@@ -505,6 +520,14 @@ def render_moderncv_template(
     source = template_path.read_text(encoding="utf-8")
     header_comment = "% Tailored by free-job-agent for " + _inline_latex(f"{job.title} at {job.company}") + "\n"
     source = header_comment + source
+    # Widen hint column so labels like "Cloud/Platforms", "Programming",
+    # "BI/Tools" don't overlap with the skill text. We only adjust if the
+    # master is at the moderncv default (2.3cm) — bespoke values are kept.
+    source = re.sub(
+        r"\\setlength\{\\hintscolumnwidth\}\{2\.3cm\}",
+        r"\\setlength{\\hintscolumnwidth}{2.85cm}",
+        source,
+    )
 
     contact = master_cv.contact
     names = contact.name.split()
@@ -542,16 +565,26 @@ def render_moderncv_template(
         if _has_command(source, command_name):
             source = _replace_newcommand_body(source, command_name, _experience_body(experience, job))
 
-    # Projects: pick most-relevant projects from master_cv if available.
+    # Projects: rank ALL projects, then fill projone/projtwo/projthree if the
+    # template defines them. If the template only has projone (the common
+    # case for the bundled main.tex), pack the top 3 projects into projone
+    # so the user doesn't lose project visibility on a one-page CV.
     if master_cv.projects:
         ranked_projects = sorted(
             master_cv.projects,
             key=lambda project: _keyword_score(project.description + " " + " ".join(project.technologies) + " " + project.name, job),
             reverse=True,
         )
-        for command_name, project in zip(["projone", "projtwo", "projthree"], ranked_projects):
-            if _has_command(source, command_name):
-                source = _replace_newcommand_body(source, command_name, _project_body(project, job))
+        defined_slots = [name for name in ("projone", "projtwo", "projthree") if _has_command(source, name)]
+        if defined_slots:
+            if len(defined_slots) == 1:
+                # Single slot: render top 3 projects stacked inside it.
+                blocks = [_project_body(project, job) for project in ranked_projects[:3]]
+                source = _replace_newcommand_body(source, defined_slots[0], "\n".join(blocks))
+            else:
+                # Multiple slots: one per slot.
+                for command_name, project in zip(defined_slots, ranked_projects):
+                    source = _replace_newcommand_body(source, command_name, _project_body(project, job))
 
     return source
 

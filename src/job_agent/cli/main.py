@@ -1223,11 +1223,11 @@ class LocalCLIApp:
         li_p.add_argument("--file", default="", help="Optional path to a text file with one skill per line.")
         li_p.set_defaults(handler=_handle_enrich_linkedin)
 
-        export_p = sub.add_parser("export", help="Export tracked internships to the A24 workbook.")
+        export_p = sub.add_parser("export", help="Export tracked internships to a workbook.")
         export_sub = export_p.add_subparsers(dest="export_command")
         export_sub.required = True
         internships_export = export_sub.add_parser("internships", help="Fill the internship tracking workbook with submitted internships.")
-        internships_export.add_argument("--workbook", type=Path, default=None, help="Optional workbook path. Defaults to profiles/Internship Search Tracking File A24.xlsx.")
+        internships_export.add_argument("--workbook", type=Path, default=None, help="Optional workbook path. Defaults to profiles/internship_tracker.xlsx (or your existing private workbook if present).")
         internships_export.add_argument("--sheet", default=None, help="Optional workbook sheet name.")
         internships_export.set_defaults(handler=_handle_export_internships)
 

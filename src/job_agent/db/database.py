@@ -408,3 +408,65 @@ class Database:
                 payload["updated_at"] = row["updated_at"]
                 result[row["kind"]] = payload
         return result
+
+    # ---- Bulk reads used by the dashboard's jobs list to avoid N+1 queries ----
+
+    def bulk_get_enrichments(self, job_ids: list[str]) -> dict[str, dict]:
+        """Return ``{job_id: enrichment_payload}`` for the given jobs."""
+        if not job_ids:
+            return {}
+        placeholders = ",".join("?" * len(job_ids))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT job_id, payload_json, updated_at FROM enrichments WHERE job_id IN ({placeholders})",
+                tuple(job_ids),
+            ).fetchall()
+        result: dict[str, dict] = {}
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"])
+            except Exception:
+                continue
+            if isinstance(payload, dict):
+                payload["updated_at"] = row["updated_at"]
+                result[row["job_id"]] = payload
+        return result
+
+    def bulk_list_ai_cache(self, job_ids: list[str]) -> dict[str, dict[str, dict]]:
+        """Return ``{job_id: {kind: payload}}`` for the given jobs."""
+        if not job_ids:
+            return {}
+        placeholders = ",".join("?" * len(job_ids))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT job_id, kind, payload_json, model, updated_at FROM ai_cache WHERE job_id IN ({placeholders})",
+                tuple(job_ids),
+            ).fetchall()
+        result: dict[str, dict[str, dict]] = {}
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"])
+            except Exception:
+                continue
+            if isinstance(payload, dict):
+                payload["model"] = row["model"]
+                payload["updated_at"] = row["updated_at"]
+                result.setdefault(row["job_id"], {})[row["kind"]] = payload
+        return result
+
+    def bulk_latest_packets(self, job_ids: list[str]) -> dict[str, ApplicationPacket]:
+        """Return the newest packet per job for the given list."""
+        if not job_ids:
+            return {}
+        placeholders = ",".join("?" * len(job_ids))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM packets WHERE job_id IN ({placeholders}) ORDER BY version DESC, created_at DESC",
+                tuple(job_ids),
+            ).fetchall()
+        latest: dict[str, ApplicationPacket] = {}
+        for row in rows:
+            packet = self._row_to_packet(row)
+            if packet.job_id not in latest:
+                latest[packet.job_id] = packet
+        return latest

@@ -23,6 +23,8 @@
       <button class="tab active" data-tab="search">Search</button>
       <button class="tab" data-tab="jobs">Jobs</button>
       <button class="tab" data-tab="autopilot">Autopilot</button>
+      <button class="tab" data-tab="studio">CV Studio</button>
+      <button class="tab" data-tab="coach">Career Coach</button>
       <button class="tab" data-tab="insights">Insights</button>
       <button class="tab" data-tab="add">Add Job</button>
       <button class="tab" data-tab="profile">Profile &amp; API</button>
@@ -306,6 +308,88 @@ data engineer</textarea>
         </div>
       </section>
 
+      <section id="tab-studio" class="tab-panel">
+        <div class="section-header">
+          <div>
+            <h2>CV Studio</h2>
+            <p>Edit your <code>main.tex</code> with a live preview and AI-suggested rewrites — all local.</p>
+          </div>
+          <div class="action-row">
+            <button id="studioReloadBtn" title="Reload from main.tex">Reload from main.tex</button>
+            <button id="studioResetBtn">Discard draft</button>
+            <button class="primary-soft" id="studioPromoteBtn" title="Overwrite profiles/main.tex with this draft (a .bak is kept)">Save as main.tex</button>
+          </div>
+        </div>
+
+        <div class="studio-grid">
+          <section class="panel studio-editor">
+            <div class="studio-toolbar">
+              <button class="primary" id="studioCompileBtn">Compile preview</button>
+              <button id="studioSuggestBtn">AI suggestions</button>
+              <button id="studioSaveBtn" title="Save current text as the working draft">Save draft</button>
+              <span class="muted" id="studioStatus"></span>
+            </div>
+            <textarea id="studioTextarea" spellcheck="false" wrap="off"></textarea>
+            <div class="notice hidden" id="studioNotice"></div>
+          </section>
+          <section class="panel studio-preview">
+            <h3>Live preview</h3>
+            <iframe id="studioPreview" title="CV preview"></iframe>
+            <p class="muted" style="font-size:0.78rem;margin-top:0.5rem">Click Compile preview after edits. PDF stays on your machine.</p>
+          </section>
+        </div>
+
+        <div class="split">
+          <section class="panel">
+            <h3>Sections (drag to reorder)</h3>
+            <ul id="studioSections" class="studio-section-list"></ul>
+            <button id="studioReorderApplyBtn" class="primary-soft" style="margin-top:0.5rem">Apply new order to draft</button>
+          </section>
+          <section class="panel">
+            <h3>AI suggestions</h3>
+            <div id="studioSuggestionList" class="muted">Click "AI suggestions" after Ollama is running to get concrete edits.</div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-coach" class="tab-panel">
+        <div class="section-header">
+          <div>
+            <h2>Career Coach</h2>
+            <p>What to focus on next — built from your tracked jobs, gaps, and AI-driven analysis.</p>
+          </div>
+          <div class="action-row">
+            <button class="primary" id="coachRefreshBtn">Generate plan</button>
+          </div>
+        </div>
+
+        <div class="metric-grid" id="coachMetrics"></div>
+
+        <div class="split">
+          <section class="panel">
+            <h3>Top skills the market wants</h3>
+            <ol id="coachMarketSkills" class="rank-list"></ol>
+          </section>
+          <section class="panel">
+            <h3>Skills you're missing</h3>
+            <ol id="coachGapSkills" class="rank-list"></ol>
+          </section>
+        </div>
+
+        <div class="split">
+          <section class="panel">
+            <h3>Focus areas (this month)</h3>
+            <ol id="coachFocus" class="rank-list"></ol>
+          </section>
+          <section class="panel">
+            <h3>Concrete next steps</h3>
+            <ol id="coachSteps" class="rank-list"></ol>
+          </section>
+        </div>
+
+        <div class="notice hidden" id="coachNotice"></div>
+      </section>
+
       <section id="tab-insights" class="tab-panel">
         <div class="section-header">
           <div>
@@ -416,7 +500,7 @@ data engineer</textarea>
             <hr />
             <label>
               Workbook path
-              <input id="internshipWorkbookPath" value="" placeholder="profiles/Internship Search Tracking File A24.xlsx" />
+              <input id="internshipWorkbookPath" value="" placeholder="profiles/internship_tracker.xlsx (or your private path)" />
             </label>
             <label>
               Sheet name

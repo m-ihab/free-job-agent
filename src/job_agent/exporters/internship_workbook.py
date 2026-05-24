@@ -1,6 +1,7 @@
 """Export applied internship applications to an Excel workbook."""
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from urllib.parse import urlparse
@@ -15,7 +16,17 @@ from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.tracker import ApplicationTracker
 
 
-DEFAULT_WORKBOOK_NAME = "Internship Search Tracking File A24.xlsx"
+# Generic, repo-safe default name. The actual filename used is configurable
+# via JOB_AGENT_INTERNSHIP_WORKBOOK so users can keep their private tracker
+# under any name they like. Legacy custom files in profiles/ are still
+# detected automatically.
+DEFAULT_WORKBOOK_NAME = "internship_tracker.xlsx"
+LEGACY_WORKBOOK_CANDIDATES = (
+    # Names some users had from earlier versions of the project. We still
+    # write to them if they exist so no historical data gets orphaned.
+    "Internship Search Tracking File A24.xlsx",
+    "Internship Tracking.xlsx",
+)
 EXPORT_COLUMNS = [
     "company name",
     "job title",
@@ -36,10 +47,27 @@ def _normalise(text: object) -> str:
 
 
 def _default_workbook_path(config: AppConfig, workbook_path: Path | str | None) -> Path:
+    """Resolve the destination workbook path.
+
+    Precedence:
+    1. Explicit ``workbook_path`` from the caller.
+    2. ``JOB_AGENT_INTERNSHIP_WORKBOOK`` env var.
+    3. A legacy file in ``profiles/`` if one already exists (don't orphan
+       prior user data).
+    4. Generic default ``internship_tracker.xlsx``.
+    """
     if workbook_path is not None:
         return Path(workbook_path).expanduser()
+    env_override = (os.environ.get("JOB_AGENT_INTERNSHIP_WORKBOOK") or "").strip()
+    if env_override:
+        return Path(env_override).expanduser()
     assert config.profiles_dir is not None
-    return Path(config.profiles_dir) / DEFAULT_WORKBOOK_NAME
+    profiles_dir = Path(config.profiles_dir)
+    for legacy in LEGACY_WORKBOOK_CANDIDATES:
+        candidate = profiles_dir / legacy
+        if candidate.exists():
+            return candidate
+    return profiles_dir / DEFAULT_WORKBOOK_NAME
 
 
 def _sheet_and_header_row(worksheet) -> tuple[int, dict[str, int]]:

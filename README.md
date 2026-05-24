@@ -57,7 +57,9 @@ scoring, and packet generation.
   Workable, Personio — all free and credential-free, just point at the
   company slug.
 - **Internship tracking workbook:** exports submitted internship applications
-  into `profiles/Internship Search Tracking File A24.xlsx`.
+  into `profiles/internship_tracker.xlsx` (or any path you set via
+  `JOB_AGENT_INTERNSHIP_WORKBOOK`). The file lives in the gitignored
+  `profiles/` directory so it never leaves your machine.
 - **French board shortcuts:** generates manual search URLs for France Travail,
   Welcome to the Jungle, HelloWork, Apec, Indeed France, LinkedIn France,
   Glassdoor France, Stage.fr, JobTeaser, and La bonne alternance.

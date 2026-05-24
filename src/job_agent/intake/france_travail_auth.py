@@ -8,9 +8,36 @@ import requests
 
 from job_agent.intake.api_cache import read_cached_json, write_cached_json
 
+# FT access tokens expire in ~25 minutes. Keep our cache shorter than that
+# so we never return a token the server has already invalidated.
+_TOKEN_CACHE_TTL_HOURS = 0.30  # ~18 minutes
+
 
 def france_travail_env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
+
+
+def invalidate_france_travail_token_cache() -> None:
+    """Remove any cached France Travail tokens.
+
+    Called after the API returns 401 to force the next call to mint a fresh
+    token instead of replaying the stale one. Failure to clear is non-fatal.
+    """
+    from job_agent.intake.api_cache import cache_dir, cache_key
+
+    token_url = france_travail_env(
+        "FRANCE_TRAVAIL_TOKEN_URL",
+        "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire",
+    )
+    client_id = france_travail_env("FRANCE_TRAVAIL_CLIENT_ID")
+    for scope in _scope_candidates(client_id):
+        params = {"client_id": client_id, "scope": scope, "kind": "oauth_token"}
+        try:
+            path = cache_dir() / cache_key(token_url, params)
+            if path.exists():
+                path.unlink()
+        except Exception:
+            continue
 
 
 def _scope_candidates(client_id: str) -> list[str]:
@@ -42,10 +69,12 @@ def france_travail_token(*, timeout: int, use_cache: bool, cache_ttl_hours: floa
     if not client_id or not client_secret:
         raise ValueError("Missing France Travail OAuth credentials.")
     last_error: Exception | None = None
+    # FT tokens expire fast; clamp the effective cache TTL well below their TTL.
+    effective_ttl = min(cache_ttl_hours, _TOKEN_CACHE_TTL_HOURS)
     for scope in _scope_candidates(client_id):
         cache_params: dict[str, Any] = {"client_id": client_id, "scope": scope, "kind": "oauth_token"}
         if use_cache:
-            cached = read_cached_json(token_url, cache_params, min(cache_ttl_hours, 0.75))
+            cached = read_cached_json(token_url, cache_params, effective_ttl)
             if isinstance(cached, dict) and cached.get("access_token"):
                 return str(cached["access_token"])
         response = requests.post(

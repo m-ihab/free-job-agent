@@ -345,7 +345,7 @@ function jobActions(job) {
   const rejected = job.status === "REJECTED" ? "" : `<button data-action="status" data-status="REJECTED" data-job="${escapeHtml(job.id)}" title="Mark as rejected">Reject</button>`;
   const remove = `<button data-action="delete-job" data-job="${escapeHtml(job.id)}" title="Remove this job from the local tracker">Remove</button>`;
   return `<div class="row-actions">
-    <button data-action="packet" data-job="${escapeHtml(job.id)}" title="Generate tailored CV + cover letter">Optimize</button>
+    <button data-action="packet" data-job="${escapeHtml(job.id)}" title="Generate a tailored CV + cover letter for this job">Tailor CV</button>
     <button data-action="ai-analyze" data-job="${escapeHtml(job.id)}" title="AI fit analysis">AI fit</button>
     <button data-action="ai-chat" data-job="${escapeHtml(job.id)}" title="Chat about this role">Chat</button>
     <button data-action="enrich" data-job="${escapeHtml(job.id)}" title="Enrich with France Travail data">Enrich</button>
@@ -544,7 +544,23 @@ function renderJobs() {
     <thead><tr><th></th><th>Job</th><th>Location</th><th>Status</th><th>Score</th><th>Signals</th><th>Enrich</th><th>Actions</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
-  $("selectionCount").textContent = `${state.selectedJobs.size} selected`;
+  refreshSelectionUi();
+}
+
+function refreshSelectionUi() {
+  const count = state.selectedJobs.size;
+  const label = count === 0 ? "Nothing selected" : `${count} selected`;
+  const node = document.getElementById("selectionCount");
+  if (node) node.textContent = label;
+  const btn = document.getElementById("packetSelectedBtn");
+  if (btn) {
+    btn.textContent = count > 0 ? `Generate ${count} packet${count === 1 ? "" : "s"}` : "Generate packets";
+    btn.disabled = false;
+  }
+  const enrichBtn = document.getElementById("enrichSelectedBtn");
+  if (enrichBtn) {
+    enrichBtn.textContent = count > 0 ? `Enrich ${count} selected` : "Enrich selected";
+  }
 }
 
 async function buildLinks() {
@@ -665,14 +681,19 @@ async function addText() {
 }
 
 async function generatePacket(jobId, button) {
+  const force = $("forcePackets") ? $("forcePackets").checked : false;
   setBusy(button, true);
+  toast("Tailoring CV + cover letter…");
   try {
-    const payload = await api("/api/generate-packet", { job_id: jobId, force: $("forcePackets").checked });
-    toast(`Packet ready: ${payload.packet.id}`);
+    const payload = await api("/api/generate-packet", { job_id: jobId, force });
+    toast(`Packet ready: open the CV / Letter links on this row.`);
     await loadJobs();
     renderState();
+    return payload;
   } catch (error) {
-    toast(error.message);
+    toast(`Packet failed: ${error.message}`);
+    console.error("generate-packet failed", error);
+    throw error;
   } finally {
     setBusy(button, false);
   }
@@ -680,19 +701,30 @@ async function generatePacket(jobId, button) {
 
 async function generatePacketsBatch(jobIds) {
   if (!jobIds.length) {
-    toast("No jobs selected for packet generation.");
+    toast("Tick the checkbox on at least one job, then click Generate packets.");
     return;
   }
+  const button = document.getElementById("packetSelectedBtn");
+  setBusy(button, true);
   let success = 0;
-  for (const jobId of jobIds) {
+  const failures = [];
+  for (let i = 0; i < jobIds.length; i++) {
+    const jobId = jobIds[i];
+    toast(`Building packet ${i + 1}/${jobIds.length}…`);
     try {
-      await api("/api/generate-packet", { job_id: jobId, force: $("forcePackets").checked });
+      await api("/api/generate-packet", { job_id: jobId, force: $("forcePackets") ? $("forcePackets").checked : false });
       success += 1;
     } catch (error) {
+      failures.push(`${jobId.slice(0, 8)}: ${error.message}`);
       console.warn(`Packet generation failed for ${jobId}: ${error.message}`);
     }
   }
-  toast(`Generated ${success}/${jobIds.length} packets.`);
+  setBusy(button, false);
+  if (failures.length) {
+    toast(`Generated ${success}/${jobIds.length}. ${failures.length} failed (see console).`);
+  } else {
+    toast(`Generated ${success}/${jobIds.length} packets.`);
+  }
   await loadJobs();
   renderState();
 }
@@ -982,6 +1014,230 @@ function activateTab(name) {
     loadAutopilot();
     loadAiSetup();
   }
+  if (name === "studio") loadStudio();
+  if (name === "coach" && !state.coachCache) renderCoachShell();
+}
+
+// ===== CV Studio =====
+async function loadStudio() {
+  try {
+    const data = await api("/api/cv-studio");
+    state.studio = data;
+    const textarea = document.getElementById("studioTextarea");
+    if (textarea && !textarea.dataset.dirty) textarea.value = data.text || "";
+    renderStudioSections(data.sections || []);
+    const status = document.getElementById("studioStatus");
+    if (status) {
+      status.textContent = data.origin === "draft" ? "Editing draft (unsaved promotion to main.tex)" : "Loaded main.tex";
+    }
+  } catch (error) {
+    setNotice("studioNotice", error.message, true);
+  }
+}
+
+function renderStudioSections(titles) {
+  const list = document.getElementById("studioSections");
+  if (!list) return;
+  if (!titles.length) {
+    list.innerHTML = "<li class='muted'>No \\section{...} blocks found yet.</li>";
+    return;
+  }
+  list.innerHTML = titles
+    .map((title) => `<li draggable="true" data-section="${escapeHtml(title)}">${escapeHtml(title)}</li>`)
+    .join("");
+  attachSectionDnd(list);
+}
+
+function attachSectionDnd(list) {
+  let dragEl = null;
+  list.querySelectorAll("li").forEach((li) => {
+    li.addEventListener("dragstart", () => { dragEl = li; li.classList.add("dragging"); });
+    li.addEventListener("dragend", () => { if (dragEl) dragEl.classList.remove("dragging"); dragEl = null; list.querySelectorAll("li").forEach((x) => x.classList.remove("drop-target")); });
+    li.addEventListener("dragover", (e) => { e.preventDefault(); list.querySelectorAll("li").forEach((x) => x.classList.remove("drop-target")); li.classList.add("drop-target"); });
+    li.addEventListener("drop", (e) => {
+      e.preventDefault();
+      if (dragEl && dragEl !== li) {
+        const rect = li.getBoundingClientRect();
+        const before = (e.clientY - rect.top) < rect.height / 2;
+        list.insertBefore(dragEl, before ? li : li.nextSibling);
+      }
+    });
+  });
+}
+
+async function studioCompile() {
+  const button = document.getElementById("studioCompileBtn");
+  const textarea = document.getElementById("studioTextarea");
+  setBusy(button, true);
+  setNotice("studioNotice", "");
+  try {
+    const text = textarea ? textarea.value : "";
+    const result = await api("/api/cv-studio/compile", { text });
+    if (!result.ok) {
+      setNotice("studioNotice", `Compile failed: ${(result.log || "").slice(-1200) || result.reason}`, true);
+      return;
+    }
+    const iframe = document.getElementById("studioPreview");
+    if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}`;
+    toast("Preview rebuilt.");
+  } catch (error) {
+    setNotice("studioNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function studioSaveDraft() {
+  const button = document.getElementById("studioSaveBtn");
+  const textarea = document.getElementById("studioTextarea");
+  setBusy(button, true);
+  try {
+    await api("/api/cv-studio/save", { text: textarea ? textarea.value : "" });
+    if (textarea) textarea.dataset.dirty = "";
+    toast("Draft saved locally.");
+    await loadStudio();
+  } catch (error) {
+    setNotice("studioNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function studioReset() {
+  if (!window.confirm("Discard the working draft and reload main.tex?")) return;
+  await api("/api/cv-studio/reset", {});
+  const textarea = document.getElementById("studioTextarea");
+  if (textarea) delete textarea.dataset.dirty;
+  await loadStudio();
+}
+
+async function studioPromote() {
+  if (!window.confirm("Overwrite profiles/main.tex with the current draft? A .bak backup will be kept.")) return;
+  const result = await api("/api/cv-studio/promote", {});
+  if (result.ok) {
+    toast("Promoted draft to main.tex.");
+  } else {
+    setNotice("studioNotice", `Could not promote: ${result.reason}`, true);
+  }
+}
+
+async function studioSuggest() {
+  const button = document.getElementById("studioSuggestBtn");
+  const textarea = document.getElementById("studioTextarea");
+  const target = document.getElementById("studioSuggestionList");
+  setBusy(button, true);
+  if (target) target.innerHTML = "<div class='muted'>Thinking locally…</div>";
+  try {
+    const result = await api("/api/cv-studio/suggest", { text: textarea ? textarea.value : "" });
+    if (!result.available) {
+      if (target) target.innerHTML = "<div class='muted'>Start Ollama (Autopilot tab) to unlock AI suggestions.</div>";
+      return;
+    }
+    const items = result.suggestions || [];
+    if (!items.length) {
+      if (target) target.innerHTML = "<div class='muted'>No suggestions — your CV already looks tight.</div>";
+      return;
+    }
+    if (target) target.innerHTML = items.map((s) => `
+      <div class="studio-suggestion">
+        <div class="suggest-head">
+          <strong>${escapeHtml(s.title)}</strong>
+          <span class="row-tag">${escapeHtml(s.priority || "")} · ${escapeHtml(s.section || "")}</span>
+        </div>
+        <p class="muted" style="margin:0 0 0.3rem">${escapeHtml(s.rationale || "")}</p>
+        ${s.before ? `<code>${escapeHtml(s.before)}</code>` : ""}
+        ${s.after ? `<code style="border-color:var(--accent)">${escapeHtml(s.after)}</code>` : ""}
+        ${s.before && s.after ? `<button data-suggest-apply="${escapeHtml(s.before)}|||${escapeHtml(s.after)}">Apply</button>` : ""}
+      </div>
+    `).join("");
+  } catch (error) {
+    if (target) target.innerHTML = `<div class='notice error'>${escapeHtml(error.message)}</div>`;
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function studioApplySuggestion(before, after) {
+  const textarea = document.getElementById("studioTextarea");
+  if (!textarea || !before) return;
+  if (!textarea.value.includes(before)) {
+    toast("Suggestion's 'before' text isn't an exact match — apply manually.");
+    return;
+  }
+  textarea.value = textarea.value.replace(before, after);
+  textarea.dataset.dirty = "1";
+  toast("Suggestion applied. Click Compile preview to render.");
+}
+
+async function studioApplyReorder() {
+  const list = document.getElementById("studioSections");
+  const textarea = document.getElementById("studioTextarea");
+  if (!list || !textarea) return;
+  const order = Array.from(list.querySelectorAll("li")).map((li) => li.dataset.section).filter(Boolean);
+  if (!order.length) {
+    toast("No reorderable sections.");
+    return;
+  }
+  const result = await api("/api/cv-studio/reorder", { text: textarea.value, order });
+  if (result.ok) {
+    textarea.value = result.text;
+    textarea.dataset.dirty = "1";
+    toast("Reorder applied. Click Compile preview to verify.");
+  }
+}
+
+// ===== Career Coach =====
+function renderCoachShell() {
+  document.getElementById("coachMetrics").innerHTML = [
+    metric("Tracked jobs", "—"),
+    metric("Avg fit", "—"),
+    metric("Top gap", "—"),
+    metric("Next move", "—"),
+  ].join("");
+}
+
+async function generateCoachPlan() {
+  const button = document.getElementById("coachRefreshBtn");
+  setBusy(button, true);
+  setNotice("coachNotice", "");
+  try {
+    const result = await api("/api/coach-plan", {});
+    state.coachCache = result;
+    renderCoachPlan(result);
+  } catch (error) {
+    setNotice("coachNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function renderCoachPlan(plan) {
+  const total = plan.total_tracked ?? 0;
+  document.getElementById("coachMetrics").innerHTML = [
+    metric("Tracked jobs", total),
+    metric("Avg fit", plan.avg_score ?? "—"),
+    metric("Top gap", plan.top_gap || "—"),
+    metric("Next move", plan.headline || "—"),
+  ].join("");
+  const rank = (id, items, valueKey = "count") => {
+    const node = document.getElementById(id);
+    if (!node) return;
+    if (!items || !items.length) {
+      node.innerHTML = "<li class='muted'>No data yet.</li>";
+      return;
+    }
+    node.innerHTML = items.map((row) => `<li><span>${escapeHtml(row.name || row.label || "")}</span><strong>${escapeHtml(String(row[valueKey] ?? row.value ?? ""))}</strong></li>`).join("");
+  };
+  rank("coachMarketSkills", plan.market_skills || []);
+  rank("coachGapSkills", plan.gap_skills || []);
+  const focus = plan.focus || [];
+  document.getElementById("coachFocus").innerHTML = focus.length
+    ? focus.map((row) => `<li><span>${escapeHtml(row.title || row.name || "")}</span><strong>${escapeHtml(row.why || "")}</strong></li>`).join("")
+    : "<li class='muted'>No data yet.</li>";
+  const steps = plan.steps || [];
+  document.getElementById("coachSteps").innerHTML = steps.length
+    ? steps.map((step) => `<li><span>${escapeHtml(step.title || step.text || "")}</span><strong>${escapeHtml(step.deadline || step.eta || "")}</strong></li>`).join("")
+    : "<li class='muted'>No data yet.</li>";
 }
 
 async function loadAutopilot() {
@@ -1404,7 +1660,7 @@ function toggleShortcuts(show) {
 }
 
 function bindKeyboardShortcuts() {
-  const tabOrder = ["search", "jobs", "autopilot", "insights", "add", "profile"];
+  const tabOrder = ["search", "jobs", "autopilot", "studio", "coach", "insights", "add", "profile"];
   document.addEventListener("keydown", (event) => {
     const target = event.target;
     const inEditable = target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
@@ -1562,6 +1818,41 @@ function bindEvents() {
   const themeBtn = document.getElementById("themeToggleBtn");
   if (themeBtn) themeBtn.addEventListener("click", toggleTheme);
 
+  // CV Studio
+  const studioCompileBtn = document.getElementById("studioCompileBtn");
+  if (studioCompileBtn) studioCompileBtn.addEventListener("click", studioCompile);
+  const studioSaveBtn = document.getElementById("studioSaveBtn");
+  if (studioSaveBtn) studioSaveBtn.addEventListener("click", studioSaveDraft);
+  const studioResetBtn = document.getElementById("studioResetBtn");
+  if (studioResetBtn) studioResetBtn.addEventListener("click", studioReset);
+  const studioPromoteBtn = document.getElementById("studioPromoteBtn");
+  if (studioPromoteBtn) studioPromoteBtn.addEventListener("click", studioPromote);
+  const studioSuggestBtn = document.getElementById("studioSuggestBtn");
+  if (studioSuggestBtn) studioSuggestBtn.addEventListener("click", studioSuggest);
+  const studioReloadBtn = document.getElementById("studioReloadBtn");
+  if (studioReloadBtn) studioReloadBtn.addEventListener("click", async () => {
+    const ta = document.getElementById("studioTextarea");
+    if (ta) delete ta.dataset.dirty;
+    await loadStudio();
+  });
+  const studioReorderApplyBtn = document.getElementById("studioReorderApplyBtn");
+  if (studioReorderApplyBtn) studioReorderApplyBtn.addEventListener("click", studioApplyReorder);
+  const studioTextarea = document.getElementById("studioTextarea");
+  if (studioTextarea) studioTextarea.addEventListener("input", () => { studioTextarea.dataset.dirty = "1"; });
+
+  // Studio suggestion apply (delegated)
+  document.body.addEventListener("click", (event) => {
+    const apply = event.target.closest("[data-suggest-apply]");
+    if (apply) {
+      const [before, after] = apply.dataset.suggestApply.split("|||");
+      studioApplySuggestion(before, after);
+    }
+  });
+
+  // Career Coach
+  const coachBtn = document.getElementById("coachRefreshBtn");
+  if (coachBtn) coachBtn.addEventListener("click", generateCoachPlan);
+
   document.body.addEventListener("click", (event) => {
     const target = event.target.closest("[data-action='packet']");
     if (target) {
@@ -1600,7 +1891,7 @@ function bindEvents() {
       const jobId = checkbox.dataset.selectJob;
       if (checkbox.checked) state.selectedJobs.add(jobId);
       else state.selectedJobs.delete(jobId);
-      $("selectionCount").textContent = `${state.selectedJobs.size} selected`;
+      refreshSelectionUi();
       return;
     }
     const row = event.target.closest("[data-job-row]");
@@ -1621,4 +1912,9 @@ loadState()
   .catch((error) => {
     setNotice("searchNotice", error.message, true);
   });
-window.setInterval(loadAiStatus, 60000);
+// Only poll AI status when the tab is visible — saves CPU when minimized.
+function _pollAiIfVisible() {
+  if (document.visibilityState === "visible") loadAiStatus();
+}
+window.setInterval(_pollAiIfVisible, 120000);
+document.addEventListener("visibilitychange", _pollAiIfVisible);

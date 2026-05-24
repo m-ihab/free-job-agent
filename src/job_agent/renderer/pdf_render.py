@@ -13,26 +13,28 @@ from reportlab.lib.enums import TA_LEFT
 
 def _build_styles() -> dict:
     base = getSampleStyleSheet()
+    # Generous leading + spaceAfter so the cover letter title doesn't
+    # collide with its second line, and bullets don't touch the body.
     styles = {
         "h1": ParagraphStyle(
-            "H1", parent=base["Normal"], fontSize=18, fontName="Helvetica-Bold",
-            spaceAfter=8, spaceBefore=4,
+            "H1", parent=base["Normal"], fontSize=17, fontName="Helvetica-Bold",
+            leading=22, spaceAfter=12, spaceBefore=4,
         ),
         "h2": ParagraphStyle(
-            "H2", parent=base["Normal"], fontSize=14, fontName="Helvetica-Bold",
-            spaceAfter=6, spaceBefore=10,
+            "H2", parent=base["Normal"], fontSize=13, fontName="Helvetica-Bold",
+            leading=18, spaceAfter=8, spaceBefore=12,
         ),
         "h3": ParagraphStyle(
-            "H3", parent=base["Normal"], fontSize=12, fontName="Helvetica-Bold",
-            spaceAfter=4, spaceBefore=6,
+            "H3", parent=base["Normal"], fontSize=11, fontName="Helvetica-Bold",
+            leading=15, spaceAfter=5, spaceBefore=8,
         ),
         "body": ParagraphStyle(
             "Body", parent=base["Normal"], fontSize=10, fontName="Helvetica",
-            spaceAfter=4, alignment=TA_LEFT,
+            leading=14, spaceAfter=6, alignment=TA_LEFT,
         ),
         "bullet": ParagraphStyle(
             "Bullet", parent=base["Normal"], fontSize=10, fontName="Helvetica",
-            leftIndent=20, spaceAfter=3, bulletIndent=8,
+            leading=14, leftIndent=20, spaceAfter=3, bulletIndent=8,
         ),
     }
     return styles

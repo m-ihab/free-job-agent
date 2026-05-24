@@ -56,9 +56,45 @@ class AutopilotConfig:
     france_eu_only: bool = True
     use_france_travail: bool = True
     use_multi_source: bool = True
+    use_cac40_sweep: bool = True
+    cac40_limit_per_company: int = 3
     max_packets_per_cycle: int = 5
     internships_only: bool = True
     email_notify: bool = False
+
+
+# Known CAC40 / large-French company ATS slugs. These are public job boards
+# that don't need any credentials — we just point the existing Greenhouse /
+# Lever / Ashby / SmartRecruiters / Workable / Recruitee fetchers at them.
+# Any slug that ever stops working is harmless: per-source failures don't
+# break the rest of the cycle.
+CAC40_ATS_SLUGS: list[tuple[str, str, str]] = [
+    # (source, slug, display name)
+    ("greenhouse", "criteo", "Criteo"),
+    ("greenhouse", "datadog", "Datadog"),
+    ("greenhouse", "doctolib", "Doctolib"),
+    ("greenhouse", "mistralai", "Mistral AI"),
+    ("greenhouse", "huggingface", "Hugging Face"),
+    ("greenhouse", "stripe", "Stripe"),
+    ("greenhouse", "scaleway", "Scaleway"),
+    ("greenhouse", "back-market", "Back Market"),
+    ("greenhouse", "qonto", "Qonto"),
+    ("greenhouse", "blablacar", "BlaBlaCar"),
+    ("greenhouse", "alan", "Alan"),
+    ("greenhouse", "swile", "Swile"),
+    ("greenhouse", "spendesk", "Spendesk"),
+    ("greenhouse", "shift-technology", "Shift Technology"),
+    ("lever", "ledger", "Ledger"),
+    ("lever", "mirakl", "Mirakl"),
+    ("lever", "algolia", "Algolia"),
+    ("ashby", "mistral", "Mistral"),
+    ("smartrecruiters", "Capgemini", "Capgemini"),
+    ("smartrecruiters", "AccorHotels", "Accor"),
+    ("smartrecruiters", "LVMH", "LVMH"),
+    ("smartrecruiters", "Veolia", "Veolia"),
+    ("workable", "ledger", "Ledger"),
+    ("recruitee", "spendesk", "Spendesk"),
+]
 
 
 @dataclass
@@ -229,6 +265,38 @@ class Autopilot:
                 except Exception as exc:
                     errors.append(f"multi/{query}: {type(exc).__name__}: {exc}")
             per_query[query] = cycle_added
+
+        # CAC40 / large-FR ATS sweep — only data-friendly companies, slug list
+        # is static so failure of one slug doesn't kill the cycle.
+        cac40_added = 0
+        if self.opts.use_cac40_sweep:
+            for source_kind, slug, display_name in CAC40_ATS_SLUGS:
+                if self._stop_event.is_set():
+                    break
+                try:
+                    sweep_jobs = search_free_api_jobs(
+                        source_kind,
+                        query=self.opts.queries[0] if self.opts.queries else "data",
+                        board=slug,
+                        limit=self.opts.cac40_limit_per_company,
+                        internships_only=self.opts.internships_only,
+                        min_relevance=self.opts.min_relevance,
+                        france_eu_only=self.opts.france_eu_only,
+                        use_cache=True,
+                        cache_ttl_hours=4.0,
+                    )
+                except FreeApiError as exc:
+                    errors.append(f"{source_kind}/{display_name}: {exc}")
+                    continue
+                except Exception as exc:
+                    errors.append(f"{source_kind}/{display_name}: {type(exc).__name__}: {exc}")
+                    continue
+                for job in sweep_jobs:
+                    tracked, created = add_job_to_tracker(self.config, job)
+                    if created:
+                        added.append(tracked.id)
+                        cac40_added += 1
+            per_query["__cac40_sweep__"] = cac40_added
 
         # Auto-tailor for high-fit jobs (newly added or recently scored). The
         # AI fit cache (when available) acts as a second gate so weak-fit jobs

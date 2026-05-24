@@ -22,6 +22,16 @@ from job_agent.ai_agent import (
 from job_agent.analytics import compute_stats, jobs_to_csv
 from job_agent.autopilot import AutopilotConfig, get_autopilot
 from job_agent.config import AppConfig
+from job_agent.coach import build_coach_plan as _coach_plan
+from job_agent.cv_studio import (
+    compile_preview as _studio_compile_preview,
+    load_studio as _studio_load,
+    promote_draft_to_main as _studio_promote_main,
+    reorder_sections as _studio_reorder,
+    reset_studio_draft as _studio_reset,
+    save_studio_draft as _studio_save,
+    suggest_edits as _studio_suggest,
+)
 from job_agent.cv_template import import_cv_template_upload
 from job_agent.db.database import Database
 from job_agent.enrichment import EnrichOptions, enrich_job
@@ -113,18 +123,24 @@ def _latest_packet_for_job(db: Database, job_id: str):
 
 
 def _list_jobs(config: AppConfig, status: str = "") -> list[dict]:
+    """Fetch all jobs + their enrichments / AI cache / latest packet in 4 queries
+    instead of N*3 — significantly faster on databases with 50+ jobs."""
     tracker = _tracker(config)
     status_filter = JobStatus(status) if status else None
     jobs = tracker.list_jobs(status=status_filter)
+    if not jobs:
+        return []
+    job_ids = [job.id for job in jobs]
+    enrichments = tracker.db.bulk_get_enrichments(job_ids)
+    ai_caches = tracker.db.bulk_list_ai_cache(job_ids)
+    latest_packets = tracker.db.bulk_latest_packets(job_ids)
     results: list[dict] = []
     for job in jobs:
-        enrichment = tracker.db.get_enrichment(job.id)
-        ai_cache = tracker.db.list_ai_cache_for_job(job.id)
         results.append(job_to_dict(
             job,
-            _latest_packet_for_job(tracker.db, job.id),
-            enrichment=enrichment,
-            ai_cache=ai_cache,
+            latest_packets.get(job.id),
+            enrichment=enrichments.get(job.id),
+            ai_cache=ai_caches.get(job.id, {}),
         ))
     return results
 
@@ -417,18 +433,39 @@ class JobAgentHandler(BaseHTTPRequestHandler):
         return self.server.config  # type: ignore[attr-defined]
 
     def _send(self, status: int, body: bytes, content_type: str = "application/json; charset=utf-8") -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        # Client disconnects (browser tab closed, page reloaded mid-response,
+        # SSE timeouts) raise ConnectionAbortedError / BrokenPipeError when we
+        # try to write back. Those aren't application errors — the request is
+        # simply gone — so we swallow them silently here.
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            return None
 
     def _send_json(self, payload: object, status: int = HTTPStatus.OK) -> None:
         self._send(int(status), _json_bytes(payload))
 
     def _send_error_json(self, message: str, status: int = HTTPStatus.BAD_REQUEST) -> None:
         self._send_json({"error": message}, status)
+
+    def handle_one_request(self) -> None:  # noqa: D401
+        """Suppress client-disconnect tracebacks from the http.server base."""
+        try:
+            super().handle_one_request()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            self.close_connection = True
+
+    def log_error(self, format: str, *args) -> None:  # noqa: A002, D401
+        message = format % args if args else format
+        # The base class logs to stderr; downgrade noisy client-disconnects.
+        if "10053" in message or "10054" in message or "Broken pipe" in message:
+            return
+        sys.stderr.write("[job-agent-ui] " + message + "\n")
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -468,6 +505,23 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             return self._send_json(get_autopilot(self._config()).status())
         if parsed.path == "/api/autopilot/stream":
             return self._stream_autopilot()
+        if parsed.path == "/api/cv-studio":
+            return self._send_json(_studio_load(self._config()))
+        if parsed.path == "/api/cv-studio/preview-pdf":
+            studio = Path(self._config().data_dir or Path.cwd() / ".job_agent") / "cv_studio" / "preview.pdf"
+            if not studio.exists():
+                return self._send_error_json("Preview not built yet.", HTTPStatus.NOT_FOUND)
+            try:
+                body = studio.read_bytes()
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/pdf")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                pass
+            return None
         if parsed.path == "/api/ai-status":
             return self._send_json(ollama_status(PolishOptions.from_env()))
         if parsed.path == "/api/ollama-install":
@@ -590,6 +644,28 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/autopilot/stop":
                 state = get_autopilot(config).stop()
                 return self._send_json({"state": state.__dict__, "status": get_autopilot(config).status()})
+            if parsed.path == "/api/coach-plan":
+                return self._send_json(_coach_plan(config))
+            if parsed.path == "/api/cv-studio/save":
+                text = str(payload.get("text") or "")
+                return self._send_json(_studio_save(config, text))
+            if parsed.path == "/api/cv-studio/reset":
+                return self._send_json(_studio_reset(config))
+            if parsed.path == "/api/cv-studio/promote":
+                return self._send_json(_studio_promote_main(config))
+            if parsed.path == "/api/cv-studio/compile":
+                text = payload.get("text")
+                return self._send_json(_studio_compile_preview(config, text if isinstance(text, str) else None))
+            if parsed.path == "/api/cv-studio/reorder":
+                text = str(payload.get("text") or "")
+                order_raw = payload.get("order") or []
+                order = [str(item) for item in order_raw if str(item).strip()]
+                rewritten = _studio_reorder(text, order)
+                return self._send_json({"ok": True, "text": rewritten})
+            if parsed.path == "/api/cv-studio/suggest":
+                text = str(payload.get("text") or "")
+                job_context = str(payload.get("job_context") or "")
+                return self._send_json(_studio_suggest(text, job_context))
             if parsed.path == "/api/ai-chat":
                 job_id = str(payload.get("job_id") or "")
                 question = str(payload.get("question") or "").strip()
