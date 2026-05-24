@@ -74,14 +74,16 @@ def generate_cover_letter(job: JobListing, master_cv: MasterCV, profile: Candida
     lines.append("")
     c = master_cv.contact
     role_display = _clean_role_phrase(job.title or "") or job.title
-    lines.append(f"# Cover Letter — {role_display} at {real_company}")
+    company_known = real_company.strip().casefold() != "the hiring team"
+    target_phrase = f"at {real_company}" if company_known else "for this hiring team"
+    lines.append(f"# Cover Letter — {role_display} {target_phrase}")
     lines.append("")
     lines.append(f"**{c.name}**  ")
     lines.append(f"{c.email}  ")
     if c.phone:
         lines.append(f"{c.phone}  ")
     lines.append("")
-    lines.append(f"Dear Hiring Manager at {real_company},")
+    lines.append(f"Dear Hiring Manager at {real_company}," if company_known else "Dear Hiring Team,")
     lines.append("")
     ai_paragraphs = _ai_draft_body(job, master_cv, profile)
     if ai_paragraphs:
@@ -92,7 +94,7 @@ def generate_cover_letter(job: JobListing, master_cv: MasterCV, profile: Candida
         summary = master_cv.summary or profile.summary
         summary = _adjust_summary_for_contract(summary, job)
         lines.append(
-            f"I am writing to apply for the **{role_display}** role at **{real_company}**. "
+            f"I am writing to apply for the **{role_display}** role {target_phrase}. "
             f"{summary}"
         )
         lines.append("")
@@ -112,10 +114,12 @@ def generate_cover_letter(job: JobListing, master_cv: MasterCV, profile: Candida
                 f"The role's focus on **{', '.join(job.tech_stack[:5])}** aligns with the experience and projects highlighted in my CV."
             )
             lines.append("")
-    lines.append(
+    closing = (
         f"I would welcome the opportunity to discuss how my background can contribute to {real_company}'s team. "
-        "Thank you for considering my application."
+        if company_known
+        else "I would welcome the opportunity to discuss how my background can contribute to your team. "
     )
+    lines.append(closing + "Thank you for considering my application.")
     lines.append("")
     lines.append("Sincerely,  ")
     lines.append(f"**{c.name}**")

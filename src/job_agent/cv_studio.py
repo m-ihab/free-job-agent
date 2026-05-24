@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 import re
 import shutil
 from pathlib import Path
@@ -133,6 +134,12 @@ def compile_preview(config: AppConfig, text: str | None = None) -> dict[str, Any
     studio = _studio_dir(config)
     tex_path = studio / "preview.tex"
     if text is not None:
+        if r"\begin{document}" not in text:
+            return {
+                "ok": False,
+                "reason": "not_latex_document",
+                "log": "Compile Preview only accepts the LaTeX CV draft. Open JSON/assets in the asset editor, then keep main.tex in the main CV editor.",
+            }
         tex_path.write_text(text, encoding="utf-8")
     elif _draft_path(config).exists():
         shutil.copyfile(_draft_path(config), tex_path)
@@ -475,16 +482,18 @@ ICON_PACKS = {
             "\\usepackage{fontawesome5}\n"
         ),
         # Drop-in renames keep the moderncv layout intact.
-        "phone": r"\renewcommand*\phonesymbol{\faIcon{mobile-alt}~}",
-        "email": r"\renewcommand*\emailsymbol{\faIcon{envelope}~}",
-        "linkedin": r"\renewcommand*\linkedinsocialsymbol{\faIcon{linkedin}~}",
-        "github": r"\renewcommand*\githubsocialsymbol{\faIcon{github}~}",
+        # Use direct command names instead of \faIcon{...}; the repo ships a
+        # tiny local fontawesome5.sty fallback for MiKTeX installs that do not
+        # have the full package yet.
+        "phone": r"\renewcommand*\phonesymbol{\faMobile*~}",
+        "email": r"\renewcommand*\emailsymbol{\faEnvelope~}",
+        "linkedin": r"\renewcommand*\linkedinsocialsymbol{\faLinkedin~}",
+        "github": r"\renewcommand*\githubsocialsymbol{\faGithub~}",
     },
     "academicons": {
         "label": "Academicons (research icons)",
         "snippet": (
-            "% Adds ORCID/Google Scholar-style icons. Requires academicons.sty.\n"
-            "\\usepackage{academicons}\n"
+            "% Academicons preview pack: kept as comments unless academicons.sty is present.\n"
         ),
         "phone": r"% phone icon kept as moderncv default",
         "email": r"% email icon kept as moderncv default",
@@ -569,6 +578,58 @@ def import_github_project(config: AppConfig, project_name: str) -> dict[str, Any
     return {"ok": True, "promoted": project.get("name")}
 
 
+def save_project(config: AppConfig, project: dict[str, Any], *, promote: bool = True) -> dict[str, Any]:
+    """Add or update a project in ``master_cv.json``.
+
+    This is intentionally local-profile only. It lets CV Studio capture work
+    that lives in a team repository or external repo where the GitHub API will
+    not list the project under the user's own account.
+    """
+    try:
+        root = _profiles_root(config)
+    except ValueError as exc:
+        return {"ok": False, "reason": str(exc)}
+    master_cv_path = root / "master_cv.json"
+    if not master_cv_path.exists():
+        return {"ok": False, "reason": "no_master_cv"}
+    try:
+        master = json.loads(master_cv_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"ok": False, "reason": f"bad_json: {exc}"}
+
+    name = str(project.get("name") or "").strip()
+    if not name:
+        return {"ok": False, "reason": "name_required"}
+    technologies = project.get("technologies") or []
+    bullet_points = project.get("bullet_points") or []
+    clean_project = {
+        "name": name[:100],
+        "description": str(project.get("description") or "").strip()[:500],
+        "url": str(project.get("url") or "").strip()[:300],
+        "technologies": [str(item).strip()[:60] for item in technologies if str(item).strip()][:16],
+        "bullet_points": [str(item).strip()[:240] for item in bullet_points if str(item).strip()][:6],
+    }
+
+    projects = [p for p in master.get("projects", []) if isinstance(p, dict)]
+    existing_index = next((idx for idx, p in enumerate(projects) if str(p.get("name") or "").casefold() == name.casefold()), None)
+    if existing_index is None:
+        projects.insert(0 if promote else len(projects), clean_project)
+        action = "added"
+    else:
+        projects[existing_index] = {**projects[existing_index], **clean_project}
+        if promote:
+            projects.insert(0, projects.pop(existing_index))
+        action = "updated"
+    master["projects"] = projects
+    backup = master_cv_path.with_suffix(".json.bak")
+    try:
+        shutil.copyfile(master_cv_path, backup)
+    except Exception:
+        pass
+    master_cv_path.write_text(json.dumps(master, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"ok": True, "action": action, "project": clean_project}
+
+
 # -----------------------------------------------------------------------------
 # Single-page guard
 # -----------------------------------------------------------------------------
@@ -637,4 +698,53 @@ def single_page_guard(config: AppConfig, text: str | None = None) -> dict[str, A
         "page_count": page_count,
         "single_page": False,
         "trims": trims,
+    }
+
+
+def auto_fit_one_page(config: AppConfig, text: str) -> dict[str, Any]:
+    """Apply conservative layout-only tightening to help a draft fit one page.
+
+    The function never removes facts or rewrites content. It adjusts typography
+    and spacing first, then returns the edited draft so the user can inspect it
+    before saving/promoting.
+    """
+    if r"\begin{document}" not in (text or ""):
+        return {"ok": False, "reason": "not_latex_document"}
+    before = single_page_guard(config, text)
+    if before.get("ok") and before.get("single_page") is True:
+        return {"ok": True, "changed": False, "text": text, "page_count": before.get("page_count"), "steps": ["Already fits on one page."]}
+
+    fitted = text
+    steps: list[str] = []
+
+    def _sub(pattern: str, replacement: str, label: str) -> None:
+        nonlocal fitted
+        new, count = re.subn(pattern, replacement, fitted, count=1)
+        if count and new != fitted:
+            fitted = new
+            steps.append(label)
+
+    _sub(r"\\documentclass\[11pt,", r"\\documentclass[10pt,", "Switched document class from 11pt to 10pt.")
+    _sub(
+        r"\\usepackage\[[^\]]*scale\s*=\s*0\.90[^\]]*\]\{geometry\}",
+        r"\\usepackage[scale=0.93, top=0.95cm, bottom=0.95cm, left=1.35cm, right=1.35cm]{geometry}",
+        "Tightened page margins while keeping readable white space.",
+    )
+    _sub(
+        r"\\renewcommand\*?\{\\namefont\}\{\\fontsize\{26\}\{30\}",
+        r"\\renewcommand*{\\namefont}{\\fontsize{24}{28}",
+        "Reduced the name header slightly.",
+    )
+    _sub(r"\\photo\[(?:68|70|72)pt\]", r"\\photo[60pt]", "Reduced photo size slightly.")
+    _sub(r"\\vspace\*\{-2\.0em\}", r"\\vspace*{-2.35em}", "Reduced vertical gap after the title.")
+
+    after = single_page_guard(config, fitted)
+    return {
+        "ok": after.get("ok", False),
+        "changed": bool(steps),
+        "text": fitted,
+        "page_count": after.get("page_count"),
+        "single_page": after.get("single_page"),
+        "steps": steps or ["No safe layout changes were found."],
+        "log": after.get("log", ""),
     }

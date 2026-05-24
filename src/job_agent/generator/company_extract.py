@@ -38,6 +38,18 @@ AGGREGATOR_COMPANIES = {
     "apec",
 }
 
+BAD_COMPANY_STARTS = {
+    "vous", "notre", "nos", "votre", "le", "la", "les", "l", "au", "aux",
+    "cette", "cet", "ce", "ces", "il", "elle", "nous", "on", "profil",
+    "mission", "missions", "description", "poste",
+}
+
+BAD_COMPANY_FRAGMENTS = {
+    "vous êtes", "vous etes", "le profil", "l'équipe",
+    "l'equipe", "au sein", "notre client", "notre team", "business unit",
+    "secteur", "en tant", "de la direction", "qu'on",
+}
+
 # Lightweight heuristic list of well-known French employers we want to
 # recognize confidently when they appear in description text. The matcher
 # is case-insensitive and uses word boundaries.
@@ -53,10 +65,12 @@ KNOWN_FRENCH_COMPANIES = [
     "SNCF", "RATP", "Air France", "Aéroports de Paris", "ADP",
     "Carrefour", "Decathlon", "FNAC", "Darty",
     "Dassault Aviation", "Michelin",
-    "Adobe", "Amazon", "Apple", "Google", "Meta", "Microsoft", "Oracle", "Salesforce", "SAP",
+    "Adobe", "Amazon", "Apple", "Google", "Meta", "Microsoft", "Oracle", "Salesforce",
     "Datadog", "Doctolib", "Mistral AI", "Hugging Face", "Stripe", "Criteo", "Spotify",
     "Qair", "Saint-Gobain", "Pernod Ricard", "Publicis", "Vivendi",
     "Mirakl", "Algolia", "Snowflake", "PwC", "EY", "KPMG", "Deloitte",
+    "Histoire d'Or", "THOM", "Agence Nationale de la Recherche", "ANR", "ISCOD",
+    "Bassetti Group", "Banque de France", "Keyrus",
 ]
 
 _PATTERNS = [
@@ -77,12 +91,32 @@ def _looks_aggregator(name: str | None) -> bool:
     return name.strip().lower() in AGGREGATOR_COMPANIES
 
 
+def looks_unusable_company(name: str | None) -> bool:
+    """True for aggregators or sentence fragments saved as company names."""
+    if _looks_aggregator(name):
+        return True
+    cleaned = (name or "").strip(" .,;:'\"").casefold()
+    if not cleaned:
+        return True
+    if any(fragment in cleaned for fragment in BAD_COMPANY_FRAGMENTS):
+        return True
+    first = re.sub(r"[^a-zÃ -Ã¿]+", "", cleaned.split()[0] if cleaned.split() else "")
+    if first in BAD_COMPANY_STARTS and not _scan_known(name or ""):
+        return True
+    return False
+
+
 def _scan_known(haystack: str) -> str | None:
+    matches: list[tuple[int, int, str]] = []
     for candidate in KNOWN_FRENCH_COMPANIES:
         pattern = re.compile(r"\b" + re.escape(candidate) + r"\b", re.IGNORECASE)
-        if pattern.search(haystack):
-            return candidate
-    return None
+        match = pattern.search(haystack)
+        if match:
+            # Prefer the earliest employer-like mention, then the longest
+            # name. This prevents later tool mentions (Snowflake, Salesforce)
+            # from beating the actual company introduced in the first line.
+            matches.append((match.start(), -len(candidate), candidate))
+    return sorted(matches)[0][2] if matches else None
 
 
 def _scan_patterns(haystack: str) -> str | None:
@@ -91,7 +125,7 @@ def _scan_patterns(haystack: str) -> str | None:
             candidate = (match.group(1) or "").strip(" .,;:'\"")
             if not candidate or len(candidate) > 60:
                 continue
-            if candidate.lower() in AGGREGATOR_COMPANIES:
+            if looks_unusable_company(candidate):
                 continue
             # Must look like a proper company name (at least one capitalized
             # word; not just lowercase or punctuation).
@@ -126,7 +160,7 @@ def resolve_company_for_letter(job: JobListing) -> str:
     - Last resort: return a polite "the hiring team" so the letter never
       says "Dear Hiring Manager at France Travail".
     """
-    if not _looks_aggregator(job.company):
+    if not looks_unusable_company(job.company):
         return job.company
     real = extract_real_company(job)
     if real:

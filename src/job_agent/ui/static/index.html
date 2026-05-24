@@ -362,20 +362,26 @@ data engineer</textarea>
           </section>
         </div>
 
-        <div class="split">
+        <div class="split studio-assets-grid">
           <section class="panel">
             <h3>Assets</h3>
+            <p class="muted" style="margin-bottom:0.5rem">Assets open in their own editor. The CV draft on the left is the only thing Compile preview renders.</p>
             <ul id="studioAssetList" class="studio-section-list muted">Loading…</ul>
             <div class="action-row" style="margin-top:0.5rem">
               <button id="studioAssetReloadBtn">Refresh</button>
               <button class="primary-soft" id="studioAssetSaveBtn">Save edited asset</button>
               <span id="studioAssetActive" class="muted"></span>
             </div>
+            <div id="studioAssetPreview" class="studio-asset-preview muted">Pick an asset to inspect it.</div>
+            <textarea id="studioAssetTextarea" class="studio-asset-editor hidden" spellcheck="false" wrap="off"></textarea>
           </section>
           <section class="panel">
             <h3>One-page guard</h3>
             <p class="muted" style="margin-bottom:0.5rem">Compile your draft and check if it fits a single page. We'll suggest what to trim if it doesn't.</p>
-            <button id="studioSinglePageBtn" class="primary-soft">Check single page</button>
+            <div class="action-row">
+              <button id="studioSinglePageBtn" class="primary-soft">Check single page</button>
+              <button id="studioAutoFitBtn">Auto-fit layout</button>
+            </div>
             <div id="studioSinglePageResult" class="muted" style="margin-top:0.5rem">Not checked yet.</div>
           </section>
         </div>
@@ -406,11 +412,37 @@ data engineer</textarea>
 
         <section class="panel">
           <h3>Import a GitHub project</h3>
-          <p class="muted" style="margin-bottom:0.5rem">Pick a project from your enriched <code>master_cv.json</code> to promote it to the top of the Projects section. Re-run <em>Tailor CV</em> on a job to see it in the output.</p>
+          <p class="muted" style="margin-bottom:0.5rem">Pick a project from your enriched <code>master_cv.json</code> to promote it to the top of the Projects section. Use the fields below to add a local project first.</p>
           <div class="action-row">
             <select id="studioGithubProjectSelect"><option value="">— select a project —</option></select>
             <button class="primary-soft" id="studioGithubImportBtn">Promote project</button>
           </div>
+          <details class="studio-project-builder">
+            <summary>Add / update a project locally</summary>
+            <div class="control-grid compact" style="margin-top:0.75rem">
+              <label>
+                Project name
+                <input id="studioProjectName" placeholder="DSTI Deep Learning" />
+              </label>
+              <label>
+                URL
+                <input id="studioProjectUrl" placeholder="https://github.com/..." />
+              </label>
+              <label>
+                Technologies
+                <input id="studioProjectTech" placeholder="Python, PyTorch, Transformers" />
+              </label>
+              <label>
+                Short description
+                <input id="studioProjectDescription" placeholder="Transformer-based NLP classifier..." />
+              </label>
+            </div>
+            <textarea id="studioProjectBullets" rows="4" placeholder="One bullet per line: trained DistilBERT/RoBERTa models, evaluated macro-F1, built reproducible training pipeline..."></textarea>
+            <div class="action-row" style="margin-top:0.5rem">
+              <button class="primary-soft" id="studioProjectAddBtn">Save project to profile</button>
+              <button id="studioProjectDeepLearningBtn">Use DSTI Deep Learning template</button>
+            </div>
+          </details>
           <div id="studioGithubNotice" class="muted" style="margin-top:0.4rem"></div>
         </section>
       </section>
@@ -434,7 +466,7 @@ data engineer</textarea>
             <ol id="coachMarketSkills" class="rank-list"></ol>
           </section>
           <section class="panel">
-            <h3>Skills you're missing</h3>
+            <h3>Skills to strengthen</h3>
             <ol id="coachGapSkills" class="rank-list"></ol>
           </section>
         </div>

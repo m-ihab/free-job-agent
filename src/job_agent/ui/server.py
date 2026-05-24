@@ -31,6 +31,7 @@ from job_agent.maintenance import (
 )
 from job_agent.cv_studio import (
     ICON_PACKS as _STUDIO_ICON_PACKS,
+    auto_fit_one_page as _studio_auto_fit,
     apply_icon_pack as _studio_apply_icon_pack,
     compile_preview as _studio_compile_preview,
     import_github_project as _studio_import_project,
@@ -43,6 +44,7 @@ from job_agent.cv_studio import (
     replace_photo as _studio_replace_photo,
     reset_studio_draft as _studio_reset,
     save_studio_draft as _studio_save,
+    save_project as _studio_save_project,
     single_page_guard as _studio_single_page,
     suggest_edits as _studio_suggest,
     write_asset as _studio_write_asset,
@@ -699,9 +701,21 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 return self._send_json(_studio_apply_icon_pack(config, str(payload.get("pack") or "moderncv")))
             if parsed.path == "/api/cv-studio/import-github-project":
                 return self._send_json(_studio_import_project(config, str(payload.get("name") or "")))
+            if parsed.path == "/api/cv-studio/project-save":
+                project = {
+                    "name": payload.get("name"),
+                    "url": payload.get("url"),
+                    "description": payload.get("description"),
+                    "technologies": payload.get("technologies") if isinstance(payload.get("technologies"), list) else [],
+                    "bullet_points": payload.get("bullet_points") if isinstance(payload.get("bullet_points"), list) else [],
+                }
+                return self._send_json(_studio_save_project(config, project, promote=bool(payload.get("promote", True))))
             if parsed.path == "/api/cv-studio/single-page-check":
                 text = payload.get("text")
                 return self._send_json(_studio_single_page(config, text if isinstance(text, str) else None))
+            if parsed.path == "/api/cv-studio/auto-fit":
+                text = str(payload.get("text") or "")
+                return self._send_json(_studio_auto_fit(config, text))
             if parsed.path == "/api/cv-studio/save":
                 text = str(payload.get("text") or "")
                 return self._send_json(_studio_save(config, text))

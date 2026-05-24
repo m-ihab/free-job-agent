@@ -19,6 +19,20 @@ test("dashboard loads and tabs are navigable", async ({ page }) => {
   await expect(page.locator("#insightsMetrics")).toBeVisible();
 });
 
+test("cv studio keeps assets separate from the LaTeX draft", async ({ page }) => {
+  await page.goto("/");
+  await page.click('button.tab[data-tab="studio"]');
+  await expect(page.locator("#studioTextarea")).toHaveValue(/\\begin\{document\}/);
+
+  await page.click('[data-asset="master_cv.json"]');
+  await expect(page.locator("#studioAssetTextarea")).toHaveValue(/"contact"/);
+  await expect(page.locator("#studioTextarea")).not.toHaveValue(/"contact"/);
+
+  await page.click("#studioCompileBtn");
+  await expect(page.locator("#studioNotice")).toBeHidden();
+  await expect(page.locator("#studioPreview")).toHaveAttribute("src", /preview-pdf/);
+});
+
 test("ai status endpoint responds", async ({ request }) => {
   const response = await request.get("/api/ai-status");
   expect(response.ok()).toBeTruthy();

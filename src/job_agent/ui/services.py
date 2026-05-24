@@ -12,6 +12,7 @@ from typing import Any
 
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
+from job_agent.generator.company_extract import extract_real_company, looks_unusable_company
 from job_agent.intake.france_market import board_notes, build_france_search_urls, expand_france_search_queries
 from job_agent.intake.france_travail_endpoints import load_endpoint_base_url, load_endpoint_registry
 from job_agent.notifier import email_notifier_status
@@ -160,11 +161,26 @@ def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None,
     ai_summary = ai_cache.get("summary") or {}
     ai_classify = ai_cache.get("classify") or {}
     quality = assess_search_quality(job)
+    company_display = job.company
+    company_source = ""
+    company_unresolved = False
+    if looks_unusable_company(job.company):
+        real_company = extract_real_company(job)
+        if real_company:
+            company_display = real_company
+            company_source = job.company
+        else:
+            company_display = "Employer not disclosed"
+            company_source = job.company
+            company_unresolved = True
     return {
         "id": job.id,
         "short_id": job.id[:8],
         "title": job.title,
         "company": job.company,
+        "company_display": company_display,
+        "company_source": company_source,
+        "company_unresolved": company_unresolved,
         "location": job.location or "",
         "remote": job.remote,
         "work_mode": job.work_mode or "",

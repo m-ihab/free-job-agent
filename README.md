@@ -165,6 +165,12 @@ Tabs:
 - **Jobs:** filter, sort, search, remove noisy jobs, batch enrich, batch
   packet generation, CSV export, color-coded score badges, inline detail
   panel, and a CV preview for packet-ready roles.
+- **CV Studio:** edit the LaTeX draft, inspect profile assets in a separate
+  asset editor, compile a PDF preview, swap contact icon packs, upload/remove
+  the photo, add/promote GitHub projects, and run the one-page guard.
+- **Career Coach:** market-skill analysis from tracked jobs, evidence-aware
+  skill gaps, free/audit certification ideas, portfolio project ideas, and a
+  dated weekly plan.
 - **Insights:** application funnel, 8-week activity bars, top companies/
   sources/locations, score distribution.
 - **Add Job:** paste a URL or job description.
@@ -183,6 +189,20 @@ g m Multi-source search
 r   Refresh jobs
 Esc Close dialogs
 ```
+
+### CV Studio guardrails
+
+The Studio has two editors on purpose:
+
+- The large editor is always the LaTeX CV draft that **Compile preview**
+  renders.
+- The asset editor is only for `profiles/` assets such as `master_cv.json`,
+  `candidate_profile.json`, `.sty` files, images, and PDFs.
+
+This prevents JSON/profile assets from being accidentally compiled as LaTeX.
+If you add a team project that is not under your own GitHub account, use
+**Import a GitHub project -> Add / update a project locally**, then promote it.
+The project is saved only in your local `profiles/master_cv.json`.
 
 ## LaTeX CV output
 

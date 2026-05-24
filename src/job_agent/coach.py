@@ -12,6 +12,7 @@ import json
 import re
 from collections import Counter
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 
@@ -86,6 +87,24 @@ SKILL_ALIASES: dict[str, str] = {
     "elt": "ELT",
     "data engineering": "Data Engineering",
     "data science": "Data Science",
+}
+
+SKILL_IMPLICATIONS: dict[str, set[str]] = {
+    "Machine Learning": {"Artificial Intelligence", "Statistics", "modélisation", "modeling", "ML"},
+    "Deep Learning": {"Artificial Intelligence", "Machine Learning", "ML", "AI"},
+    "Model Evaluation": {"Statistics", "Machine Learning"},
+    "Survival Analysis": {"Statistics", "Machine Learning"},
+    "Power BI": {"Business Intelligence", "Tableau", "Data Visualization"},
+    "Matplotlib": {"Data Visualization", "Tableau"},
+    "Seaborn": {"Data Visualization", "Tableau"},
+    "Docker": {"MLOps"},
+    "FastAPI": {"MLOps"},
+    "CI/CD": {"MLOps"},
+    "GitHub Actions": {"MLOps"},
+    "TensorFlow": {"Deep Learning", "Machine Learning", "Artificial Intelligence"},
+    "PyTorch": {"Deep Learning", "Machine Learning", "Artificial Intelligence"},
+    "Transformers": {"Deep Learning", "NLP", "LLM", "Artificial Intelligence"},
+    "NLP": {"LLM", "Artificial Intelligence"},
 }
 
 
@@ -235,6 +254,11 @@ def _gap_skills(market_skills: list[dict], candidate_skills: set[str]) -> list[d
     """
     gaps: list[dict[str, Any]] = []
     have = {_normalize_skill(s).casefold() for s in candidate_skills}
+    for skill in list(candidate_skills):
+        canonical = _normalize_skill(skill)
+        implied_set = SKILL_IMPLICATIONS.get(canonical, set()) | SKILL_IMPLICATIONS.get(str(skill), set())
+        for implied in implied_set:
+            have.add(_normalize_skill(implied).casefold())
     for entry in market_skills:
         name = entry["name"]
         if name.casefold() in have:
@@ -251,6 +275,55 @@ def _gap_skills(market_skills: list[dict], candidate_skills: set[str]) -> list[d
         if len(gaps) >= 8:
             break
     return gaps
+
+
+def _collect_candidate_skill_evidence(config: AppConfig, master_cv: Any | None) -> set[str]:
+    """Collect skill evidence from structured profile fields and main.tex.
+
+    This avoids false "missing" gaps when a skill is present in the curated
+    LaTeX CV, in project technologies, or implied by adjacent tools.
+    """
+    skills: set[str] = set()
+    if master_cv is not None:
+        for skill in getattr(master_cv, "skills", []) or []:
+            name = getattr(skill, "name", "")
+            if name:
+                skills.add(str(name))
+        for project in getattr(master_cv, "projects", []) or []:
+            for tech in getattr(project, "technologies", []) or []:
+                if tech:
+                    skills.add(str(tech))
+            for bullet in getattr(project, "bullet_points", []) or []:
+                for match in re.finditer(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9+#./ -]{1,40}", str(bullet)):
+                    candidate = _normalize_skill(match.group(0))
+                    if candidate != match.group(0).casefold():
+                        skills.add(candidate)
+        for education in getattr(master_cv, "education", []) or []:
+            for item in getattr(education, "highlights", []) or []:
+                for raw, canonical in SKILL_ALIASES.items():
+                    if re.search(r"\b" + re.escape(raw) + r"\b", str(item), re.IGNORECASE):
+                        skills.add(canonical)
+    try:
+        profiles_dir = config.profiles_dir
+        if profiles_dir:
+            main_text = (Path(profiles_dir) / "main.tex").read_text(encoding="utf-8", errors="replace")
+            for raw, canonical in SKILL_ALIASES.items():
+                if re.search(r"\b" + re.escape(raw) + r"\b", main_text, re.IGNORECASE):
+                    skills.add(canonical)
+            for explicit in [
+                "Model Evaluation", "Feature Engineering", "Classification", "Regression",
+                "Time-Series Forecasting", "MLOps", "Deep Learning", "Machine Learning",
+                "TensorFlow", "PyTorch", "Power BI", "Docker", "Spark", "Hadoop",
+            ]:
+                if re.search(r"\b" + re.escape(explicit) + r"\b", main_text, re.IGNORECASE):
+                    skills.add(explicit)
+    except Exception:
+        pass
+    expanded = set(skills)
+    for skill in skills:
+        expanded.update(SKILL_IMPLICATIONS.get(_normalize_skill(skill), set()))
+        expanded.update(SKILL_IMPLICATIONS.get(str(skill), set()))
+    return expanded
 
 
 # Curated, label-keyed certification suggestions. We pick certs that are
@@ -462,7 +535,7 @@ def build_coach_plan(config: AppConfig) -> dict[str, Any]:
     db.initialize()
     try:
         profile, master_cv, _ = load_profile_bundle(config)
-        candidate_skill_names = {s.name for s in master_cv.skills}
+        candidate_skill_names = _collect_candidate_skill_evidence(config, master_cv)
     except Exception:
         profile = None
         master_cv = None
@@ -502,7 +575,10 @@ def build_coach_plan(config: AppConfig) -> dict[str, Any]:
                     if raw.get("headline"):
                         plan["headline"] = str(raw["headline"])[:240]
                     if raw.get("top_gap"):
-                        plan["top_gap"] = str(raw["top_gap"])[:120]
+                        proposed_gap = _normalize_skill(str(raw["top_gap"]))
+                        allowed_gaps = {_normalize_skill(g["name"]).casefold() for g in gaps}
+                        if proposed_gap.casefold() in allowed_gaps:
+                            plan["top_gap"] = proposed_gap[:120]
                     if isinstance(raw.get("focus"), list) and raw["focus"]:
                         plan["focus"] = [
                             {"title": str(item.get("title") or "")[:120], "why": str(item.get("why") or "")[:240]}

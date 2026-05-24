@@ -19,8 +19,8 @@ from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.fingerprint import compute_fingerprint
 from job_agent.generator.company_extract import (
-    AGGREGATOR_COMPANIES,
     extract_real_company,
+    looks_unusable_company,
 )
 
 
@@ -45,8 +45,7 @@ def rescan_companies(config: AppConfig, *, dry_run: bool = False) -> dict[str, A
     jobs = db.list_jobs(limit=None)
     candidates = []
     for job in jobs:
-        company_lower = (job.company or "").strip().lower()
-        if company_lower in AGGREGATOR_COMPANIES or "[to be parsed]" in company_lower or not job.company:
+        if looks_unusable_company(job.company):
             real = extract_real_company(job)
             if real and real.casefold() != (job.company or "").casefold():
                 candidates.append((job, real))

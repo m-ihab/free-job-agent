@@ -1,3 +1,4 @@
+/* global FileReader */
 const state = {
   profile: null,
   statuses: [],
@@ -13,6 +14,8 @@ const state = {
   aiStatus: null,
   chatJobId: null,
   chatHistory: [],
+  studioActiveAsset: null,
+  studioActiveAssetKind: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -317,7 +320,7 @@ function renderApiResults(jobs, failures = []) {
     .slice(0, 80)
     .map(
       (job) => `<tr>
-        <td><strong>${escapeHtml(job.title)}</strong><br><span class="muted">${escapeHtml(job.company)}</span></td>
+        <td><strong>${escapeHtml(job.title)}</strong><br>${companyLine(job)}</td>
         <td>${escapeHtml(job.location || "")}</td>
         <td>${scorePill(job.fit_score)}</td>
         <td>${escapeHtml(job.status || "")}</td>
@@ -334,6 +337,15 @@ function renderApiResults(jobs, failures = []) {
       <tbody>${jobRows}</tbody>
     </table>
   </div>`;
+}
+
+function companyLine(job) {
+  const display = job.company_display || job.company || "Employer not disclosed";
+  const source = job.company_source && job.company_source !== display
+    ? ` <span class="row-tag">via ${escapeHtml(job.company_source)}</span>`
+    : "";
+  const unresolved = job.company_unresolved ? ` <span class="row-tag warn">undisclosed</span>` : "";
+  return `<span class="muted">${escapeHtml(display)}</span>${source}${unresolved}`;
 }
 
 function jobActions(job) {
@@ -374,7 +386,7 @@ function isInternship(job) {
 
 function jobMatchesText(job, query) {
   if (!query) return true;
-  const haystack = `${job.title} ${job.company} ${job.location} ${(job.tech_stack || []).join(" ")}`.toLowerCase();
+  const haystack = `${job.title} ${job.company} ${job.company_display || ""} ${job.location} ${(job.tech_stack || []).join(" ")}`.toLowerCase();
   return haystack.includes(query.toLowerCase());
 }
 
@@ -529,7 +541,7 @@ function renderJobs() {
         const tags = aiTagsHtml(job);
         return `<tr data-job-row="${escapeHtml(job.id)}" class="${activeClass}">
           <td><input type="checkbox" data-select-job="${escapeHtml(job.id)}" ${checked} /></td>
-          <td><strong>${escapeHtml(job.title)}</strong><br><span class="muted">${escapeHtml(job.company)}</span>${summary}${tags}</td>
+          <td><strong>${escapeHtml(job.title)}</strong><br>${companyLine(job)}${summary}${tags}</td>
           <td>${escapeHtml(job.location || "")}${job.remote ? ` ${renderBadge("Remote", "good")}` : ""}</td>
           <td>${escapeHtml(job.status)}</td>
           <td>${scorePill(job.fit_score)}${aiBadge ? `<br>${aiBadge}` : ""}</td>
@@ -1373,6 +1385,35 @@ async function checkSinglePage() {
   }
 }
 
+async function autoFitStudioDraft() {
+  const button = document.getElementById("studioAutoFitBtn");
+  const target = document.getElementById("studioSinglePageResult");
+  const textarea = document.getElementById("studioTextarea");
+  if (!textarea || !target) return;
+  setBusy(button, true);
+  target.innerHTML = "Trying conservative layout tightening...";
+  try {
+    const result = await api("/api/cv-studio/auto-fit", { text: textarea.value });
+    if (!result.ok) {
+      target.innerHTML = `<span class="notice error">${escapeHtml(result.reason || result.log || "Auto-fit failed")}</span>`;
+      return;
+    }
+    if (result.changed) {
+      textarea.value = result.text || textarea.value;
+      textarea.dataset.dirty = "1";
+    }
+    const stepList = (result.steps || []).map((step) => `<li>${escapeHtml(step)}</li>`).join("");
+    target.innerHTML = `<div><span class="badge ${result.single_page ? "good" : "warn"}">${result.single_page ? "Fits after auto-fit" : "Still needs manual trim"}${result.page_count ? ` (${result.page_count} page${result.page_count === 1 ? "" : "s"})` : ""}</span></div>
+      <ol class="coach-list" style="margin-top:0.5rem">${stepList}</ol>`;
+    toast(result.changed ? "Auto-fit applied to the draft." : "Draft already fits.");
+    await studioCompile();
+  } catch (error) {
+    target.innerHTML = `<span class="notice error">${escapeHtml(error.message)}</span>`;
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function studioApplyReorder() {
   const list = document.getElementById("studioSections");
   const textarea = document.getElementById("studioTextarea");
@@ -1387,6 +1428,185 @@ async function studioApplyReorder() {
     textarea.value = result.text;
     textarea.dataset.dirty = "1";
     toast("Reorder applied. Click Compile preview to verify.");
+  }
+}
+
+// CV Studio asset/project overrides. These intentionally appear after the
+// first Studio helpers so the browser binds the safer split-editor behavior:
+// Compile preview always reads #studioTextarea, while assets use
+// #studioAssetTextarea.
+async function openStudioAsset(name) {
+  if (!name) return;
+  state.studioActiveAsset = name;
+  state.studioActiveAssetKind = null;
+  const status = document.getElementById("studioAssetActive");
+  const assetEditor = document.getElementById("studioAssetTextarea");
+  const assetPreview = document.getElementById("studioAssetPreview");
+  const assetSave = document.getElementById("studioAssetSaveBtn");
+  if (status) status.textContent = `Editing ${name}`;
+  if (assetEditor) {
+    assetEditor.value = "";
+    assetEditor.classList.add("hidden");
+    delete assetEditor.dataset.dirty;
+  }
+  if (assetPreview) {
+    assetPreview.classList.remove("hidden");
+    assetPreview.textContent = "Loading asset...";
+  }
+  try {
+    const data = await api(`/api/cv-studio/asset?name=${encodeURIComponent(name)}`);
+    if (!data.ok) {
+      toast(`Could not open ${name}: ${data.reason}`);
+      return;
+    }
+    state.studioActiveAssetKind = data.kind;
+    if (data.kind === "text") {
+      if (assetEditor) {
+        assetEditor.value = data.text || "";
+        assetEditor.classList.remove("hidden");
+        assetEditor.dataset.dirty = "";
+      }
+      if (assetPreview) {
+        const isMainTex = name.toLowerCase() === "main.tex";
+        assetPreview.innerHTML = isMainTex
+          ? "This is your source CV. Inspect or edit it here; Compile preview still renders the LaTeX draft above."
+          : "Text asset loaded below. This side editor is intentionally separate from the CV preview draft.";
+      }
+      if (assetSave) assetSave.disabled = false;
+      toast(`Loaded ${name} in the asset editor.`);
+    } else {
+      if (assetSave) assetSave.disabled = true;
+      const url = data.url || "";
+      if (assetPreview) {
+        const lower = name.toLowerCase();
+        assetPreview.innerHTML = lower.endsWith(".pdf")
+          ? `<iframe src="${escapeHtml(url)}" title="${escapeHtml(name)} preview"></iframe>`
+          : `<img src="${escapeHtml(url)}" alt="${escapeHtml(name)} preview" />`;
+      }
+      toast(`${name} is preview-only here.`);
+    }
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function saveStudioAsset() {
+  const name = state.studioActiveAsset;
+  if (!name) {
+    toast("Open an asset from the list first.");
+    return;
+  }
+  if (state.studioActiveAssetKind !== "text") {
+    toast("This asset is not text-editable.");
+    return;
+  }
+  const textarea = document.getElementById("studioAssetTextarea");
+  try {
+    const result = await api("/api/cv-studio/asset-save", { name, text: textarea ? textarea.value : "" });
+    if (result.ok) {
+      toast(`Saved ${name}.`);
+      if (textarea) delete textarea.dataset.dirty;
+      if (name.toLowerCase() === "main.tex") {
+        const draft = document.getElementById("studioTextarea");
+        if (draft && !draft.dataset.dirty) draft.value = textarea ? textarea.value : "";
+        await loadStudio();
+      }
+    } else {
+      toast(`Could not save: ${result.reason}`);
+    }
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function applyIconPack() {
+  const select = document.getElementById("studioIconPack");
+  const notice = document.getElementById("studioIconPackNotice");
+  if (!select) return;
+  try {
+    const result = await api("/api/cv-studio/icon-pack", { pack: select.value });
+    if (result.ok) {
+      if (notice) notice.textContent = `Applied ${result.label}. Recompile to preview.`;
+      toast("Icon pack updated.");
+      const ta = document.getElementById("studioTextarea");
+      if (ta) delete ta.dataset.dirty;
+      await loadStudio();
+      await loadStudioAssets();
+    } else if (notice) {
+      notice.textContent = `Failed: ${result.reason}`;
+    }
+  } catch (error) {
+    if (notice) notice.textContent = error.message;
+  }
+}
+
+async function importGithubProject() {
+  const select = document.getElementById("studioGithubProjectSelect");
+  const notice = document.getElementById("studioGithubNotice");
+  if (!select || !select.value) {
+    if (notice) notice.textContent = "Pick a project first.";
+    return;
+  }
+  try {
+    const result = await api("/api/cv-studio/import-github-project", { name: select.value });
+    if (result.ok) {
+      if (notice) notice.textContent = `Promoted "${result.promoted}" to top of projects. Tailor a CV to see it.`;
+      toast("Project promoted.");
+      await loadStudioGithubProjects();
+      if (state.studioActiveAsset === "master_cv.json") await openStudioAsset("master_cv.json");
+    } else if (notice) {
+      notice.textContent = `Failed: ${result.reason}`;
+    }
+  } catch (error) {
+    if (notice) notice.textContent = error.message;
+  }
+}
+
+function fillDeepLearningProjectTemplate() {
+  const set = (id, value) => {
+    const node = document.getElementById(id);
+    if (node) node.value = value;
+  };
+  set("studioProjectName", "DSTI Deep Learning AG News Classifier");
+  set("studioProjectUrl", "https://github.com/fractalical/dsti-deep-learning");
+  set("studioProjectTech", "Python, Jupyter Notebook, Transformers, DistilBERT, RoBERTa, scikit-learn, NLP, Deep Learning");
+  set("studioProjectDescription", "Deep learning group project for AG News topic classification comparing classical baselines with transformer-based models.");
+  set("studioProjectBullets", [
+    "Owned the model-development and training workflow for transformer-based text classification experiments.",
+    "Compared TF-IDF + Logistic Regression baselines against DistilBERT and RoBERTa improvements.",
+    "Tracked accuracy, macro-F1, configuration snapshots, predictions, and reproducible run artefacts."
+  ].join("\n"));
+}
+
+async function saveStudioProject() {
+  const notice = document.getElementById("studioGithubNotice");
+  const read = (id) => (document.getElementById(id)?.value || "").trim();
+  const name = read("studioProjectName");
+  if (!name) {
+    if (notice) notice.textContent = "Project name is required.";
+    return;
+  }
+  const technologies = read("studioProjectTech").split(",").map((x) => x.trim()).filter(Boolean);
+  const bullet_points = read("studioProjectBullets").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+  try {
+    const result = await api("/api/cv-studio/project-save", {
+      name,
+      url: read("studioProjectUrl"),
+      description: read("studioProjectDescription"),
+      technologies,
+      bullet_points,
+      promote: true,
+    });
+    if (result.ok) {
+      if (notice) notice.textContent = `Saved "${result.project?.name || name}" locally and promoted it.`;
+      toast("Project saved to local profile.");
+      await loadStudioGithubProjects();
+      if (state.studioActiveAsset === "master_cv.json") await openStudioAsset("master_cv.json");
+    } else if (notice) {
+      notice.textContent = `Failed: ${result.reason}`;
+    }
+  } catch (error) {
+    if (notice) notice.textContent = error.message;
   }
 }
 
@@ -2125,6 +2345,14 @@ function bindEvents() {
   if (studioGithubImportBtn) studioGithubImportBtn.addEventListener("click", importGithubProject);
   const studioSinglePageBtn = document.getElementById("studioSinglePageBtn");
   if (studioSinglePageBtn) studioSinglePageBtn.addEventListener("click", checkSinglePage);
+  const studioAutoFitBtn = document.getElementById("studioAutoFitBtn");
+  if (studioAutoFitBtn) studioAutoFitBtn.addEventListener("click", autoFitStudioDraft);
+  const studioAssetTextarea = document.getElementById("studioAssetTextarea");
+  if (studioAssetTextarea) studioAssetTextarea.addEventListener("input", () => { studioAssetTextarea.dataset.dirty = "1"; });
+  const studioProjectAddBtn = document.getElementById("studioProjectAddBtn");
+  if (studioProjectAddBtn) studioProjectAddBtn.addEventListener("click", saveStudioProject);
+  const studioProjectDeepLearningBtn = document.getElementById("studioProjectDeepLearningBtn");
+  if (studioProjectDeepLearningBtn) studioProjectDeepLearningBtn.addEventListener("click", fillDeepLearningProjectTemplate);
 
   // Studio suggestion apply / reset / dismiss (delegated)
   document.body.addEventListener("click", (event) => {
