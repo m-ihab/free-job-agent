@@ -362,6 +362,7 @@ function jobActions(job) {
   const remove = `<button data-action="delete-job" data-job="${escapeHtml(job.id)}" title="Remove this job from the local tracker">Remove</button>`;
   return `<div class="row-actions">
     <button data-action="packet" data-job="${escapeHtml(job.id)}" title="Generate a tailored CV + cover letter for this job">Tailor CV</button>
+    <button data-action="outreach" data-job="${escapeHtml(job.id)}" title="Draft a cold outreach email to the recruiter/hiring manager">Outreach</button>
     <button data-action="ai-analyze" data-job="${escapeHtml(job.id)}" title="AI fit analysis">AI fit</button>
     <button data-action="ai-chat" data-job="${escapeHtml(job.id)}" title="Chat about this role">Chat</button>
     <button data-action="enrich" data-job="${escapeHtml(job.id)}" title="Enrich with France Travail data">Enrich</button>
@@ -694,6 +695,52 @@ async function addText() {
   } finally {
     setBusy(button, false);
   }
+}
+
+async function generateOutreachEmail(jobId, button) {
+  setBusy(button, true);
+  toast("Drafting outreach email…");
+  try {
+    const payload = await api("/api/generate-outreach", { job_id: jobId });
+    openOutreachModal(payload);
+  } catch (error) {
+    toast(`Outreach failed: ${error.message}`);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function openOutreachModal(payload) {
+  let modal = document.getElementById("outreachModal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "outreachModal";
+    modal.className = "modal-overlay";
+    modal.innerHTML = `
+      <div class="modal-box" style="max-width:640px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <strong>Outreach Email Draft</strong>
+          <button id="outreachCopyBtn" style="margin-left:auto;margin-right:0.5rem">Copy</button>
+          <button id="outreachCloseBtn">✕</button>
+        </div>
+        <pre id="outreachContent" style="white-space:pre-wrap;font-size:0.85rem;background:var(--surface,#f5f5f5);padding:1rem;border-radius:6px;max-height:420px;overflow:auto"></pre>
+        <p id="outreachRecruiterInfo" style="font-size:0.8rem;color:var(--muted,#888);margin-top:0.5rem"></p>
+      </div>`;
+    document.body.appendChild(modal);
+    document.getElementById("outreachCloseBtn").addEventListener("click", () => { modal.style.display = "none"; });
+    document.getElementById("outreachCopyBtn").addEventListener("click", () => {
+      const text = document.getElementById("outreachContent").textContent;
+      navigator.clipboard.writeText(text).then(() => toast("Copied to clipboard."));
+    });
+    modal.addEventListener("click", (e) => { if (e.target === modal) modal.style.display = "none"; });
+  }
+  const emailText = (payload.email_md || "").replace(/\*\*Subject:\*\*/g, "Subject:").replace(/---\n\n/, "");
+  document.getElementById("outreachContent").textContent = emailText;
+  const info = [];
+  if (payload.recruiter_name) info.push(`Recruiter: ${payload.recruiter_name}`);
+  if (payload.recruiter_email) info.push(`Email: ${payload.recruiter_email}`);
+  document.getElementById("outreachRecruiterInfo").textContent = info.join("  ·  ") || "No recruiter contact found in description.";
+  modal.style.display = "flex";
 }
 
 async function generatePacket(jobId, button) {
@@ -2836,6 +2883,20 @@ function bindEvents() {
       setBusy(rescanBtn, false);
     }
   });
+  const chromeSessionBtn = document.getElementById("chromeSessionBtn");
+  if (chromeSessionBtn) chromeSessionBtn.addEventListener("click", async () => {
+    setBusy(chromeSessionBtn, true);
+    toast("Building Chrome apply session…");
+    try {
+      const result = await api("/api/chrome-session", { min_score: 65, limit: 10 });
+      toast(result.message || `Chrome session ready: ${result.path}`);
+      if (result.count === 0) toast("No ready packets found. Generate packets first (Tailor CV) then try again.");
+    } catch (error) {
+      toast(`Chrome session failed: ${error.message}`);
+    } finally {
+      setBusy(chromeSessionBtn, false);
+    }
+  });
   const validateSourcesBtn = document.getElementById("validateSourcesBtn");
   if (validateSourcesBtn) validateSourcesBtn.addEventListener("click", async () => {
     setBusy(validateSourcesBtn, true);
@@ -2899,6 +2960,11 @@ function bindEvents() {
       const jobId = chatTarget.dataset.job;
       const job = state.jobs.find((item) => item.id === jobId);
       if (job) openChatModal(job);
+      return;
+    }
+    const outreachTarget = event.target.closest("[data-action='outreach']");
+    if (outreachTarget) {
+      generateOutreachEmail(outreachTarget.dataset.job, outreachTarget);
       return;
     }
     const statusTarget = event.target.closest("[data-action='status']");

@@ -24,7 +24,9 @@ dependencies = [
 [project.optional-dependencies]
 ui = ["streamlit>=1.28"]
 ollama = ["httpx>=0.25"]
+markitdown = ["markitdown>=0.1.5"]
 dev = ["pytest>=7.4", "pytest-cov>=4.1"]
+full = ["streamlit>=1.28", "httpx>=0.25", "markitdown>=0.1.5"]
 
 [project.scripts]
 job-agent = "job_agent.cli.main:app"

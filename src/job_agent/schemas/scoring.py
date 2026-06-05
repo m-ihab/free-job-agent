@@ -10,6 +10,7 @@ class ScoreBreakdown:
     title_score: int = 0
     location_score: int = 0
     seniority_score: int = 50
+    language_score: int = 50
     salary_score: int = 50
     total_score: int = 0
     confidence: float = 0.0

@@ -304,7 +304,8 @@ def parse_linkedin_skills_paste(text: str) -> list[str]:
         return []
     skills: list[str] = []
     for raw in re.split(r"[,;\n]+", text):
-        cleaned = re.sub(r"·\s*\d+\s*$", "", raw.strip())
+        cleaned = re.sub(r"\s*[·•]\s*\d+\s+\w[\w\s]*$", "", raw.strip())
+        cleaned = re.sub(r"·\s*\d+\s*$", "", cleaned)
         cleaned = re.sub(r"\s*\(\d+\)\s*$", "", cleaned)
         cleaned = cleaned.strip(" -•\t")
         if cleaned and len(cleaned) <= 80:
@@ -328,6 +329,7 @@ def merge_linkedin_skills(
     default_category: str = "general",
 ) -> list[str]:
     """Add LinkedIn skills to both profile files without duplicates."""
+    already_present = _existing_skill_names(candidate.get("skills", []))
     added: list[str] = []
     for skill_list in [candidate.setdefault("skills", []), master_cv.setdefault("skills", [])]:
         existing = _existing_skill_names(skill_list)
@@ -336,7 +338,7 @@ def merge_linkedin_skills(
                 continue
             skill_list.append({"name": name, "category": _infer_category(name) or default_category})
             existing.add(name.casefold())
-            if name not in added:
+            if name not in added and name.casefold() not in already_present:
                 added.append(name)
     return added
 

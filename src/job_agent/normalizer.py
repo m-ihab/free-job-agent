@@ -176,6 +176,45 @@ def _guess_title(text: str) -> Optional[str]:
     return None
 
 
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_RECRUITER_LABEL_RE = re.compile(
+    r"(?:Contact|Recruiter|Hiring Manager|Recruteur|Responsable RH|Contact RH|RH|HR Contact|Talent Acquisition)\s*[:\-]\s*([A-Z][A-Za-zéèêëàâùûôîïçœ-]+(?: [A-Z][A-Za-zéèêëàâùûôîïçœ-]+){1,3})",
+    re.IGNORECASE,
+)
+
+
+def _extract_recruiter(text: str) -> tuple[str | None, str | None]:
+    """Extract recruiter name and email from raw job text.
+
+    Only extracts information explicitly present in the text — never infers or
+    invents. Returns (name, email), either can be None.
+    """
+    try:
+        name: str | None = None
+        email: str | None = None
+        match = _RECRUITER_LABEL_RE.search(text)
+        if match:
+            name = match.group(1).strip()
+        email_match = _EMAIL_RE.search(text)
+        if email_match:
+            candidate = email_match.group(0)
+            # Skip generic role addresses — not a recruiter's personal email.
+            # Split on common separators to avoid substring false-positives like
+            # "johiring@corp.fr" matching "hiring".
+            local = candidate.split("@")[0].lower()
+            local_parts = set(re.split(r"[._+\-]", local))
+            _GENERIC_LOCALS = {
+                "noreply", "no-reply", "info", "jobs", "careers", "hiring",
+                "recrutement", "recruteur", "contact", "apply", "hr", "rh",
+                "applications", "candidature",
+            }
+            if not (local in _GENERIC_LOCALS or local_parts & _GENERIC_LOCALS):
+                email = candidate
+        return name, email
+    except Exception:
+        return None, None
+
+
 def _guess_company(text: str, fallback: str) -> str:
     patterns = [
         r"(?:at|@)\s+([A-Z][A-Za-z0-9&.,'\- ]{2,60})",
@@ -224,6 +263,8 @@ def normalize(job: "JobListing") -> "JobListing":
             job.title = guessed
     if job.company == "[To Be Parsed]":
         job.company = _guess_company(text, job.company)
+    if job.recruiter_name is None and job.recruiter_email is None:
+        job.recruiter_name, job.recruiter_email = _extract_recruiter(text)
     if not job.apply_url and job.source_url:
         job.apply_url = job.source_url
     if not job.description and text:

@@ -82,6 +82,8 @@ from job_agent.intake.free_apis import (
     search_free_api_jobs,
     supported_source_names,
 )
+from job_agent.apply_bridge import generate_batch_instructions
+from job_agent.generator.outreach_email import generate_outreach_email
 from job_agent.pipeline import add_job_to_tracker, add_text_job, add_url_job, generate_packet_for_job
 from job_agent.schemas.job import JobStatus
 from job_agent.timeutil import utc_now
@@ -964,6 +966,30 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 tracker = _tracker(config)
                 deleted_id = tracker.delete_job(job_id, note=str(payload.get("note") or "Dashboard removal"))
                 return self._send_json({"ok": True, "deleted_id": deleted_id})
+            if parsed.path == "/api/generate-outreach":
+                job_id = str(payload.get("job_id") or "")
+                if not job_id:
+                    return self._send_error_json("job_id is required.")
+                tracker = _tracker(config)
+                job = tracker.get_job(job_id)
+                if not job:
+                    return self._send_error_json("Job not found.")
+                profile, master_cv, _ = load_profile_bundle(config)
+                email_md = generate_outreach_email(job, master_cv, profile)
+                return self._send_json({
+                    "email_md": email_md,
+                    "recruiter_name": job.recruiter_name,
+                    "recruiter_email": job.recruiter_email,
+                })
+            if parsed.path == "/api/chrome-session":
+                min_score = float(payload.get("min_score") or 65)
+                limit = int(payload.get("limit") or 10)
+                candidates, out_path = generate_batch_instructions(min_score=min_score, limit=limit)
+                return self._send_json({
+                    "path": str(out_path),
+                    "count": len(candidates),
+                    "message": f"Chrome apply session written: {len(candidates)} application(s) → {out_path}",
+                })
             return self._send_error_json("Unknown API route.", HTTPStatus.NOT_FOUND)
         except FreeApiError as exc:
             return self._send_error_json(str(exc), HTTPStatus.BAD_GATEWAY)

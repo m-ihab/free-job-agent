@@ -55,6 +55,8 @@ class JobListing(BaseModel):
     benefits: list[str] = Field(default_factory=list)
     languages: list[str] = Field(default_factory=list)
     risk_flags: list[str] = Field(default_factory=list)
+    recruiter_name: Optional[str] = None
+    recruiter_email: Optional[str] = None
     apply_url: Optional[str] = None
     posted_date: Optional[str] = None
     deadline: Optional[str] = None

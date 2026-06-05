@@ -16,6 +16,7 @@ from job_agent.filters import FilterConfig, apply_filters
 from job_agent.fingerprint import set_fingerprint
 from job_agent.generator.cover_letter import generate_cover_letter
 from job_agent.generator.cv import tailor_cv
+from job_agent.generator.outreach_email import generate_outreach_email
 from job_agent.generator.qa import build_screening_answers_for_job, screening_answers_to_dict
 from job_agent.hashutil import sha256_file, sha256_json
 from job_agent.intake.file import ingest_file
@@ -200,6 +201,14 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
         raise ValueError(f"Job not found: {job_id}")
     profile, master_cv, qa_profile = load_profile_bundle(config)
 
+    # Suggestion C: duplicate packet guard — warn loudly but proceed when force=True
+    existing_packets = tracker.db.get_packets_for_job(job.id)
+    if existing_packets and not force:
+        raise RuntimeError(
+            f"A packet already exists for this job (version {existing_packets[-1].version}). "
+            "Pass --force to regenerate."
+        )
+
     filter_result = apply_filters(job, FilterConfig(), profile)
     if not filter_result.passed and not force:
         job.status = JobStatus.FILTERED
@@ -208,6 +217,16 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
         raise RuntimeError("Job failed hard filters: " + "; ".join(filter_result.reasons))
 
     job = score_and_save(config, job, profile)
+
+    # Suggestion B: language mismatch warning — flag when a French-only job
+    # will receive an English cover letter from a non-French-speaking candidate.
+    profile_langs_lower = {lang.lower() for lang in (profile.languages or [])}
+    job_langs_lower = {lang.lower() for lang in (job.languages or [])}
+    if "french" in job_langs_lower and "french" not in profile_langs_lower:
+        if "LANGUAGE_MISMATCH" not in job.risk_flags:
+            job.risk_flags.append("LANGUAGE_MISMATCH")
+            tracker.db.save_job(job)
+
     polish_opts = PolishOptions.from_env()
     # AI fit analysis, classification, and summary. All optional, cached.
     fit_analysis = analyze_fit(job, master_cv, profile, polish_opts)
@@ -249,6 +268,7 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
         profile=profile,
     )
     letter_md = generate_cover_letter(job, master_cv, profile)
+    outreach_md = generate_outreach_email(job, master_cv, profile)
     cv_html = render_html(cv_md, title=f"CV - {job.title}")
     letter_html = render_html(letter_md, title=f"Cover Letter - {job.title}")
     screening_answers = build_screening_answers_for_job(job, qa_profile)
@@ -283,6 +303,8 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
     artifacts.append(_write_text(letter_md_path, letter_md))
     artifacts.append(_write_text(letter_html_path, letter_html))
     artifacts.append(_write_pdf(letter_md, letter_pdf_path, "cover_letter_pdf", "Cover Letter"))
+
+    artifacts.append(_write_text(out_dir / "outreach_email.md", outreach_md))
 
     if fit_analysis is not None:
         artifacts.append(_write_text(out_dir / "ai_fit_brief.md", _render_ai_brief(job, fit_analysis)))

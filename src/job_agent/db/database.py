@@ -68,6 +68,8 @@ class Database:
                     fit_decision TEXT,
                     fit_notes_json TEXT NOT NULL DEFAULT '[]',
                     missing_requirements_json TEXT NOT NULL DEFAULT '[]',
+                    recruiter_name TEXT,
+                    recruiter_email TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -136,6 +138,9 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_ai_cache_kind ON ai_cache(kind);
 
+                -- Additive migrations — safe to re-run on existing databases.
+                -- SQLite ignores "duplicate column" errors only via try/catch below.
+
                 -- Sources (ATS slugs etc.) that have recently 404'd. The
                 -- autopilot consults this to skip dead boards without nagging
                 -- the user. Auto-expires after broken_until passes.
@@ -149,6 +154,16 @@ class Database:
                     PRIMARY KEY (source, slug)
                 );
             """)
+            # Additive column migrations — run after CREATE TABLE so new DBs
+            # get the column inline and existing DBs get it here.
+            for _migration in [
+                "ALTER TABLE jobs ADD COLUMN recruiter_name TEXT",
+                "ALTER TABLE jobs ADD COLUMN recruiter_email TEXT",
+            ]:
+                try:
+                    conn.execute(_migration)
+                except Exception:
+                    pass  # column already exists
 
     # ---- Job methods ----
 
@@ -186,6 +201,8 @@ class Database:
             "fit_decision": job.fit_decision,
             "fit_notes_json": json.dumps(job.fit_notes, ensure_ascii=False),
             "missing_requirements_json": json.dumps(job.missing_requirements, ensure_ascii=False),
+            "recruiter_name": job.recruiter_name,
+            "recruiter_email": job.recruiter_email,
             "created_at": job.created_at,
             "updated_at": job.updated_at,
         }
@@ -210,6 +227,8 @@ class Database:
         d["risk_flags"] = json.loads(d.pop("risk_flags_json", "[]"))
         d["fit_notes"] = json.loads(d.pop("fit_notes_json"))
         d["missing_requirements"] = json.loads(d.pop("missing_requirements_json", "[]"))
+        d.setdefault("recruiter_name", None)
+        d.setdefault("recruiter_email", None)
         return JobListing(**d)
 
     def get_job(self, job_id: str) -> Optional[JobListing]:

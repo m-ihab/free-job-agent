@@ -10,9 +10,12 @@ def test_france_search_urls_include_major_boards():
     rows = build_france_search_urls("data science stage", "Paris")
     keys = {row[0] for row in rows}
     assert "welcome-to-the-jungle" in keys
+    assert "wttj-data" in keys
     assert "hellowork" in keys
     assert "apec" in keys
     assert "france-travail-web" in keys
+    assert "lesjeudis" in keys
+    assert "chooseparisregion" in keys
     assert any("data+science+stage" in row[2] for row in rows)
 
 

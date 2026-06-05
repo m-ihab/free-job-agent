@@ -1,39 +1,70 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
 .venv/
 venv/
 env/
-dist/
-build/
-*.egg-info/
+
+# Testing & coverage
 .pytest_cache/
 .pytest-cache/
 .pytest-temp/
 htmlcov/
 .coverage
 .coverage.*
+
+# Runtime data (personal / sensitive)
+.job_agent/
+profiles/
+jobs/
 data/
 outputs/
+
+# Secrets & credentials
+.env
+.env.local
+.env.*
+*.env
+.france_travail.endpoints.local.json
+
+# Generated apply sessions (contain personal QA answers + job data)
+chrome_apply_session*.md
+apply_session*.md
+
+# Generated artifacts
 *.db
+*.log
+preview_cv.tex
+
+# OS / editor
 .DS_Store
 .idea/
 .vscode/
-*.log
-.job_agent/
-.smoke_home/
-.smoke_job.txt
-.env.local
-.france_travail.endpoints.local.json
-profiles/
-jobs/
-france_urls.json
-france_urls.txt
-UsersmihabDocumentstmppytest/
+Thumbs.db
+
+# Local dev tooling (not part of the project)
+CLAUDE.md
 .claude/
+.anthropic/
+
+# Node / Playwright
 node_modules/
 playwright-report/
 test-results/
-preview_cv.tex
+
+# Smoke test artifacts
+.smoke_home/
+.smoke_job.txt
+UsersmihabDocumentstmppytest/
+
+# Misc local files
+france_urls.json
+france_urls.txt

@@ -77,6 +77,7 @@ from job_agent.intake.paste import ingest_paste
 from job_agent.intake.rss import ingest_rss
 from job_agent.intake.url import ingest_url
 from job_agent.normalizer import normalize
+from job_agent.generator.outreach_email import generate_outreach_email
 from job_agent.pipeline import add_job_to_tracker, generate_packet_for_job, process_file
 from job_agent.polish import PolishOptions, ollama_status
 from job_agent.profile_enrich import (
@@ -1074,8 +1075,25 @@ def _handle_apply_assist(args) -> None:
             webbrowser.open(job.apply_url)
 
 
+def _handle_outreach(args) -> None:
+    """Print a recruiter outreach email draft for a job to stdout."""
+    config = _load_config()
+    tracker = _get_tracker(config)
+    job = tracker.db.resolve_job(args.job_id)
+    if not job:
+        _fail(f"Job not found: {args.job_id}")
+    profile, master_cv, _ = load_profile_bundle(config)
+    email_md = generate_outreach_email(job, master_cv, profile)
+    console.print(email_md)
+    if job.recruiter_name:
+        console.print(f"\n[dim]Recruiter: {job.recruiter_name}[/dim]")
+    if job.recruiter_email:
+        console.print(f"[dim]Email: {job.recruiter_email}[/dim]")
+
+
 def _handle_mark_submitted(args) -> None:
-    tracker = _get_tracker(_load_config())
+    config = _load_config()
+    tracker = _get_tracker(config)
     packet = tracker.db.resolve_packet(args.packet_id)
     if not packet:
         _fail(f"Packet not found: {args.packet_id}")
@@ -1087,6 +1105,13 @@ def _handle_mark_submitted(args) -> None:
         tracker.db.save_job(job)
     tracker.db.log_event(packet.job_id, "MANUALLY_SUBMITTED", {"packet_id": packet.id, "note": args.note}, packet_id=packet.id)
     console.print(f"Marked manually submitted: {packet.id}")
+    try:
+        wb_path, count = export_applied_internships(config)
+        if count > 0:
+            console.print(f"Tracker updated: {count} internship(s) → {wb_path}")
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Auto-export tracker failed: %s", exc)
 
 
 def _handle_packet_show(args) -> None:
@@ -1337,6 +1362,10 @@ class LocalCLIApp:
         submitted_p.add_argument("packet_id")
         submitted_p.add_argument("--note", "-n", default="")
         submitted_p.set_defaults(handler=_handle_mark_submitted)
+
+        outreach_p = sub.add_parser("outreach", help="Draft a recruiter outreach email for a job and print it.")
+        outreach_p.add_argument("job_id", help="Job ID or short ID.")
+        outreach_p.set_defaults(handler=_handle_outreach)
 
         packet_p = sub.add_parser("packet", help="Manage application packets.")
         packet_sub = packet_p.add_subparsers(dest="packet_command")

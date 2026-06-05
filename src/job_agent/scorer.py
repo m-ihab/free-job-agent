@@ -76,11 +76,68 @@ def _salary_score(job: JobListing, profile: CandidateProfile) -> tuple[int, list
     return 100, ["Salary appears compatible with preference"], []
 
 
+def _language_score(job: JobListing, profile: CandidateProfile) -> tuple[int, list[str], list[str]]:
+    """Score language compatibility. Critical for French roles."""
+    job_langs = [lang.lower() for lang in (job.languages or [])]
+    profile_langs = [lang.lower() for lang in (profile.languages or [])]
+    job_text = (job.description + " " + job.title).lower()
+
+    # Detect French language requirement from job text when not tagged
+    french_signals = ["french required", "francais requis", "niveau c1", "niveau c2",
+                      "bilingue francais", "courant en francais", "french fluent",
+                      "langue francaise", "parler francais"]
+    french_required = any(s in job_text for s in french_signals) or "french" in job_langs
+
+    if not french_required:
+        return 80, ["No strict language requirement detected"], []
+
+    candidate_speaks_french = any(
+        "french" in lang or "francais" in lang or "francaise" in lang
+        for lang in profile_langs
+    )
+
+    if candidate_speaks_french:
+        return 100, ["French required and candidate speaks French"], []
+
+    return 10, ["French required but not listed in candidate languages"], ["FRENCH_REQUIRED"]
+
+
+def _work_auth_score(job: JobListing, profile: CandidateProfile) -> tuple[int, list[str], list[str]]:
+    """Score work authorization compatibility. Critical for EU/France roles."""
+    job_text = (job.description + " " + (job.title or "")).lower()
+
+    # Signals that EU/France work auth is required
+    eu_only_signals = [
+        "eu citizen", "european union", "carte de sejour", "titre de sejour",
+        "autorisation de travail", "non-eu not eligible", "visa sponsorship not available",
+        "no sponsorship", "must be authorized to work"
+    ]
+    eu_only = any(s in job_text for s in eu_only_signals)
+
+    if not eu_only:
+        return 75, ["No explicit work authorization restriction detected"], []
+
+    profile_auths = [a.lower() for a in getattr(profile, "work_authorizations", [])]
+    has_eu_auth = any(
+        "eu" in a or "european" in a or "france" in a or "french" in a
+        or "citizen" in a or "carte" in a
+        for a in profile_auths
+    )
+
+    if has_eu_auth:
+        return 100, ["EU work authorization confirmed"], []
+
+    return 5, ["Job requires EU/France work authorization; candidate authorization unclear"], ["WORK_AUTH_REQUIRED"]
+
+
 def score_job(job: JobListing, profile: CandidateProfile) -> ScoreBreakdown:
     """Score a job listing against a candidate profile.
 
     Scores are integers from 0 to 100. This is intentionally approximate; the
     explanatory notes matter more than decimal precision.
+
+    Weight breakdown:
+      skill 38%, title 22%, location 15%, seniority 10%, language 10%, salary 5%
     """
     candidate_skill_names = profile.all_skill_names()
     skill_score, skill_notes, missing = _skill_overlap(job.tech_stack, candidate_skill_names)
@@ -88,20 +145,36 @@ def score_job(job: JobListing, profile: CandidateProfile) -> ScoreBreakdown:
     loc_score, loc_notes = _location_score(job, profile)
     seniority_score, seniority_notes, seniority_risks = _seniority_score(job, profile)
     salary_score, salary_notes, salary_risks = _salary_score(job, profile)
+    lang_score, lang_notes, lang_risks = _language_score(job, profile)
+    auth_score, auth_notes, auth_risks = _work_auth_score(job, profile)
 
-    weights = {"skill": 0.42, "title": 0.25, "location": 0.18, "seniority": 0.10, "salary": 0.05}
+    weights = {
+        "skill": 0.38,
+        "title": 0.22,
+        "location": 0.15,
+        "seniority": 0.10,
+        "language": 0.10,
+        "salary": 0.05,
+    }
     total = round(
         skill_score * weights["skill"]
         + title_score * weights["title"]
         + loc_score * weights["location"]
         + seniority_score * weights["seniority"]
+        + lang_score * weights["language"]
         + salary_score * weights["salary"]
     )
-    risk_flags = seniority_risks + salary_risks
+
+    # Hard penalties: work auth and language are dealbreakers
+    if "FRENCH_REQUIRED" in lang_risks:
+        total = min(total, 25)
+    if "WORK_AUTH_REQUIRED" in auth_risks:
+        total = min(total, 20)
+    risk_flags = seniority_risks + salary_risks + lang_risks + auth_risks
     min_fit = getattr(profile, "min_fit_score", 70) or 70
     if total >= min_fit and not risk_flags:
         decision = "apply"
-    elif total >= max(50, min_fit - 15):
+    elif total >= max(50, min_fit - 15) and not auth_risks:
         decision = "hold"
     else:
         decision = "skip"
@@ -112,17 +185,24 @@ def score_job(job: JobListing, profile: CandidateProfile) -> ScoreBreakdown:
         confidence -= 0.10
     if job.company == "[To Be Parsed]" or job.title == "[To Be Parsed]":
         confidence -= 0.20
+    if auth_risks or lang_risks:
+        confidence -= 0.10
     confidence = round(max(0.1, min(0.95, confidence)), 2)
+    all_notes = (
+        skill_notes + title_notes + loc_notes
+        + seniority_notes + lang_notes + auth_notes + salary_notes
+    )
     return ScoreBreakdown(
         skill_score=skill_score,
         title_score=title_score,
         location_score=loc_score,
         seniority_score=seniority_score,
+        language_score=lang_score,
         salary_score=salary_score,
         total_score=total,
         confidence=confidence,
         decision=decision,
-        notes=skill_notes + title_notes + loc_notes + seniority_notes + salary_notes,
+        notes=all_notes,
         missing_requirements=missing,
         risk_flags=risk_flags,
     )

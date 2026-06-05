@@ -142,6 +142,18 @@ FRENCH_SEARCH_BOARDS: list[SearchBoard] = [
         "Public web search URL only; no free applicant API implemented.",
     ),
     SearchBoard(
+        "lesjeudis",
+        "Les Jeudis",
+        "https://www.lesjeudis.com/offres-emploi?mots={q}&lieu={loc}",
+        "French IT/tech specialist job board — manual search, no public applicant API.",
+    ),
+    SearchBoard(
+        "chooseparisregion",
+        "Choose Paris Region",
+        "https://chooseparisregion.org/en/talent/find-a-job?search={q}",
+        "Paris Region international talent portal — English-language listings for the Paris ecosystem.",
+    ),
+    SearchBoard(
         "apec",
         "Apec",
         "https://www.apec.fr/candidat/recherche-emploi.html/emploi?motsCles={q}&lieux={loc}",
@@ -178,7 +190,6 @@ FRENCH_SEARCH_BOARDS: list[SearchBoard] = [
         "Welcome to the Jungle · Data",
         "https://www.welcometothejungle.com/fr/jobs?query={q}&aroundQuery={loc}&refinementList%5Bcontract_type%5D%5B%5D=apprenticeship&refinementList%5Bcontract_type%5D%5B%5D=internship",
         "Welcome to the Jungle pre-filtered to alternance + stage contracts.",
-        recommended=False,
     ),
     SearchBoard(
         "talent-io",

@@ -102,7 +102,7 @@ def test_repeated_packet_generations_keep_distinct_versions(tmp_path):
     tracker.add_job(set_fingerprint(job))
 
     first = generate_packet_for_job(config, job.id)
-    second = generate_packet_for_job(config, job.id)
+    second = generate_packet_for_job(config, job.id, force=True)
 
     assert first.id != second.id
     assert first.version == 1

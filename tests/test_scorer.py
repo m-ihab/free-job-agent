@@ -68,10 +68,11 @@ def test_score_notes_are_populated(sample_job, sample_profile):
 def test_score_total_is_weighted_combination(sample_job, sample_profile):
     breakdown = score_job(sample_job, sample_profile)
     expected = round(
-        breakdown.skill_score * 0.42
-        + breakdown.title_score * 0.25
-        + breakdown.location_score * 0.18
+        breakdown.skill_score * 0.38
+        + breakdown.title_score * 0.22
+        + breakdown.location_score * 0.15
         + breakdown.seniority_score * 0.10
+        + breakdown.language_score * 0.10
         + breakdown.salary_score * 0.05
     )
     assert breakdown.total_score == expected
