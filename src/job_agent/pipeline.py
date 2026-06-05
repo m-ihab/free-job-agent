@@ -16,6 +16,7 @@ from job_agent.filters import FilterConfig, apply_filters
 from job_agent.fingerprint import set_fingerprint
 from job_agent.generator.cover_letter import generate_cover_letter
 from job_agent.generator.cv import tailor_cv
+from job_agent.generator.interview_prep import generate_interview_prep
 from job_agent.generator.outreach_email import generate_outreach_email
 from job_agent.generator.qa import build_screening_answers_for_job, screening_answers_to_dict
 from job_agent.hashutil import sha256_file, sha256_json
@@ -269,6 +270,7 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
     )
     letter_md = generate_cover_letter(job, master_cv, profile)
     outreach_md = generate_outreach_email(job, master_cv, profile)
+    interview_md = generate_interview_prep(job, master_cv, profile)
     cv_html = render_html(cv_md, title=f"CV - {job.title}")
     letter_html = render_html(letter_md, title=f"Cover Letter - {job.title}")
     screening_answers = build_screening_answers_for_job(job, qa_profile)
@@ -305,6 +307,7 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
     artifacts.append(_write_pdf(letter_md, letter_pdf_path, "cover_letter_pdf", "Cover Letter"))
 
     artifacts.append(_write_text(out_dir / "outreach_email.md", outreach_md))
+    artifacts.append(_write_text(out_dir / "interview_prep.md", interview_md))
 
     if fit_analysis is not None:
         artifacts.append(_write_text(out_dir / "ai_fit_brief.md", _render_ai_brief(job, fit_analysis)))

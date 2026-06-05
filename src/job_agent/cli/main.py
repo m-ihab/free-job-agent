@@ -77,8 +77,22 @@ from job_agent.intake.paste import ingest_paste
 from job_agent.intake.rss import ingest_rss
 from job_agent.intake.url import ingest_url
 from job_agent.normalizer import normalize
+from job_agent.generator.followup_email import generate_followup_email
+from job_agent.generator.interview_prep import generate_interview_prep
+from job_agent.generator.linkedin_message import (
+    generate_linkedin_connect_request,
+    generate_linkedin_recruiter_message,
+    generate_linkedin_followup_message,
+)
 from job_agent.generator.outreach_email import generate_outreach_email
+from job_agent.headhunter import (
+    build_batch_outreach,
+    english_first_strategy_report,
+    write_batch_outreach_file,
+)
+from job_agent.market_intelligence import build_market_report
 from job_agent.pipeline import add_job_to_tracker, generate_packet_for_job, process_file
+from job_agent.profile_audit import audit_profile
 from job_agent.polish import PolishOptions, ollama_status
 from job_agent.profile_enrich import (
     enrich_from_github,
@@ -1091,6 +1105,146 @@ def _handle_outreach(args) -> None:
         console.print(f"[dim]Email: {job.recruiter_email}[/dim]")
 
 
+def _handle_linkedin_message(args) -> None:
+    """Print a LinkedIn message for a job to stdout."""
+    config = _load_config()
+    tracker = _get_tracker(config)
+    job = tracker.db.resolve_job(args.job_id)
+    if not job:
+        _fail(f"Job not found: {args.job_id}")
+    profile, master_cv, _ = load_profile_bundle(config)
+    msg_type = args.type or "recruiter"
+    if msg_type == "connect":
+        msg = generate_linkedin_connect_request(job, master_cv, profile)
+    elif msg_type == "followup":
+        msg = generate_linkedin_followup_message(job, master_cv, profile)
+    else:
+        msg = generate_linkedin_recruiter_message(job, master_cv, profile)
+    console.print(msg)
+    if job.recruiter_name:
+        console.print(f"\n[dim]Recruiter: {job.recruiter_name}[/dim]")
+
+
+def _handle_audit_profile(args) -> None:
+    """Run strict recruiter audit on the profile and save a report."""
+    config = _load_config()
+    profile, master_cv, _ = load_profile_bundle(config)
+    tracker = _get_tracker(config)
+    tracked_jobs = tracker.list_jobs(limit=None)
+    report = audit_profile(profile, master_cv, tracked_jobs)
+    md = report.to_markdown()
+    console.print(md)
+    # Save to profiles dir
+    if config.profiles_dir:
+        report_path = config.profiles_dir / "profile_audit_report.md"
+        report_path.write_text(md, encoding="utf-8")
+        console.print(f"\n[dim]Saved to {report_path}[/dim]")
+
+
+def _handle_suggest_skills(args) -> None:
+    """Suggest implied and trending skills to add to the profile."""
+    from job_agent.skill_extractor import extract_implied_skills, suggest_trend_gaps
+    config = _load_config()
+    profile, master_cv, _ = load_profile_bundle(config)
+    implied = extract_implied_skills(profile, master_cv)
+    trends = suggest_trend_gaps(profile)
+    if implied:
+        console.print("\n[bold]Implied skills (from your experience):[/bold]")
+        for s in implied[:15]:
+            console.print(f"  • {s.name}  [dim](from {s.implied_by})[/dim]")
+    if trends:
+        console.print("\n[bold]2025 trending skills not in your profile:[/bold]")
+        for t in trends[:10]:
+            console.print(f"  • {t}")
+    if not implied and not trends:
+        console.print("Your profile looks complete — no implied or trending gaps found.")
+
+
+def _handle_market_report(args) -> None:
+    """Print a job market intelligence report from tracked jobs."""
+    config = _load_config()
+    tracker = _get_tracker(config)
+    profile, _, _ = load_profile_bundle(config)
+    tracked_jobs = tracker.list_jobs(limit=None)
+    report = build_market_report(tracked_jobs, set(profile.all_skill_names()))
+    md = report.to_markdown()
+    console.print(md)
+    if args.output:
+        args.output.write_text(md, encoding="utf-8")
+        console.print(f"[dim]Saved to {args.output}[/dim]")
+
+
+def _handle_interview_prep(args) -> None:
+    """Generate interview prep sheet for a job."""
+    config = _load_config()
+    tracker = _get_tracker(config)
+    job = tracker.db.resolve_job(args.job_id)
+    if not job:
+        _fail(f"Job not found: {args.job_id}")
+    profile, master_cv, _ = load_profile_bundle(config)
+    prep = generate_interview_prep(job, master_cv, profile)
+    console.print(prep)
+    if args.save:
+        packets = tracker.db.get_packets_for_job(job.id)
+        if packets:
+            out_dir = Path(packets[-1].tailored_cv_pdf_path).parent if packets[-1].tailored_cv_pdf_path else None
+            if out_dir and out_dir.exists():
+                path = out_dir / "interview_prep.md"
+                path.write_text(prep, encoding="utf-8")
+                console.print(f"[dim]Saved to {path}[/dim]")
+
+
+def _handle_followup_email(args) -> None:
+    """Generate a follow-up email for an applied job."""
+    config = _load_config()
+    tracker = _get_tracker(config)
+    job = tracker.db.resolve_job(args.job_id)
+    if not job:
+        _fail(f"Job not found: {args.job_id}")
+    profile, master_cv, _ = load_profile_bundle(config)
+    email = generate_followup_email(job, master_cv, profile, follow_type=args.type or "week1")
+    console.print(email)
+
+
+def _handle_headhunter_batch(args) -> None:
+    """Generate a ready-to-send outreach pack for all high-scoring saved jobs."""
+    config = _load_config()
+    tracker = _get_tracker(config)
+    profile, master_cv, _ = load_profile_bundle(config)
+    jobs = tracker.list_jobs(limit=None)
+    packs = build_batch_outreach(
+        jobs,
+        master_cv,
+        profile,
+        min_score=args.min_score,
+        english_first_only=args.english_first,
+    )
+    if not packs:
+        console.print(f"No jobs found with score ≥ {args.min_score}. Run scoring first with: job-agent score <job-id>")
+        return
+    out = args.output or (Path(config.outputs_dir) / "batch_outreach.md")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    count = write_batch_outreach_file(packs, out)
+    console.print(Panel(
+        f"Generated {count} outreach packs\n"
+        f"Saved to: {out}\n\n"
+        "Review every message manually before sending. Never auto-send.",
+        title="Headhunter batch complete",
+    ))
+
+
+def _handle_headhunter_strategy(args) -> None:
+    """Show which tracked jobs are at English-first companies."""
+    config = _load_config()
+    tracker = _get_tracker(config)
+    jobs = tracker.list_jobs(limit=None)
+    report = english_first_strategy_report(jobs)
+    console.print(report)
+    if args.output:
+        args.output.write_text(report, encoding="utf-8")
+        console.print(f"[dim]Saved to {args.output}[/dim]")
+
+
 def _handle_mark_submitted(args) -> None:
     config = _load_config()
     tracker = _get_tracker(config)
@@ -1366,6 +1520,45 @@ class LocalCLIApp:
         outreach_p = sub.add_parser("outreach", help="Draft a recruiter outreach email for a job and print it.")
         outreach_p.add_argument("job_id", help="Job ID or short ID.")
         outreach_p.set_defaults(handler=_handle_outreach)
+
+        linkedin_p = sub.add_parser("linkedin-message", help="Generate a LinkedIn message for a job (connect/recruiter/followup).")
+        linkedin_p.add_argument("job_id", help="Job ID or short ID.")
+        linkedin_p.add_argument("--type", choices=["connect", "recruiter", "followup"], default="recruiter")
+        linkedin_p.set_defaults(handler=_handle_linkedin_message)
+
+        audit_p = sub.add_parser("audit-profile", help="Strict recruiter audit: why you'd get rejected and how to fix it.")
+        audit_p.set_defaults(handler=_handle_audit_profile)
+
+        suggest_skills_p = sub.add_parser("suggest-skills", help="Suggest implied and trending skills to add to your profile.")
+        suggest_skills_p.set_defaults(handler=_handle_suggest_skills)
+
+        market_p = sub.add_parser("market-report", help="Job market intelligence from your tracked jobs.")
+        market_p.add_argument("--output", type=Path, default=None, help="Save report to file.")
+        market_p.set_defaults(handler=_handle_market_report)
+
+        interview_p = sub.add_parser("interview-prep", help="Generate interview prep questions for a job.")
+        interview_p.add_argument("job_id", help="Job ID or short ID.")
+        interview_p.add_argument("--save", action="store_true", default=False, help="Save to packet folder.")
+        interview_p.set_defaults(handler=_handle_interview_prep)
+
+        followup_p = sub.add_parser("followup-email", help="Generate a follow-up email after applying.")
+        followup_p.add_argument("job_id", help="Job ID or short ID.")
+        followup_p.add_argument("--type", choices=["week1", "week2", "rejection"], default="week1")
+        followup_p.set_defaults(handler=_handle_followup_email)
+
+        hh_p = sub.add_parser("headhunter", help="Proactive outreach tools — batch messages, English-first strategy.")
+        hh_sub = hh_p.add_subparsers(dest="hh_command")
+        hh_sub.required = True
+
+        hh_batch = hh_sub.add_parser("batch", help="Generate outreach packs for all high-scoring jobs.")
+        hh_batch.add_argument("--min-score", type=int, default=65, help="Minimum fit score threshold (default 65).")
+        hh_batch.add_argument("--english-first", action="store_true", help="Only include English-first companies.")
+        hh_batch.add_argument("--output", type=Path, default=None, help="Output markdown file path.")
+        hh_batch.set_defaults(handler=_handle_headhunter_batch)
+
+        hh_strategy = hh_sub.add_parser("strategy", help="Show English-first company strategy for your tracked jobs.")
+        hh_strategy.add_argument("--output", type=Path, default=None, help="Optional file to save the report.")
+        hh_strategy.set_defaults(handler=_handle_headhunter_strategy)
 
         packet_p = sub.add_parser("packet", help="Manage application packets.")
         packet_sub = packet_p.add_subparsers(dest="packet_command")

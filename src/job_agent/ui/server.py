@@ -83,8 +83,23 @@ from job_agent.intake.free_apis import (
     supported_source_names,
 )
 from job_agent.apply_bridge import generate_batch_instructions
+from job_agent.generator.followup_email import generate_followup_email
+from job_agent.headhunter import (
+    build_batch_outreach,
+    english_first_strategy_report,
+    write_batch_outreach_file,
+)
+from job_agent.generator.interview_prep import generate_interview_prep
+from job_agent.generator.linkedin_message import (
+    generate_linkedin_connect_request,
+    generate_linkedin_recruiter_message,
+    generate_linkedin_followup_message,
+)
 from job_agent.generator.outreach_email import generate_outreach_email
+from job_agent.market_intelligence import build_market_report
 from job_agent.pipeline import add_job_to_tracker, add_text_job, add_url_job, generate_packet_for_job
+from job_agent.profile_audit import audit_profile
+from job_agent.skill_extractor import extract_implied_skills, mine_job_keywords, suggest_trend_gaps
 from job_agent.schemas.job import JobStatus
 from job_agent.timeutil import utc_now
 from job_agent.tracker import ApplicationTracker
@@ -990,6 +1005,113 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                     "count": len(candidates),
                     "message": f"Chrome apply session written: {len(candidates)} application(s) → {out_path}",
                 })
+            if parsed.path == "/api/linkedin-message":
+                job_id = str(payload.get("job_id") or "")
+                msg_type = str(payload.get("type") or "recruiter")
+                if not job_id:
+                    return self._send_error_json("job_id is required.")
+                tracker = _tracker(config)
+                job = tracker.get_job(job_id)
+                if not job:
+                    return self._send_error_json("Job not found.")
+                profile, master_cv, _ = load_profile_bundle(config)
+                if msg_type == "connect":
+                    msg = generate_linkedin_connect_request(job, master_cv, profile)
+                elif msg_type == "followup":
+                    msg = generate_linkedin_followup_message(job, master_cv, profile)
+                else:
+                    msg = generate_linkedin_recruiter_message(job, master_cv, profile)
+                return self._send_json({"message": msg, "type": msg_type})
+            if parsed.path == "/api/audit-profile":
+                profile, master_cv, _ = load_profile_bundle(config)
+                tracker = _tracker(config)
+                tracked_jobs = tracker.list_jobs(limit=None)
+                report = audit_profile(profile, master_cv, tracked_jobs)
+                return self._send_json({
+                    "score": report.strength_score,
+                    "grade": report.grade,
+                    "issues": [{"severity": i.severity, "title": i.title, "detail": i.detail, "fix": i.fix} for i in report.issues],
+                    "implied_skills": report.implied_skills[:15],
+                    "keyword_gaps": report.keyword_gaps[:10],
+                    "trend_gaps": report.trend_gaps[:10],
+                    "strengths": report.strengths,
+                    "focus_areas": report.focus_areas,
+                    "markdown": report.to_markdown(),
+                })
+            if parsed.path == "/api/suggest-skills":
+                profile, master_cv, _ = load_profile_bundle(config)
+                implied = extract_implied_skills(profile, master_cv)
+                trends = suggest_trend_gaps(profile)
+                return self._send_json({
+                    "implied": [{"name": s.name, "implied_by": s.implied_by} for s in implied[:15]],
+                    "trending_gaps": trends[:10],
+                })
+            if parsed.path == "/api/market-report":
+                profile, _, _ = load_profile_bundle(config)
+                tracker = _tracker(config)
+                tracked_jobs = tracker.list_jobs(limit=None)
+                report = build_market_report(tracked_jobs, set(profile.all_skill_names()))
+                return self._send_json({
+                    "total_jobs": report.total_jobs,
+                    "top_skills": [{"skill": s, "count": c} for s, c in report.top_skills[:15]],
+                    "contract_breakdown": report.contract_breakdown,
+                    "french_pct": round(report.language_requirement_pct),
+                    "remote_pct": round(report.remote_pct),
+                    "your_match_rate": round(report.your_match_rate),
+                    "markdown": report.to_markdown(),
+                })
+            if parsed.path == "/api/interview-prep":
+                job_id = str(payload.get("job_id") or "")
+                if not job_id:
+                    return self._send_error_json("job_id is required.")
+                tracker = _tracker(config)
+                job = tracker.get_job(job_id)
+                if not job:
+                    return self._send_error_json("Job not found.")
+                profile, master_cv, _ = load_profile_bundle(config)
+                prep = generate_interview_prep(job, master_cv, profile)
+                return self._send_json({"prep_md": prep})
+            if parsed.path == "/api/followup-email":
+                job_id = str(payload.get("job_id") or "")
+                follow_type = str(payload.get("type") or "week1")
+                if not job_id:
+                    return self._send_error_json("job_id is required.")
+                tracker = _tracker(config)
+                job = tracker.get_job(job_id)
+                if not job:
+                    return self._send_error_json("Job not found.")
+                profile, master_cv, _ = load_profile_bundle(config)
+                email_md = generate_followup_email(job, master_cv, profile, follow_type=follow_type)
+                return self._send_json({"email_md": email_md, "type": follow_type})
+            if parsed.path == "/api/headhunter-batch":
+                min_score = int(payload.get("min_score") or 65)
+                english_first = bool(payload.get("english_first") or False)
+                profile, master_cv, _ = load_profile_bundle(config)
+                tracker = _tracker(config)
+                jobs = tracker.list_jobs(limit=None)
+                packs = build_batch_outreach(jobs, master_cv, profile, min_score=min_score, english_first_only=english_first)
+                return self._send_json({
+                    "count": len(packs),
+                    "packs": [
+                        {
+                            "job_id": p.job_id,
+                            "job_title": p.job_title,
+                            "company": p.company,
+                            "score": p.score,
+                            "is_english_first": p.is_english_first,
+                            "connect_request": p.connect_request,
+                            "recruiter_message": p.recruiter_message,
+                            "followup_message": p.followup_message,
+                            "outreach_email": p.outreach_email,
+                        }
+                        for p in packs
+                    ],
+                })
+            if parsed.path == "/api/headhunter-strategy":
+                tracker = _tracker(config)
+                jobs = tracker.list_jobs(limit=None)
+                report = english_first_strategy_report(jobs)
+                return self._send_json({"report_md": report})
             return self._send_error_json("Unknown API route.", HTTPStatus.NOT_FOUND)
         except FreeApiError as exc:
             return self._send_error_json(str(exc), HTTPStatus.BAD_GATEWAY)

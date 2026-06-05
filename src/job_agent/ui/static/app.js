@@ -363,6 +363,9 @@ function jobActions(job) {
   return `<div class="row-actions">
     <button data-action="packet" data-job="${escapeHtml(job.id)}" title="Generate a tailored CV + cover letter for this job">Tailor CV</button>
     <button data-action="outreach" data-job="${escapeHtml(job.id)}" title="Draft a cold outreach email to the recruiter/hiring manager">Outreach</button>
+    <button data-action="linkedin" data-job="${escapeHtml(job.id)}" title="Draft a LinkedIn message to the recruiter">LinkedIn</button>
+    <button data-action="interview" data-job="${escapeHtml(job.id)}" title="Generate interview prep questions">Prep</button>
+    <button data-action="followup" data-job="${escapeHtml(job.id)}" title="Generate a follow-up email">Follow-up</button>
     <button data-action="ai-analyze" data-job="${escapeHtml(job.id)}" title="AI fit analysis">AI fit</button>
     <button data-action="ai-chat" data-job="${escapeHtml(job.id)}" title="Chat about this role">Chat</button>
     <button data-action="enrich" data-job="${escapeHtml(job.id)}" title="Enrich with France Travail data">Enrich</button>
@@ -695,6 +698,74 @@ async function addText() {
   } finally {
     setBusy(button, false);
   }
+}
+
+async function generateLinkedInMessage(jobId, button) {
+  setBusy(button, true);
+  toast("Drafting LinkedIn message…");
+  try {
+    const payload = await api("/api/linkedin-message", { job_id: jobId, type: "recruiter" });
+    openTextModal("LinkedIn Message Draft", payload.message, "Copy to clipboard");
+  } catch (error) {
+    toast(`LinkedIn message failed: ${error.message}`);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function generateInterviewPrep(jobId, button) {
+  setBusy(button, true);
+  toast("Generating interview prep…");
+  try {
+    const payload = await api("/api/interview-prep", { job_id: jobId });
+    openTextModal("Interview Prep", payload.prep_md, "Copy");
+  } catch (error) {
+    toast(`Interview prep failed: ${error.message}`);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function generateFollowupEmail(jobId, button) {
+  setBusy(button, true);
+  toast("Drafting follow-up email…");
+  try {
+    const payload = await api("/api/followup-email", { job_id: jobId, type: "week1" });
+    openTextModal("Follow-up Email Draft", payload.email_md, "Copy");
+  } catch (error) {
+    toast(`Follow-up failed: ${error.message}`);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function openTextModal(title, content, copyLabel) {
+  let modal = document.getElementById("genericTextModal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "genericTextModal";
+    modal.className = "modal-overlay";
+    modal.innerHTML = `
+      <div class="modal-box" style="max-width:680px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <strong id="genericModalTitle"></strong>
+          <button id="genericModalCopyBtn" style="margin-left:auto;margin-right:0.5rem">Copy</button>
+          <button id="genericModalCloseBtn">✕</button>
+        </div>
+        <pre id="genericModalContent" style="white-space:pre-wrap;font-size:0.83rem;background:var(--surface,#f5f5f5);padding:1rem;border-radius:6px;max-height:480px;overflow:auto"></pre>
+      </div>`;
+    document.body.appendChild(modal);
+    document.getElementById("genericModalCloseBtn").addEventListener("click", () => { modal.style.display = "none"; });
+    document.getElementById("genericModalCopyBtn").addEventListener("click", () => {
+      navigator.clipboard.writeText(document.getElementById("genericModalContent").textContent).then(() => toast("Copied to clipboard."));
+    });
+    modal.addEventListener("click", (e) => { if (e.target === modal) modal.style.display = "none"; });
+  }
+  document.getElementById("genericModalTitle").textContent = title;
+  document.getElementById("genericModalCopyBtn").textContent = copyLabel || "Copy";
+  const text = (content || "").replace(/\*\*([^*]+)\*\*/g, "$1").replace(/---\n\n/, "");
+  document.getElementById("genericModalContent").textContent = text;
+  modal.style.display = "flex";
 }
 
 async function generateOutreachEmail(jobId, button) {
@@ -2965,6 +3036,21 @@ function bindEvents() {
     const outreachTarget = event.target.closest("[data-action='outreach']");
     if (outreachTarget) {
       generateOutreachEmail(outreachTarget.dataset.job, outreachTarget);
+      return;
+    }
+    const linkedinTarget = event.target.closest("[data-action='linkedin']");
+    if (linkedinTarget) {
+      generateLinkedInMessage(linkedinTarget.dataset.job, linkedinTarget);
+      return;
+    }
+    const interviewTarget = event.target.closest("[data-action='interview']");
+    if (interviewTarget) {
+      generateInterviewPrep(interviewTarget.dataset.job, interviewTarget);
+      return;
+    }
+    const followupTarget = event.target.closest("[data-action='followup']");
+    if (followupTarget) {
+      generateFollowupEmail(followupTarget.dataset.job, followupTarget);
       return;
     }
     const statusTarget = event.target.closest("[data-action='status']");

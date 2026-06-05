@@ -34,6 +34,8 @@ outputs/
 .env.*
 *.env
 .france_travail.endpoints.local.json
+# Allow the documented example (no real values)
+!.env.local.example
 
 # Generated apply sessions (contain personal QA answers + job data)
 chrome_apply_session*.md
@@ -68,3 +70,12 @@ UsersmihabDocumentstmppytest/
 # Misc local files
 france_urls.json
 france_urls.txt
+
+# Extra sensitive-file guards
+profiles/**/.env*
+profiles/**/*.env
+profiles/**/secrets*
+profiles/**/token*
+*.bak
+profile_audit_report.md
+interview_prep.md
