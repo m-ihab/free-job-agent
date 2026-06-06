@@ -83,6 +83,7 @@ FRENCH_INTERNSHIP_QUERY_TERMS = [
 
 
 DEFAULT_FRANCE_DATA_AI_QUERIES = [
+    # ── Core bilingual pairs ─────────────────────────────────────────────────
     "stage data",
     "alternance data",
     "data scientist stage",
@@ -105,6 +106,37 @@ DEFAULT_FRANCE_DATA_AI_QUERIES = [
     "junior data scientist",
     "graduate data scientist",
     "chargé d'études data",
+    # ── Extended French internship/alternance terms ──────────────────────────
+    "stage NLP",
+    "alternance deep learning",
+    "stage MLOps",
+    "contrat pro data",
+    "stage analyse de données",
+    "stagiaire IA Paris",
+    "stage LLM",
+    "alternance NLP Paris",
+    "stage modélisation",
+    "stage IA générative",
+    "apprenti data engineer",
+    "stage computer vision",
+    "alternance traitement données",
+    "stage Python data",
+    "VIE data science",
+    "stagiaire science des données",
+    "alternance big data",
+    "stage traitement langage naturel",
+    "stage apprentissage automatique",
+    "contrat alternance data scientist",
+    # ── English variants for bilingual boards ────────────────────────────────
+    "data science internship Paris",
+    "machine learning internship Paris",
+    "AI internship France",
+    "NLP internship",
+    "deep learning intern",
+    "MLOps intern",
+    "LLM engineer intern",
+    "data engineering internship",
+    "computer vision internship",
 ]
 
 PARIS_LOCATION_ALIASES = {"paris", "paris 75", "ile-de-france", "île-de-france", "idf", "75"}
@@ -369,6 +401,26 @@ ROLE_FAMILY_MAP: dict[str, list[str]] = {
     "ia": [
         "intelligence artificielle", "ia engineer", "ai engineer",
         "machine learning", "data scientist",
+    ],
+    "nlp": [
+        "NLP", "natural language processing", "traitement langage naturel",
+        "text mining", "large language model", "LLM", "transformer",
+    ],
+    "deep learning": [
+        "deep learning", "neural network", "computer vision", "NLP",
+        "machine learning", "ml engineer",
+    ],
+    "llm": [
+        "LLM", "large language model", "generative AI", "IA générative",
+        "NLP", "deep learning", "ai engineer",
+    ],
+    "mlops": [
+        "MLOps", "ml engineer", "data engineer", "model deployment",
+        "machine learning", "devops data",
+    ],
+    "computer vision": [
+        "computer vision", "image recognition", "deep learning",
+        "vision par ordinateur", "machine learning",
     ],
 }
 

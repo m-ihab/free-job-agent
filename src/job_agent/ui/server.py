@@ -83,6 +83,7 @@ from job_agent.intake.free_apis import (
     supported_source_names,
 )
 from job_agent.apply_bridge import generate_batch_instructions
+from job_agent import auto_apply as _auto_apply
 from job_agent.generator.followup_email import generate_followup_email
 from job_agent.headhunter import (
     build_batch_outreach,
@@ -552,6 +553,10 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             return self._send_json(get_autopilot(self._config()).status())
         if parsed.path == "/api/autopilot/stream":
             return self._stream_autopilot()
+        if parsed.path == "/api/auto-apply/stream":
+            return self._stream_auto_apply()
+        if parsed.path == "/api/auto-apply/status":
+            return self._send_json(_auto_apply.get_state())
         if parsed.path == "/api/cv-studio":
             return self._send_json(_studio_load(self._config()))
         if parsed.path == "/api/cv-studio/assets":
@@ -726,16 +731,19 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                     language=str(payload.get("language") or "both"),
                     interval_minutes=int(payload.get("interval_minutes") or 30),
                     auto_packet_threshold=int(payload.get("auto_packet_threshold") or 75),
-                    multi_source_limit=int(payload.get("multi_source_limit") or 5),
-                    france_travail_limit=int(payload.get("france_travail_limit") or 8),
+                    multi_source_limit=int(payload.get("multi_source_limit") or 8),
+                    france_travail_limit=int(payload.get("france_travail_limit") or 15),
                     radius_km=_safe_int(payload.get("radius_km"), 25, minimum=0, maximum=100),
-                    min_relevance=_safe_int(payload.get("min_relevance"), 50, minimum=0, maximum=100),
+                    min_relevance=_safe_int(payload.get("min_relevance"), 20, minimum=0, maximum=100),
                     france_eu_only=bool(payload.get("france_eu_only", True)),
                     use_france_travail=bool(payload.get("use_france_travail", True)),
                     use_multi_source=bool(payload.get("use_multi_source", True)),
                     max_packets_per_cycle=int(payload.get("max_packets_per_cycle") or 5),
                     internships_only=bool(payload.get("internships_only", True)),
                     email_notify=bool(payload.get("email_notify", False)),
+                    auto_apply=bool(payload.get("auto_apply", False)),
+                    auto_apply_mode=str(payload.get("auto_apply_mode") or "fill_and_confirm"),
+                    auto_apply_min_score=int(payload.get("auto_apply_min_score") or 75),
                 )
                 state = get_autopilot(config).start(autopilot_options)
                 return self._send_json({"state": state.__dict__, "status": get_autopilot(config).status()})
@@ -1112,6 +1120,17 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 jobs = tracker.list_jobs(limit=None)
                 report = english_first_strategy_report(jobs)
                 return self._send_json({"report_md": report})
+            if parsed.path == "/api/auto-apply/start":
+                mode = str(payload.get("mode") or "fill_and_confirm")
+                min_score = float(payload.get("min_score") or 70)
+                limit = _safe_int(payload.get("limit"), 10, minimum=1, maximum=50)
+                return self._send_json(_auto_apply.start(config, mode, min_score, limit))
+            if parsed.path == "/api/auto-apply/confirm":
+                return self._send_json(_auto_apply.confirm())
+            if parsed.path == "/api/auto-apply/skip":
+                return self._send_json(_auto_apply.skip())
+            if parsed.path == "/api/auto-apply/cancel":
+                return self._send_json(_auto_apply.cancel())
             return self._send_error_json("Unknown API route.", HTTPStatus.NOT_FOUND)
         except FreeApiError as exc:
             return self._send_error_json(str(exc), HTTPStatus.BAD_GATEWAY)
@@ -1149,6 +1168,48 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             return None
         except Exception:
             return None
+        return None
+
+    def _stream_auto_apply(self) -> None:
+        """SSE stream that pushes ApplyEvent items from the auto-apply queue."""
+        try:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+        except Exception:
+            return None
+        import time as _time
+        q = _auto_apply.get_event_queue()
+        try:
+            while True:
+                try:
+                    event = q.get(timeout=5)
+                    payload = json.dumps({
+                        "kind": event.kind,
+                        "job_id": event.job_id,
+                        "packet_id": event.packet_id,
+                        "message": event.message,
+                        "summary": event.summary,
+                        "screenshot_b64": event.screenshot_b64,
+                        "data": event.data,
+                    }, ensure_ascii=False)
+                    chunk = f"event: apply\ndata: {payload}\n\n".encode("utf-8")
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                    if event.kind in ("done", "error"):
+                        break
+                except Exception:
+                    # Timeout — send keepalive ping
+                    try:
+                        self.wfile.write(b": ping\n\n")
+                        self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError):
+                        break
+        except (BrokenPipeError, ConnectionResetError):
+            pass
         return None
 
     def _send_static(self, path: Path) -> None:

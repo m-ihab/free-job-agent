@@ -49,10 +49,10 @@ class AutopilotConfig:
     language: str = "both"
     interval_minutes: int = 30
     auto_packet_threshold: int = 75
-    multi_source_limit: int = 5
-    france_travail_limit: int = 8
+    multi_source_limit: int = 8
+    france_travail_limit: int = 15
     radius_km: int = 25
-    min_relevance: int = 50
+    min_relevance: int = 20
     france_eu_only: bool = True
     use_france_travail: bool = True
     use_multi_source: bool = True
@@ -61,6 +61,9 @@ class AutopilotConfig:
     max_packets_per_cycle: int = 5
     internships_only: bool = True
     email_notify: bool = False
+    auto_apply: bool = False
+    auto_apply_mode: str = "fill_and_confirm"
+    auto_apply_min_score: int = 75
 
 
 # Known CAC40 / large-French company ATS slugs. Each entry is the best-known
@@ -201,6 +204,9 @@ class Autopilot:
                 "max_packets_per_cycle": self.opts.max_packets_per_cycle,
                 "internships_only": self.opts.internships_only,
                 "email_notify": self.opts.email_notify,
+                "auto_apply": self.opts.auto_apply,
+                "auto_apply_mode": self.opts.auto_apply_mode,
+                "auto_apply_min_score": self.opts.auto_apply_min_score,
             },
         }
 
@@ -348,7 +354,16 @@ class Autopilot:
         packets_built = 0
         ai_skipped = 0
         notifications: list[dict[str, Any]] = []
-        for job_id in added:
+
+        # Combine newly-added jobs with pre-existing jobs that have no packet yet
+        # so the autopilot can catch up on jobs added before it first ran.
+        catchup_ids = [
+            j.id for j in db.list_jobs_without_packets(limit=10)
+            if j.id not in added
+        ]
+        all_job_ids = list(added) + catchup_ids
+
+        for job_id in all_job_ids:
             if packets_built >= self.opts.max_packets_per_cycle:
                 break
             ai_cache = db.list_ai_cache_for_job(job_id) if db else {}
@@ -362,17 +377,30 @@ class Autopilot:
                     packets.append(packet.id)
                     packets_built += 1
                     if self.opts.email_notify:
-                        job = db.resolve_job(job_id)
-                        if job:
-                            notifications.append(notify_packet_ready(self.config, job, packet, reason="Autopilot"))
+                        job_obj = db.resolve_job(job_id)
+                        if job_obj:
+                            notifications.append(notify_packet_ready(self.config, job_obj, packet, reason="Autopilot"))
             except Exception as exc:
                 errors.append(f"packet/{job_id[:8]}: {type(exc).__name__}: {exc}")
 
         self.state.jobs_added_total += len(added)
         self.state.packets_built_total += packets_built
-        # Filter expected/harmless errors (404 dead boards, etc.) from the
-        # displayed list — they're already handled by the broken-sources
-        # cache and would only confuse the user.
+
+        # If auto-apply is enabled and packets were generated this cycle,
+        # trigger an apply session for the new high-fit packets.
+        if self.opts.auto_apply and packets:
+            try:
+                from job_agent import auto_apply as _aa
+                if not _aa.get_state()["running"]:
+                    _aa.start(
+                        self.config,
+                        mode=self.opts.auto_apply_mode,
+                        min_score=float(self.opts.auto_apply_min_score),
+                        limit=len(packets),
+                    )
+            except Exception as exc:
+                errors.append(f"auto_apply_trigger: {type(exc).__name__}: {exc}")
+
         display_errors = [e for e in errors if not _is_expected_noise(e)]
         return {
             "jobs_added": len(added),
@@ -435,12 +463,12 @@ class Autopilot:
 
         # 3) French stage/alternance variants as the final safety net.
         for seed in self.opts.queries[:4]:
-            for query in expand_france_search_queries(seed, limit=3, language=self.opts.language):
+            for query in expand_france_search_queries(seed, limit=4, language=self.opts.language):
                 _add(query)
-                if len(planned) >= 18:
+                if len(planned) >= 24:
                     break
         # Hard cap so cycles stay reasonably fast.
-        return planned[:18] or self.opts.queries
+        return planned[:24] or self.opts.queries
 
 
 _EXPECTED_NOISE_PATTERNS = (

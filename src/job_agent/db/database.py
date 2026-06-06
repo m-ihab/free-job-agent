@@ -265,6 +265,28 @@ class Database:
                     rows = conn.execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
         return [self._row_to_job(r) for r in rows]
 
+    def list_jobs_without_packets(self, min_score: Optional[float] = None, limit: int = 20) -> list[JobListing]:
+        """Return jobs that have no associated packets yet, skipping terminal statuses."""
+        _terminal = ("FILTERED", "DUPLICATE", "WITHDRAWN", "REJECTED", "APPLYING", "APPLIED", "MANUALLY_SUBMITTED")
+        placeholders = ",".join("?" * len(_terminal))
+        with self._connect() as conn:
+            if min_score is not None:
+                rows = conn.execute(
+                    f"SELECT * FROM jobs WHERE id NOT IN (SELECT DISTINCT job_id FROM packets) "
+                    f"AND status NOT IN ({placeholders}) "
+                    f"AND (fit_score IS NULL OR fit_score >= ?) "
+                    f"ORDER BY fit_score DESC, created_at DESC LIMIT ?",
+                    (*_terminal, min_score, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    f"SELECT * FROM jobs WHERE id NOT IN (SELECT DISTINCT job_id FROM packets) "
+                    f"AND status NOT IN ({placeholders}) "
+                    f"ORDER BY fit_score DESC, created_at DESC LIMIT ?",
+                    (*_terminal, limit),
+                ).fetchall()
+        return [self._row_to_job(r) for r in rows]
+
     def update_job_status(self, job_id: str, status: JobStatus) -> bool:
         with self._connect() as conn:
             cur = conn.execute("UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?", (status.value, utc_now(), job_id))

@@ -37,7 +37,7 @@ EXPORT_COLUMNS = [
     "company contact details",
     "date applied",
 ]
-APPLIED_STATUSES = {JobStatus.APPLIED, JobStatus.MANUALLY_SUBMITTED}
+APPLIED_STATUSES = {JobStatus.APPLYING, JobStatus.APPLIED, JobStatus.MANUALLY_SUBMITTED}
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _PHONE_RE = re.compile(r"(?:\+?\d[\d\s().-]{6,}\d)")
 
@@ -101,7 +101,7 @@ def _applied_at(tracker: ApplicationTracker, job: JobListing) -> str:
         event_type = _normalise(event.get("event_type"))
         event_data = event.get("event_data") or {}
         new_status = _normalise(event_data.get("new_status"))
-        if event_type == "manually_submitted" or new_status in expected_statuses:
+        if event_type in ("manually_submitted", "chrome_session_queued") or new_status in expected_statuses:
             return str(event.get("created_at") or job.updated_at or job.created_at)[:10]
     return str(job.updated_at or job.created_at)[:10]
 
@@ -130,6 +130,8 @@ def _contact_details(job: JobListing) -> str:
 def _status_label(job: JobListing) -> str:
     if job.status in {JobStatus.APPLIED, JobStatus.MANUALLY_SUBMITTED}:
         return "Applied"
+    if job.status == JobStatus.APPLYING:
+        return "Applying"
     return job.status.value.replace("_", " ").title()
 
 

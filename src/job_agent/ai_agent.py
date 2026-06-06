@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import asdict, dataclass
 from typing import Any, Optional
 
@@ -36,9 +37,9 @@ from job_agent.polish import (
     PolishOptions,
     _tokens,
     is_ollama_reachable,
-    resolve_fast_model,
     resolve_ollama_model,
 )
+from job_agent.agent_core import choose_route, record_trace
 from job_agent.schemas.candidate import CandidateProfile, MasterCV
 from job_agent.schemas.job import JobListing
 
@@ -91,27 +92,31 @@ def is_available(options: PolishOptions | None = None) -> bool:
     return is_ollama_reachable(options)
 
 
-def _call_ollama_json(prompt: str, options: PolishOptions) -> Optional[dict]:
+def _call_ollama_json(prompt: str, options: PolishOptions, *, task: str = "general") -> Optional[dict]:
     """Call Ollama and parse the response as JSON. Returns None on failure."""
     if requests is None:
         return None
+    route = choose_route(task, prompt, options)
     payload = {
-        "model": resolve_ollama_model(options),
+        "model": route.model,
         "prompt": prompt,
         "stream": False,
         "format": "json",
-        "options": {"temperature": 0.2, "num_predict": 768},
+        "options": {"temperature": 0.2, "num_predict": route.max_output_tokens},
     }
+    started = time.perf_counter()
     try:
         response = requests.post(options.base_url + "/api/generate", json=payload, timeout=options.timeout * 2)
         response.raise_for_status()
         body = response.json()
-    except Exception:
+    except Exception as exc:
+        record_trace(route, ok=False, elapsed_ms=int((time.perf_counter() - started) * 1000), error=f"{type(exc).__name__}: {exc}")
         return None
     raw_text = ""
     if isinstance(body, dict):
         raw_text = body.get("response", "") or body.get("thinking", "")
     if not raw_text:
+        record_trace(route, ok=False, elapsed_ms=int((time.perf_counter() - started) * 1000), error="empty response")
         return None
     # Some models return text with code fences around JSON; strip them.
     cleaned = raw_text.strip()
@@ -119,8 +124,11 @@ def _call_ollama_json(prompt: str, options: PolishOptions) -> Optional[dict]:
         cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", cleaned)
         cleaned = re.sub(r"\n?```$", "", cleaned)
     try:
-        return json.loads(cleaned)
-    except Exception:
+        parsed = json.loads(cleaned)
+        record_trace(route, ok=isinstance(parsed, dict), elapsed_ms=int((time.perf_counter() - started) * 1000))
+        return parsed
+    except Exception as exc:
+        record_trace(route, ok=False, elapsed_ms=int((time.perf_counter() - started) * 1000), error=f"invalid json: {exc}")
         return None
 
 
@@ -197,7 +205,7 @@ def analyze_fit(job: JobListing, master_cv: MasterCV, profile: CandidateProfile,
     if not is_available(options):
         return None
     prompt = _FIT_PROMPT.replace("{candidate}", _candidate_summary(profile, master_cv)).replace("{job}", _job_summary(job))
-    raw = _call_ollama_json(prompt, options)
+    raw = _call_ollama_json(prompt, options, task="fit_analysis")
     if not isinstance(raw, dict):
         return None
     return FitAnalysis.from_dict(raw)
@@ -229,7 +237,7 @@ def generate_tailored_summary(job: JobListing, master_cv: MasterCV, profile: Can
         return None
     base_summary = (profile.summary or master_cv.summary or "").strip()
     prompt = _SUMMARY_PROMPT.replace("{candidate}", _candidate_summary(profile, master_cv)).replace("{job}", _job_summary(job))
-    raw = _call_ollama_json(prompt, options)
+    raw = _call_ollama_json(prompt, options, task="tailored_summary")
     if not isinstance(raw, dict):
         return None
     candidate_summary = str(raw.get("summary") or "").strip()
@@ -274,7 +282,7 @@ def generate_cover_letter_bullets(job: JobListing, master_cv: MasterCV, profile:
     if not is_available(options):
         return []
     prompt = _COVER_BULLETS_PROMPT.replace("{candidate}", _candidate_summary(profile, master_cv)).replace("{job}", _job_summary(job))
-    raw = _call_ollama_json(prompt, options)
+    raw = _call_ollama_json(prompt, options, task="cover_letter_bullets")
     if not isinstance(raw, dict):
         return []
     bullets_raw = raw.get("bullets") or []
@@ -390,7 +398,7 @@ def classify_job(job: JobListing, options: PolishOptions | None = None) -> Optio
     if not is_available(options):
         return None
     prompt = _CLASSIFY_PROMPT.replace("{job}", _job_summary(job))
-    raw = _call_ollama_json(prompt, options)
+    raw = _call_ollama_json(prompt, options, task="classify")
     if not isinstance(raw, dict):
         return None
     role_family = str(raw.get("role_family") or "").strip().lower()
@@ -427,7 +435,7 @@ def summarize_job(job: JobListing, options: PolishOptions | None = None) -> Opti
     if not is_available(options):
         return None
     prompt = _SUMMARIZE_PROMPT.replace("{job}", _job_summary(job))
-    raw = _call_ollama_json(prompt, options)
+    raw = _call_ollama_json(prompt, options, task="summarize")
     if not isinstance(raw, dict):
         return None
     tldr = str(raw.get("tldr") or "").strip()
@@ -458,7 +466,7 @@ def draft_cover_letter_body(job: JobListing, master_cv: MasterCV, profile: Candi
               .replace("{language}", language)
               .replace("{candidate}", _candidate_summary(profile, master_cv))
               .replace("{job}", _job_summary(job)))
-    raw = _call_ollama_json(prompt, options)
+    raw = _call_ollama_json(prompt, options, task="cover_letter_body")
     if not isinstance(raw, dict):
         return []
     paragraphs_raw = raw.get("paragraphs") or []
@@ -510,24 +518,26 @@ def chat_about_job(job: JobListing, master_cv: MasterCV, profile: CandidateProfi
               .replace("{question}", question[:600]))
     if requests is None:
         return None
-    # Chat uses the fast tier when a smaller model is installed; otherwise
-    # falls back to the regular resolver.
+    route = choose_route("chat", prompt, options)
     payload = {
-        "model": resolve_fast_model(options),
+        "model": route.model,
         "prompt": prompt,
         "stream": False,
-        "options": {"temperature": 0.4, "num_predict": 512},
+        "options": {"temperature": 0.4, "num_predict": route.max_output_tokens},
     }
+    started = time.perf_counter()
     try:
         response = requests.post(options.base_url + "/api/generate", json=payload, timeout=options.timeout * 2)
         response.raise_for_status()
         body = response.json()
-    except Exception:
+    except Exception as exc:
+        record_trace(route, ok=False, elapsed_ms=int((time.perf_counter() - started) * 1000), error=f"{type(exc).__name__}: {exc}")
         return None
     reply = ""
     if isinstance(body, dict):
         reply = str(body.get("response") or body.get("thinking") or "").strip()
     if not reply or len(reply) > 4000:
+        record_trace(route, ok=False, elapsed_ms=int((time.perf_counter() - started) * 1000), error="empty or oversized reply")
         return None
     # Reject obvious fabrication: every named technology in the reply should
     # appear in either the candidate profile or the job posting.
@@ -536,7 +546,9 @@ def chat_about_job(job: JobListing, master_cv: MasterCV, profile: CandidateProfi
     if reply_tokens:
         overlap = len(reply_tokens & candidate_tokens) / len(reply_tokens)
         if overlap < 0.25:
+            record_trace(route, ok=False, elapsed_ms=int((time.perf_counter() - started) * 1000), error="grounding overlap too low")
             return None
+    record_trace(route, ok=True, elapsed_ms=int((time.perf_counter() - started) * 1000))
     return reply
 
 
@@ -615,7 +627,7 @@ def suggest_search_queries(
         .replace("{internships_only}", str(internships_only))
         .replace("{limit}", str(limit))
     )
-    raw = _call_ollama_json(prompt, options)
+    raw = _call_ollama_json(prompt, options, task="search_plan")
     queries: list[str] = []
     if isinstance(raw, dict):
         for item in raw.get("queries", []):

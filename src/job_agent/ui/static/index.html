@@ -295,6 +295,95 @@ data engineer</textarea>
           </section>
         </div>
 
+        <!-- ── Auto-Apply Panel ──────────────────────────────────────── -->
+        <div class="panel" id="autoApplyPanel">
+          <div class="panel-header-row">
+            <h3>Auto-Apply</h3>
+            <span class="badge badge-new">Beta</span>
+          </div>
+          <p class="muted" style="margin:0 0 0.8rem">
+            Playwright drives Chrome to fill and submit applications from your ready packets.
+            Works on LinkedIn Easy Apply, Greenhouse, Lever, Ashby, and generic forms.
+            No API key needed — uses a separate local Job Agent browser profile.
+          </p>
+
+          <div class="control-grid compact" style="margin-bottom:0.8rem">
+            <label>
+              Min score
+              <input id="autoApplyMinScore" type="number" min="0" max="100" value="70" style="width:5rem" />
+            </label>
+            <label>
+              Max applications
+              <input id="autoApplyLimit" type="number" min="1" max="50" value="10" style="width:5rem" />
+            </label>
+          </div>
+
+          <div style="margin-bottom:0.9rem">
+            <p style="margin:0 0 0.4rem;font-size:0.85rem;font-weight:600">Apply mode</p>
+            <p class="muted" style="margin:0 0 0.6rem;font-size:0.82rem">
+              Auto-apply opens a separate Job Agent browser profile, not your daily Chrome profile. Log in there once and it stays local for future sessions.
+            </p>
+            <div class="mode-toggle">
+              <button class="mode-btn active" id="modeFillConfirm" data-mode="fill_and_confirm">
+                <span class="mode-icon">✋</span>
+                <span>
+                  <strong>Fill &amp; Confirm</strong>
+                  <small>Job Agent fills the form, you click Submit</small>
+                </span>
+              </button>
+              <button class="mode-btn" id="modeFullAuto" data-mode="full_auto">
+                <span class="mode-icon">⚡</span>
+                <span>
+                  <strong>Full Auto</strong>
+                  <small>Job Agent fills &amp; submits · 10 s cancel window</small>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div class="action-row" style="margin-bottom:0.6rem">
+            <button class="primary" id="autoApplyNowBtn">▶ Auto-Apply Now</button>
+            <button id="autoApplyCancelBtn">■ Stop session</button>
+          </div>
+          <label class="check-row" style="margin-bottom:0.6rem">
+            <input id="autopilotAutoApply" type="checkbox" />
+            Enable auto-apply automatically after each autopilot cycle
+          </label>
+
+          <div class="notice hidden" id="autoApplyNotice"></div>
+
+          <div id="autoApplyLogWrap" class="apply-log-wrap hidden">
+            <div class="apply-log-header">
+              <span>Live log</span>
+              <button class="ghost" id="autoApplyLogClear" style="font-size:0.75rem">Clear</button>
+            </div>
+            <div id="autoApplyLog" class="apply-log"></div>
+          </div>
+        </div>
+
+        <!-- ── Confirmation Modal ────────────────────────────────────────── -->
+        <div id="applyConfirmModal" class="modal-overlay" style="display:none">
+          <div class="modal-box apply-confirm-box">
+            <div class="apply-confirm-header">
+              <h3 id="applyConfirmTitle">Ready to Submit</h3>
+              <span id="applyConfirmScore" class="score-badge"></span>
+            </div>
+            <p id="applyConfirmSubtitle" class="muted" style="margin:0 0 0.8rem"></p>
+            <div id="applyConfirmSummary" class="apply-summary"></div>
+            <div class="action-row apply-confirm-actions">
+              <button class="primary" id="applyConfirmSubmitBtn">✓ Submit application</button>
+              <button id="applyConfirmSkipBtn">→ Skip this one</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Full-Auto Cancel Toast ────────────────────────────────────── -->
+        <div id="preSubmitToast" class="pre-submit-toast hidden">
+          <span id="preSubmitMsg"></span>
+          <span id="preSubmitCountdown" class="countdown"></span>
+          <button id="preSubmitCancelBtn" class="ghost">Cancel</button>
+        </div>
+
         <div class="panel">
           <h3>AI setup</h3>
           <p class="muted" style="margin:0 0 0.6rem">

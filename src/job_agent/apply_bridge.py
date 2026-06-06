@@ -20,7 +20,9 @@ from job_agent.schemas.packet import ApplicationPacket, PacketStatus
 logger = logging.getLogger(__name__)
 
 _MIN_SCORE_DEFAULT = 65
-_PACKET_STATUSES_PENDING = {PacketStatus.READY, PacketStatus.DRAFT}
+_PACKET_STATUSES_PENDING = {PacketStatus.READY, PacketStatus.DRAFT, PacketStatus.NEEDS_REVIEW}
+# Risk flags that must block auto-apply regardless of score.
+_HARD_BLOCK_FLAGS = frozenset({"WORK_AUTH_REQUIRED", "LANGUAGE_MISMATCH"})
 
 
 @dataclass(frozen=True)
@@ -34,8 +36,7 @@ class ApplyCandidate:
 
 def _get_db() -> Database:
     cfg = AppConfig()
-    db_path = cfg.data_dir / "job_agent.db"
-    db = Database(db_path)
+    db = Database(cfg.db_path)
     db.initialize()
     return db
 
@@ -55,8 +56,9 @@ def get_ready_candidates(
         score = packet.fit_score or 0.0
         if score < min_score:
             continue
-        if packet.risk_flags:
-            logger.debug("Skipping %s - risk flags: %s", packet.id, packet.risk_flags)
+        hard_blocks = [f for f in (packet.risk_flags or []) if f in _HARD_BLOCK_FLAGS]
+        if hard_blocks:
+            logger.debug("Skipping %s - hard block flags: %s", packet.id, hard_blocks)
             continue
 
         job = db.get_job(packet.job_id)
@@ -174,20 +176,45 @@ def generate_batch_instructions(
 ) -> tuple[list[ApplyCandidate], Path]:
     """Generate a Markdown file with Chrome apply instructions for all ready packets.
 
+    Marks each selected job as APPLYING and exports the tracking workbook so
+    every session is captured in the Excel tracker immediately.
+
     Returns the list of candidates and the path to the output file.
     """
     candidates = get_ready_candidates(min_score=min_score, limit=limit)
+    cfg = AppConfig()
 
     if not candidates:
-        data_dir = AppConfig().data_dir
+        data_dir = cfg.data_dir
         out = output_path or (data_dir / "chrome_apply_session.md")
         out.write_text(
             "# No ready applications found\n\n"
-            f"No packets with fit score >= {min_score} and READY/DRAFT status.\n\n"
+            f"No packets with fit score >= {min_score} and READY/DRAFT/NEEDS_REVIEW status.\n\n"
             "Run `job-agent france-hunt` or use the Autopilot tab to generate packets first.\n",
             encoding="utf-8",
         )
         return [], out
+
+    # Mark every selected job as APPLYING so the tracker reflects the session.
+    db = _get_db()
+    for candidate in candidates:
+        if candidate.job.status not in (JobStatus.APPLYING, JobStatus.APPLIED, JobStatus.MANUALLY_SUBMITTED):
+            db.update_job_status(candidate.job.id, JobStatus.APPLYING)
+            db.log_event(
+                candidate.job.id,
+                "CHROME_SESSION_QUEUED",
+                {"packet_id": candidate.packet.id, "fit_score": candidate.packet.fit_score},
+                packet_id=candidate.packet.id,
+            )
+            logger.info("Marked %s as APPLYING", candidate.job.id)
+
+    # Export to Excel immediately so every session is in the tracking file.
+    try:
+        from job_agent.exporters.internship_workbook import export_applied_internships
+        wb_path, count = export_applied_internships(cfg)
+        logger.info("Tracking workbook updated: %d row(s) → %s", count, wb_path)
+    except Exception as exc:
+        logger.warning("Could not update tracking workbook: %s", exc)
 
     blocks = []
     for i, candidate in enumerate(candidates, 1):
@@ -205,7 +232,7 @@ def generate_batch_instructions(
     )
 
     content = header + "\n\n---\n\n".join(blocks)
-    data_dir = AppConfig().data_dir
+    data_dir = cfg.data_dir
     out = output_path or (data_dir / "chrome_apply_session.md")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(content, encoding="utf-8")

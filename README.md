@@ -104,17 +104,26 @@ That token is used with `Authorization: Bearer ...` against
 - **Optional local LLM polish:** opt-in Ollama support that lightly polishes
   bullets and paragraphs under strict validation (no invented facts, numbers
   preserved verbatim, bounded length). Off by default.
-- **Manual final submit:** the system opens/creates a local assistant page;
-  it never submits applications automatically.
+- **Safe auto-apply:** Playwright can open a separate local Job Agent browser
+  profile, fill supported ATS forms, and either pause for your confirmation or
+  use full-auto mode with a 10-second cancellation window.
 
-## Why not full auto-apply?
+## Auto-apply safety model
 
-The goal is to stay free, safe, and reliable. Fully autonomous ATS submission
-requires paid browser-agent infrastructure, paid APIs, proxies, CAPTCHA
-handling, login automation, or fragile scraping. This system automates the
-useful free parts: search, import, dedupe, score, tailor documents, prepare
-locked screening answers, and open a local assistant page. You still review
-and submit manually.
+Auto-apply is designed to be useful without becoming reckless:
+
+- Default mode is **Fill & Confirm**: Job Agent fills the form, then waits for
+  you to review the browser page and click Submit.
+- **Full Auto** is available only when you explicitly choose it; the dashboard
+  broadcasts a 10-second cancellation window before every submit.
+- Browser automation uses a dedicated local profile at
+  `.job_agent/browser_profiles/auto_apply` by default. Sign in once inside that
+  browser and the login stays local for future sessions.
+- Your normal Chrome profile is not used by default because Chrome locks it
+  while your daily browser is open. If you really want to opt in, close every
+  Chrome window and set `JOB_AGENT_AUTO_APPLY_USE_REAL_CHROME_PROFILE=1`.
+- To choose a custom local browser profile folder, set
+  `JOB_AGENT_AUTO_APPLY_PROFILE_DIR`.
 
 ## Install
 
@@ -476,6 +485,22 @@ Guarantees:
 
 Disable prose polishing by unsetting `JOB_AGENT_USE_OLLAMA`. Query planning
 and AI fit analysis still work when Ollama is running.
+
+### AgentCore-style local routing
+
+The app does not send prompts to paid cloud models by default, but local AI can
+still become slow if every task uses the largest model. Job Agent now routes
+AI work through a three-tier local stack:
+
+- **L1 Sentry:** fast model for chat, job classification, short summaries, and
+  search-query planning.
+- **L2 Worker:** fast operational model for normal structured tasks.
+- **L3 Architect:** heavier model for fit analysis, CV/cover-letter strategy,
+  and longer-context drafting.
+
+Each call writes a prompt-free trace to `.job_agent/ai_traces.jsonl` with task,
+tier, selected model, estimated input tokens, latency, and success/failure. The
+trace never stores CV text, job descriptions, secrets, or chat content.
 
 ## AI smart mode — local-only, on by default when Ollama runs
 

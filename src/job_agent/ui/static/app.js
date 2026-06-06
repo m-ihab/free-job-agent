@@ -2301,6 +2301,9 @@ function autopilotPayload() {
     internships_only: $("autopilotInternships").checked,
     france_eu_only: $("autopilotFranceEuOnly") ? $("autopilotFranceEuOnly").checked : true,
     email_notify: $("autopilotEmailNotify") ? $("autopilotEmailNotify").checked : false,
+    auto_apply: $("autopilotAutoApply") ? $("autopilotAutoApply").checked : false,
+    auto_apply_mode: autoApplyState ? autoApplyState.mode : "fill_and_confirm",
+    auto_apply_min_score: parseFloat($("autoApplyMinScore")?.value || "75"),
   };
 }
 
@@ -2778,6 +2781,7 @@ function bindEvents() {
   $("autopilotStartBtn").addEventListener("click", startAutopilot);
   $("autopilotStopBtn").addEventListener("click", stopAutopilot);
   $("autopilotRefreshBtn").addEventListener("click", loadAutopilot);
+  bindAutoApplyEvents();
   const launchBtn = document.getElementById("launchOllamaBtn");
   if (launchBtn) launchBtn.addEventListener("click", launchOllama);
   const pullBtn = document.getElementById("pullFastModelBtn");
@@ -3077,6 +3081,169 @@ function bindEvents() {
       renderEnrichmentDetails(job);
       renderJobs();
     }
+  });
+}
+
+// ── Auto-Apply ───────────────────────────────────────────────────────────────
+
+const autoApplyState = { mode: "fill_and_confirm", stream: null, countdown: null };
+
+function autoApplyMode() { return autoApplyState.mode; }
+
+function setAutoApplyMode(mode) {
+  autoApplyState.mode = mode;
+  document.querySelectorAll(".mode-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.mode === mode);
+  });
+}
+
+function appendApplyLog(message, kind) {
+  const wrap = $("autoApplyLogWrap");
+  const log = $("autoApplyLog");
+  if (!wrap || !log) return;
+  wrap.classList.remove("hidden");
+  const line = document.createElement("div");
+  line.className = `log-line log-${kind || "progress"}`;
+  const ts = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  line.textContent = `${ts}  ${message}`;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+function showConfirmModal(event) {
+  const modal = $("applyConfirmModal");
+  if (!modal) return;
+  $("applyConfirmTitle").textContent = `Ready to Submit — ${event.message.replace("Form filled for ", "").replace(". Review and click Submit or Skip.", "")}`;
+  $("applyConfirmSubtitle").textContent = event.summary ? event.summary.slice(0, 300) : "";
+  const summaryDiv = $("applyConfirmSummary");
+  if (summaryDiv) summaryDiv.textContent = event.summary ? event.summary.slice(0, 800) : "(No summary available)";
+  modal.style.display = "flex";
+}
+
+function hideConfirmModal() {
+  const modal = $("applyConfirmModal");
+  if (modal) modal.style.display = "none";
+}
+
+function showPreSubmitToast(event) {
+  const toast = $("preSubmitToast");
+  const msg = $("preSubmitMsg");
+  const cd = $("preSubmitCountdown");
+  if (!toast || !msg || !cd) return;
+  msg.textContent = event.message || "Submitting…";
+  toast.classList.remove("hidden");
+  let secs = (event.data && event.data.countdown) || 10;
+  cd.textContent = secs;
+  if (autoApplyState.countdown) clearInterval(autoApplyState.countdown);
+  autoApplyState.countdown = setInterval(() => {
+    secs -= 1;
+    cd.textContent = secs;
+    if (secs <= 0) {
+      clearInterval(autoApplyState.countdown);
+      toast.classList.add("hidden");
+    }
+  }, 1000);
+}
+
+function hidePreSubmitToast() {
+  const toast = $("preSubmitToast");
+  if (toast) toast.classList.add("hidden");
+  if (autoApplyState.countdown) clearInterval(autoApplyState.countdown);
+}
+
+function subscribeAutoApplySse() {
+  if (autoApplyState.stream) return;
+  const es = new EventSource("/api/auto-apply/stream");
+  autoApplyState.stream = es;
+  es.addEventListener("apply", (event) => {
+    let data;
+    try { data = JSON.parse(event.data); } catch { return; }
+    const kind = data.kind || "progress";
+    appendApplyLog(data.message || "", kind);
+    if (kind === "pending_confirm") showConfirmModal(data);
+    if (kind === "pre_submit") showPreSubmitToast(data);
+    if (kind === "result") { hideConfirmModal(); hidePreSubmitToast(); }
+    if (kind === "done" || kind === "error") {
+      closeAutoApplySse();
+      setNotice("autoApplyNotice", data.message || "Session ended.", kind === "error");
+      setBusy($("autoApplyNowBtn"), false);
+    }
+  });
+  es.onerror = () => closeAutoApplySse();
+}
+
+function closeAutoApplySse() {
+  if (autoApplyState.stream) {
+    try { autoApplyState.stream.close(); } catch {}
+    autoApplyState.stream = null;
+  }
+}
+
+function bindAutoApplyEvents() {
+  document.querySelectorAll(".mode-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setAutoApplyMode(btn.dataset.mode));
+  });
+
+  const nowBtn = $("autoApplyNowBtn");
+  if (nowBtn) nowBtn.addEventListener("click", async () => {
+    setBusy(nowBtn, true);
+    setNotice("autoApplyNotice", "");
+    const minScore = parseFloat($("autoApplyMinScore")?.value || "70");
+    const limit = parseInt($("autoApplyLimit")?.value || "10", 10);
+    try {
+      const result = await api("/api/auto-apply/start", {
+        mode: autoApplyMode(),
+        min_score: minScore,
+        limit,
+      });
+      if (!result.ok) {
+        setNotice("autoApplyNotice", result.error || "Could not start session.", true);
+        setBusy(nowBtn, false);
+        return;
+      }
+      appendApplyLog("Session started…", "progress");
+      subscribeAutoApplySse();
+    } catch (err) {
+      setNotice("autoApplyNotice", err.message, true);
+      setBusy(nowBtn, false);
+    }
+  });
+
+  const cancelBtn = $("autoApplyCancelBtn");
+  if (cancelBtn) cancelBtn.addEventListener("click", async () => {
+    closeAutoApplySse();
+    hideConfirmModal();
+    hidePreSubmitToast();
+    try { await api("/api/auto-apply/cancel", {}); } catch {}
+    appendApplyLog("Session cancelled.", "error");
+    setBusy($("autoApplyNowBtn"), false);
+  });
+
+  const submitBtn = $("applyConfirmSubmitBtn");
+  if (submitBtn) submitBtn.addEventListener("click", async () => {
+    hideConfirmModal();
+    try { await api("/api/auto-apply/confirm", {}); } catch {}
+    appendApplyLog("Confirmed — submitting…", "progress");
+  });
+
+  const skipBtn = $("applyConfirmSkipBtn");
+  if (skipBtn) skipBtn.addEventListener("click", async () => {
+    hideConfirmModal();
+    try { await api("/api/auto-apply/skip", {}); } catch {}
+    appendApplyLog("Skipped.", "result");
+  });
+
+  const preSubmitCancel = $("preSubmitCancelBtn");
+  if (preSubmitCancel) preSubmitCancel.addEventListener("click", async () => {
+    hidePreSubmitToast();
+    try { await api("/api/auto-apply/skip", {}); } catch {}
+    appendApplyLog("Full-auto submission cancelled.", "result");
+  });
+
+  const logClear = $("autoApplyLogClear");
+  if (logClear) logClear.addEventListener("click", () => {
+    const log = $("autoApplyLog");
+    if (log) log.innerHTML = "";
   });
 }
 
