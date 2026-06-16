@@ -155,6 +155,18 @@ def build_manual_search_groups(
     return groups
 
 
+def _read_latex_warning(packet: "ApplicationPacket | None") -> str:
+    if packet is None:
+        return ""
+    art = next((a for a in packet.artifacts if a.kind == "latex_warning"), None)
+    if art is None:
+        return ""
+    try:
+        return Path(art.path).read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
 def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None, enrichment: dict | None = None, ai_cache: dict | None = None) -> dict[str, Any]:
     enrichment = enrichment or {}
     enrichment_sources = enrichment.get("sources") or {}
@@ -225,10 +237,19 @@ def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None,
         "search_quality_flags": getattr(job, "search_quality_flags", None) or quality.get("flags") or [],
         "search_role_family": getattr(job, "search_role_family", None) or quality.get("role_family") or "",
         "search_contract": getattr(job, "search_contract", None) or quality.get("contract") or "",
+        "risk_flags": job.risk_flags or [],
+        "latex_warning": _read_latex_warning(latest_packet),
     }
 
 
 def packet_to_dict(packet: ApplicationPacket) -> dict[str, Any]:
+    latex_warning_art = next((a for a in packet.artifacts if a.kind == "latex_warning"), None)
+    latex_warning_text = ""
+    if latex_warning_art:
+        try:
+            latex_warning_text = Path(latex_warning_art.path).read_text(encoding="utf-8")
+        except Exception:
+            pass
     return {
         "id": packet.id,
         "job_id": packet.job_id,
@@ -239,6 +260,7 @@ def packet_to_dict(packet: ApplicationPacket) -> dict[str, Any]:
         "cover_letter_pdf": packet.cover_letter_pdf_path or "",
         "assistant_page": next((artifact.path for artifact in packet.artifacts if artifact.kind == "assistant_html"), ""),
         "artifacts": [artifact.dict() for artifact in packet.artifacts],
+        "latex_warning": latex_warning_text,
     }
 
 

@@ -46,8 +46,10 @@ from job_agent.cv_studio import (
     reset_studio_draft as _studio_reset,
     save_studio_draft as _studio_save,
     save_project as _studio_save_project,
+    set_studio_language as _studio_set_language,
     single_page_guard as _studio_single_page,
     suggest_edits as _studio_suggest,
+    swap_studio_sections as _studio_swap_sections,
     write_asset as _studio_write_asset,
 )
 from job_agent.cv_template import import_cv_template_upload
@@ -557,6 +559,10 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             return self._stream_auto_apply()
         if parsed.path == "/api/auto-apply/status":
             return self._send_json(_auto_apply.get_state())
+        if parsed.path == "/api/auto-apply/preview":
+            min_score = float((parse_qs(parsed.query).get("min_score") or ["65"])[0])
+            limit = int((parse_qs(parsed.query).get("limit") or ["20"])[0])
+            return self._send_json({"candidates": _auto_apply.get_candidates_preview(min_score=min_score, limit=limit)})
         if parsed.path == "/api/cv-studio":
             return self._send_json(_studio_load(self._config()))
         if parsed.path == "/api/cv-studio/assets":
@@ -589,7 +595,17 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             return self._send_json(_portfolio_read(self._config()))
         if parsed.path == "/api/portfolio/preview":
             data = _portfolio_read(self._config())
-            body = str(data.get("html") or "").encode("utf-8")
+            html = str(data.get("html") or "")
+            css = str(data.get("css") or "")
+            # Inline the stylesheet for the live preview so the iframe can never
+            # render a stale, browser-cached style.css after a theme switch.
+            # The on-disk index.html keeps the <link> for real publishing.
+            if css and 'href="style.css"' in html:
+                html = html.replace(
+                    '<link rel="stylesheet" href="style.css" />',
+                    f"<style>\n{css}\n</style>",
+                )
+            body = html.encode("utf-8")
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -739,7 +755,7 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                     use_france_travail=bool(payload.get("use_france_travail", True)),
                     use_multi_source=bool(payload.get("use_multi_source", True)),
                     max_packets_per_cycle=int(payload.get("max_packets_per_cycle") or 5),
-                    internships_only=bool(payload.get("internships_only", True)),
+                    contract_type=str(payload.get("contract_type") or "stage_and_alternance"),
                     email_notify=bool(payload.get("email_notify", False)),
                     auto_apply=bool(payload.get("auto_apply", False)),
                     auto_apply_mode=str(payload.get("auto_apply_mode") or "fill_and_confirm"),
@@ -858,6 +874,13 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 order = [str(item) for item in order_raw if str(item).strip()]
                 rewritten = _studio_reorder(text, order)
                 return self._send_json({"ok": True, "text": rewritten})
+            if parsed.path == "/api/cv-studio/language":
+                language = str(payload.get("language") or "").strip().lower()
+                return self._send_json(_studio_set_language(config, language))
+            if parsed.path == "/api/cv-studio/swap-sections":
+                label_a = str(payload.get("a") or payload.get("first") or "")
+                label_b = str(payload.get("b") or payload.get("second") or "")
+                return self._send_json(_studio_swap_sections(config, label_a, label_b))
             if parsed.path == "/api/cv-studio/suggest":
                 text = str(payload.get("text") or "")
                 job_context = str(payload.get("job_context") or "")
@@ -1124,13 +1147,17 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 mode = str(payload.get("mode") or "fill_and_confirm")
                 min_score = float(payload.get("min_score") or 70)
                 limit = _safe_int(payload.get("limit"), 10, minimum=1, maximum=50)
-                return self._send_json(_auto_apply.start(config, mode, min_score, limit))
+                job_ids_raw = payload.get("job_ids")
+                job_ids = [str(j) for j in job_ids_raw] if isinstance(job_ids_raw, list) and job_ids_raw else None
+                return self._send_json(_auto_apply.start(config, mode, min_score, limit, job_ids=job_ids))
             if parsed.path == "/api/auto-apply/confirm":
                 return self._send_json(_auto_apply.confirm())
             if parsed.path == "/api/auto-apply/skip":
                 return self._send_json(_auto_apply.skip())
             if parsed.path == "/api/auto-apply/cancel":
                 return self._send_json(_auto_apply.cancel())
+            if parsed.path == "/api/auto-apply/open-browser":
+                return self._send_json(_auto_apply.open_browser_for_login(config))
             return self._send_error_json("Unknown API route.", HTTPStatus.NOT_FOUND)
         except FreeApiError as exc:
             return self._send_error_json(str(exc), HTTPStatus.BAD_GATEWAY)

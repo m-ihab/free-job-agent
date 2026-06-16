@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -59,7 +60,7 @@ class AutopilotConfig:
     use_cac40_sweep: bool = True
     cac40_limit_per_company: int = 3
     max_packets_per_cycle: int = 5
-    internships_only: bool = True
+    contract_type: str = "stage_and_alternance"  # "all"|"stage"|"alternance"|"stage_and_alternance"
     email_notify: bool = False
     auto_apply: bool = False
     auto_apply_mode: str = "fill_and_confirm"
@@ -202,7 +203,7 @@ class Autopilot:
                 "use_france_travail": self.opts.use_france_travail,
                 "use_multi_source": self.opts.use_multi_source,
                 "max_packets_per_cycle": self.opts.max_packets_per_cycle,
-                "internships_only": self.opts.internships_only,
+                "contract_type": self.opts.contract_type,
                 "email_notify": self.opts.email_notify,
                 "auto_apply": self.opts.auto_apply,
                 "auto_apply_mode": self.opts.auto_apply_mode,
@@ -258,7 +259,7 @@ class Autopilot:
                         query=query,
                         location=self.opts.location,
                         limit=self.opts.france_travail_limit,
-                        internships_only=self.opts.internships_only,
+                        contract_type=self.opts.contract_type,
                         min_relevance=self.opts.min_relevance,
                         france_eu_only=self.opts.france_eu_only,
                         radius_km=self.opts.radius_km,
@@ -282,7 +283,7 @@ class Autopilot:
                         location=self.opts.location,
                         limit_per_source=self.opts.multi_source_limit,
                         sources=list(KEYWORD_ONLY_SOURCES),
-                        internships_only=self.opts.internships_only,
+                        contract_type=self.opts.contract_type,
                         min_relevance=self.opts.min_relevance,
                         france_eu_only=self.opts.france_eu_only,
                         radius_km=self.opts.radius_km,
@@ -319,7 +320,7 @@ class Autopilot:
                         query=self.opts.queries[0] if self.opts.queries else "data",
                         board=slug,
                         limit=self.opts.cac40_limit_per_company,
-                        internships_only=self.opts.internships_only,
+                        contract_type=self.opts.contract_type,
                         min_relevance=self.opts.min_relevance,
                         france_eu_only=self.opts.france_eu_only,
                         use_cache=True,
@@ -348,40 +349,57 @@ class Autopilot:
             if cac40_skipped_broken:
                 per_query["__cac40_skipped_broken__"] = cac40_skipped_broken
 
-        # Auto-tailor for high-fit jobs (newly added or recently scored). The
-        # AI fit cache (when available) acts as a second gate so weak-fit jobs
-        # don't waste tailoring cycles.
+        # Auto-tailor for high-fit jobs. Load profile bundle once and share it
+        # across all workers to avoid redundant disk reads per packet.
         packets_built = 0
         ai_skipped = 0
         notifications: list[dict[str, Any]] = []
 
-        # Combine newly-added jobs with pre-existing jobs that have no packet yet
-        # so the autopilot can catch up on jobs added before it first ran.
+        shared_profile_bundle = None
+        try:
+            shared_profile_bundle = load_profile_bundle(self.config)
+        except Exception as exc:
+            errors.append(f"profile_load: {type(exc).__name__}: {exc}")
+
+        # Combine newly-added jobs with pre-existing jobs that have no packet yet.
         catchup_ids = [
             j.id for j in db.list_jobs_without_packets(limit=10)
             if j.id not in added
         ]
         all_job_ids = list(added) + catchup_ids
+        candidate_ids = all_job_ids[:self.opts.max_packets_per_cycle]
 
-        for job_id in all_job_ids:
-            if packets_built >= self.opts.max_packets_per_cycle:
-                break
+        def _build_one(job_id: str) -> tuple[str, Any, str | None]:
             ai_cache = db.list_ai_cache_for_job(job_id) if db else {}
             ai_fit = (ai_cache or {}).get("fit") or {}
             if ai_fit.get("verdict") == "weak":
-                ai_skipped += 1
-                continue
+                return job_id, None, "ai_skip"
             try:
-                packet = generate_packet_for_job(self.config, job_id, force=False)
-                if packet.fit_score is not None and packet.fit_score >= self.opts.auto_packet_threshold:
-                    packets.append(packet.id)
-                    packets_built += 1
-                    if self.opts.email_notify:
-                        job_obj = db.resolve_job(job_id)
-                        if job_obj:
-                            notifications.append(notify_packet_ready(self.config, job_obj, packet, reason="Autopilot"))
+                pkt = generate_packet_for_job(
+                    self.config, job_id, force=False,
+                    fast_mode=True,
+                    profile_bundle=shared_profile_bundle,
+                )
+                return job_id, pkt, None
             except Exception as exc:
-                errors.append(f"packet/{job_id[:8]}: {type(exc).__name__}: {exc}")
+                return job_id, None, f"{type(exc).__name__}: {exc}"
+
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="pkt") as pool:
+            futures = {pool.submit(_build_one, jid): jid for jid in candidate_ids}
+            for fut in as_completed(futures):
+                jid, pkt, err = fut.result()
+                if err == "ai_skip":
+                    ai_skipped += 1
+                elif err:
+                    errors.append(f"packet/{jid[:8]}: {err}")
+                elif pkt is not None:
+                    if pkt.fit_score is not None and pkt.fit_score >= self.opts.auto_packet_threshold:
+                        packets.append(pkt.id)
+                        packets_built += 1
+                        if self.opts.email_notify:
+                            job_obj = db.resolve_job(jid)
+                            if job_obj:
+                                notifications.append(notify_packet_ready(self.config, job_obj, pkt, reason="Autopilot"))
 
         self.state.jobs_added_total += len(added)
         self.state.packets_built_total += packets_built
@@ -453,7 +471,7 @@ class Autopilot:
                     seed_query=seed,
                     location=self.opts.location,
                     language=self.opts.language,
-                    internships_only=self.opts.internships_only,
+                    internships_only=(self.opts.contract_type != "all"),
                     limit=4,
                 )
                 for query in plan.get("queries", []):

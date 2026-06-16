@@ -20,24 +20,35 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
-async function api(path, body = null, method = body ? "POST" : "GET") {
-  const options = { method, headers: {} };
+async function api(path, body = null, method = body ? "POST" : "GET", timeoutMs = 120000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  const options = { method, headers: {}, signal: controller.signal };
   if (body) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
   }
-  const response = await fetch(path, options);
-  const text = await response.text();
-  let payload = {};
   try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    payload = { error: text || response.statusText };
+    const response = await fetch(path, options);
+    window.clearTimeout(timer);
+    const text = await response.text();
+    let payload = {};
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = { error: text || response.statusText };
+    }
+    if (!response.ok) {
+      throw new Error(payload.error || response.statusText);
+    }
+    return payload;
+  } catch (err) {
+    window.clearTimeout(timer);
+    if (err.name === "AbortError") {
+      throw new Error("Request timed out. The server is taking too long to respond.");
+    }
+    throw err;
   }
-  if (!response.ok) {
-    throw new Error(payload.error || response.statusText);
-  }
-  return payload;
 }
 
 function toast(message) {
@@ -459,6 +470,9 @@ function renderEnrichmentDetails(job) {
   const cvPreview = job.cv_pdf
     ? `<iframe class="doc-preview" title="Tailored CV preview" src="${fileHref(job.cv_pdf)}"></iframe>`
     : `<div class="notice">Generate a packet to preview the tailored CV here.</div>`;
+  const latexWarn = job.latex_warning
+    ? `<div class="notice" style="color:#b45309;border-color:#fbbf24;background:#fffbeb;margin-top:0.4rem;font-size:0.78rem">⚠ PDF used a fallback renderer (LaTeX compile failed). The <code>cv.tex</code> file is correct — install MiKTeX / TeX Live and regenerate to get your full-quality PDF. <details style="margin-top:0.3rem"><summary>Details</summary><pre style="white-space:pre-wrap;font-size:0.72rem;max-height:160px;overflow:auto">${escapeHtml(job.latex_warning)}</pre></details></div>`
+    : "";
   const letterLink = job.cover_letter_pdf
     ? `<a href="${fileHref(job.cover_letter_pdf)}" target="_blank">Open cover letter PDF</a>`
     : `<span class="muted">No cover letter yet.</span>`;
@@ -497,6 +511,7 @@ function renderEnrichmentDetails(job) {
     </div>
     <div class="detail-block">
       <h4>Tailored CV preview</h4>
+      ${latexWarn}
       ${cvPreview}
       <p>${letterLink}</p>
     </div>
@@ -547,9 +562,12 @@ function renderJobs() {
         const summary = job.ai_summary ? `<div class="row-summary">${escapeHtml(job.ai_summary)}</div>` : "";
         const aiBadge = aiVerdictBadge(job);
         const tags = aiTagsHtml(job);
+        const langWarn = (job.risk_flags || []).includes("LANGUAGE_MISMATCH")
+          ? `<span class="badge-lang-warn" title="This job requires French — your profile is English-only">⚠ French required</span>`
+          : "";
         return `<tr data-job-row="${escapeHtml(job.id)}" class="${activeClass}">
           <td><input type="checkbox" data-select-job="${escapeHtml(job.id)}" ${checked} /></td>
-          <td><strong>${escapeHtml(job.title)}</strong><br>${companyLine(job)}${summary}${tags}</td>
+          <td><strong>${escapeHtml(job.title)}</strong>${langWarn}<br>${companyLine(job)}${summary}${tags}</td>
           <td>${escapeHtml(job.location || "")}${job.remote ? ` ${renderBadge("Remote", "good")}` : ""}</td>
           <td>${escapeHtml(job.status)}</td>
           <td>${scorePill(job.fit_score)}${aiBadge ? `<br>${aiBadge}` : ""}</td>
@@ -718,7 +736,22 @@ async function generateInterviewPrep(jobId, button) {
   toast("Generating interview prep…");
   try {
     const payload = await api("/api/interview-prep", { job_id: jobId });
-    openTextModal("Interview Prep", payload.prep_md, "Copy");
+    const panel = document.getElementById("prepPanel");
+    const title = document.getElementById("prepPanelTitle");
+    const body = document.getElementById("prepPanelBody");
+    const copyBtn = document.getElementById("prepPanelCopyBtn");
+    const closeBtn = document.getElementById("prepPanelCloseBtn");
+    if (panel && body) {
+      const job = state.jobs.find((j) => j.id === jobId);
+      if (title) title.textContent = `Prep — ${job ? job.title : "Interview"}`;
+      body.textContent = (payload.prep_md || "").replace(/\*\*([^*]+)\*\*/g, "$1");
+      panel.classList.remove("hidden");
+      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (copyBtn) copyBtn.onclick = () => navigator.clipboard.writeText(payload.prep_md || "").then(() => toast("Prep copied."));
+      if (closeBtn) closeBtn.onclick = () => panel.classList.add("hidden");
+    } else {
+      openTextModal("Interview Prep", payload.prep_md, "Copy");
+    }
   } catch (error) {
     toast(`Interview prep failed: ${error.message}`);
   } finally {
@@ -766,6 +799,70 @@ function openTextModal(title, content, copyLabel) {
   const text = (content || "").replace(/\*\*([^*]+)\*\*/g, "$1").replace(/---\n\n/, "");
   document.getElementById("genericModalContent").textContent = text;
   modal.style.display = "flex";
+}
+
+async function runRecruiterAudit() {
+  const button = document.getElementById("coachAuditBtn");
+  setBusy(button, true);
+  toast("Auditing your profile…");
+  try {
+    const r = await api("/api/audit-profile", {});
+    openTextModal(`Recruiter Audit — ${r.grade || "?"} (${r.score ?? "?"}/100)`, r.markdown || "No audit available.", "Copy");
+  } catch (error) {
+    toast(`Audit failed: ${error.message}`);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function runSkillSuggestions() {
+  const button = document.getElementById("coachSkillsBtn");
+  setBusy(button, true);
+  try {
+    const r = await api("/api/suggest-skills", {});
+    const implied = (r.implied || []).map((s) => `• ${s.name}${s.implied_by ? ` (from ${s.implied_by})` : ""}`).join("\n") || "None detected.";
+    const gaps = (r.trending_gaps || []).map((g) => `• ${g}`).join("\n") || "None detected.";
+    openTextModal("Skill Suggestions", `IMPLIED SKILLS (already shown by your profile/projects)\n${implied}\n\nTRENDING GAPS WORTH ADDING\n${gaps}`, "Copy");
+  } catch (error) {
+    toast(`Suggestions failed: ${error.message}`);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function runMarketReport() {
+  const button = document.getElementById("insightsMarketBtn");
+  setBusy(button, true);
+  toast("Building market report…");
+  try {
+    const r = await api("/api/market-report", {});
+    openTextModal("Market Report", r.markdown || "No market data yet — track some jobs first.", "Copy");
+  } catch (error) {
+    toast(`Market report failed: ${error.message}`);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function runHeadhunter() {
+  const button = document.getElementById("headhunterBtn");
+  setBusy(button, true);
+  toast("Building outreach packs…");
+  try {
+    const [batch, strategy] = await Promise.all([
+      api("/api/headhunter-batch", { min_score: 50 }),
+      api("/api/headhunter-strategy", {}),
+    ]);
+    const packs = (batch.packs || []).map((p) =>
+      `${p.job_title} — ${p.company} (score ${p.score}${p.is_english_first ? ", English-first" : ""})\n\nCONNECT:\n${p.connect_request}\n\nRECRUITER MESSAGE:\n${p.recruiter_message}\n\nFOLLOW-UP:\n${p.followup_message}`
+    ).join("\n\n────────────────────\n\n");
+    const text = `${strategy.report_md || ""}\n\n====================\n${batch.count || 0} OUTREACH PACK(S)\n====================\n\n${packs || "No tracked jobs above the score threshold yet."}`;
+    openTextModal("Headhunter Outreach", text, "Copy all");
+  } catch (error) {
+    toast(`Headhunter failed: ${error.message}`);
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 async function generateOutreachEmail(jobId, button) {
@@ -1211,7 +1308,9 @@ async function loadStudio() {
     state.studio = data;
     const textarea = document.getElementById("studioTextarea");
     if (textarea && !textarea.dataset.dirty) textarea.value = data.text || "";
-    renderStudioSections(data.sections || []);
+    renderStudioSections(data.sections || [], data.section_display || {});
+    const langSel = document.getElementById("studioLanguage");
+    if (langSel && data.language) langSel.value = data.language;
     const status = document.getElementById("studioStatus");
     if (status) {
       status.textContent = data.origin === "draft" ? "Editing draft (unsaved promotion to main.tex)" : "Loaded main.tex";
@@ -1221,15 +1320,16 @@ async function loadStudio() {
   }
 }
 
-function renderStudioSections(titles) {
+function renderStudioSections(titles, display) {
   const list = document.getElementById("studioSections");
   if (!list) return;
+  display = display || {};
   if (!titles.length) {
     list.innerHTML = "<li class='muted'>No \\section{...} blocks found yet.</li>";
     return;
   }
   list.innerHTML = titles
-    .map((title) => `<li draggable="true" data-section="${escapeHtml(title)}">${escapeHtml(title)}</li>`)
+    .map((title) => `<li draggable="true" data-section="${escapeHtml(title)}">${escapeHtml(display[title] || title)}</li>`)
     .join("");
   attachSectionDnd(list);
 }
@@ -1251,6 +1351,48 @@ function attachSectionDnd(list) {
   });
 }
 
+async function studioSetLanguage(lang) {
+  const textarea = document.getElementById("studioTextarea");
+  try {
+    const result = await api("/api/cv-studio/language", { language: lang });
+    if (!result.ok) {
+      setNotice("studioNotice", result.reason === "no_language_toggle"
+        ? "This template has no \\cvlang toggle, so the language can't be switched automatically."
+        : "Could not switch language.", true);
+      return;
+    }
+    if (textarea) { textarea.value = result.text || textarea.value; delete textarea.dataset.dirty; }
+    await studioCompile();
+    toast(`CV language set to ${result.language === "fr" ? "Français" : "English"}.`);
+  } catch (error) {
+    setNotice("studioNotice", error.message, true);
+  }
+}
+
+async function studioSwapEduExp() {
+  const button = document.getElementById("studioSwapEduExpBtn");
+  const textarea = document.getElementById("studioTextarea");
+  setBusy(button, true);
+  setNotice("studioNotice", "");
+  try {
+    const result = await api("/api/cv-studio/swap-sections", { a: "Education", b: "Professional Experience" });
+    if (!result.ok) {
+      setNotice("studioNotice", result.reason === "section_not_found"
+        ? "Couldn't find both Education and Professional Experience sections to swap."
+        : "Swap failed.", true);
+      return;
+    }
+    if (textarea) { textarea.value = result.text || textarea.value; delete textarea.dataset.dirty; }
+    renderStudioSections(result.sections || [], result.section_display || {});
+    await studioCompile();
+    toast("Swapped Education and Professional Experience.");
+  } catch (error) {
+    setNotice("studioNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function studioCompile() {
   const button = document.getElementById("studioCompileBtn");
   const textarea = document.getElementById("studioTextarea");
@@ -1260,11 +1402,20 @@ async function studioCompile() {
     const text = textarea ? textarea.value : "";
     const result = await api("/api/cv-studio/compile", { text });
     if (!result.ok) {
-      setNotice("studioNotice", `Compile failed: ${(result.log || "").slice(-1200) || result.reason}`, true);
+      const reason = result.reason || "compile_failed";
+      const log = (result.log || "").slice(-2000);
+      const logHtml = log
+        ? `<details style="margin-top:0.5rem"><summary style="cursor:pointer;font-size:0.8rem">LaTeX error log ▸</summary><pre style="font-size:0.75rem;max-height:280px;overflow:auto;white-space:pre-wrap;margin-top:0.4rem">${escapeHtml(log)}</pre></details>`
+        : "";
+      const noticeEl = document.getElementById("studioNotice");
+      if (noticeEl) {
+        noticeEl.className = "notice error";
+        noticeEl.innerHTML = `Compile failed (${escapeHtml(reason)}).${logHtml}`;
+      }
       return;
     }
     const iframe = document.getElementById("studioPreview");
-    if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}#view=FitH`;
+    if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}`;
     toast("Preview rebuilt.");
   } catch (error) {
     setNotice("studioNotice", error.message, true);
@@ -2246,7 +2397,6 @@ function renderAutopilot(status) {
     if (cfg.queries && cfg.queries.length) $("autopilotQueries").value = cfg.queries.join("\n");
     $("autopilotUseFT").checked = cfg.use_france_travail !== false;
     $("autopilotUseMulti").checked = cfg.use_multi_source !== false;
-    $("autopilotInternships").checked = cfg.internships_only !== false;
     if ($("autopilotFranceEuOnly")) $("autopilotFranceEuOnly").checked = cfg.france_eu_only !== false;
     if ($("autopilotEmailNotify")) $("autopilotEmailNotify").checked = cfg.email_notify === true;
   }
@@ -2287,6 +2437,15 @@ function renderAutopilot(status) {
   }
 }
 
+let _contractType = "stage_and_alternance";
+
+function setContractType(type) {
+  _contractType = type;
+  document.querySelectorAll("#contractTypeToggle .contract-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.contract === type);
+  });
+}
+
 function autopilotPayload() {
   return {
     interval_minutes: Number($("autopilotInterval").value || 30),
@@ -2298,7 +2457,7 @@ function autopilotPayload() {
     queries: $("autopilotQueries").value.split("\n").map((q) => q.trim()).filter(Boolean),
     use_france_travail: $("autopilotUseFT").checked,
     use_multi_source: $("autopilotUseMulti").checked,
-    internships_only: $("autopilotInternships").checked,
+    contract_type: _contractType,
     france_eu_only: $("autopilotFranceEuOnly") ? $("autopilotFranceEuOnly").checked : true,
     email_notify: $("autopilotEmailNotify") ? $("autopilotEmailNotify").checked : false,
     auto_apply: $("autopilotAutoApply") ? $("autopilotAutoApply").checked : false,
@@ -2781,6 +2940,9 @@ function bindEvents() {
   $("autopilotStartBtn").addEventListener("click", startAutopilot);
   $("autopilotStopBtn").addEventListener("click", stopAutopilot);
   $("autopilotRefreshBtn").addEventListener("click", loadAutopilot);
+  document.querySelectorAll("#contractTypeToggle .contract-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setContractType(btn.dataset.contract));
+  });
   bindAutoApplyEvents();
   const launchBtn = document.getElementById("launchOllamaBtn");
   if (launchBtn) launchBtn.addEventListener("click", launchOllama);
@@ -2834,6 +2996,10 @@ function bindEvents() {
   });
   const studioReorderApplyBtn = document.getElementById("studioReorderApplyBtn");
   if (studioReorderApplyBtn) studioReorderApplyBtn.addEventListener("click", studioApplyReorder);
+  const studioSwapBtn = document.getElementById("studioSwapEduExpBtn");
+  if (studioSwapBtn) studioSwapBtn.addEventListener("click", studioSwapEduExp);
+  const studioLangSel = document.getElementById("studioLanguage");
+  if (studioLangSel) studioLangSel.addEventListener("change", (event) => studioSetLanguage(event.target.value));
   const studioTextarea = document.getElementById("studioTextarea");
   if (studioTextarea) studioTextarea.addEventListener("input", () => { studioTextarea.dataset.dirty = "1"; });
 
@@ -2942,6 +3108,14 @@ function bindEvents() {
   // Career Coach
   const coachBtn = document.getElementById("coachRefreshBtn");
   if (coachBtn) coachBtn.addEventListener("click", generateCoachPlan);
+  const coachAuditBtn = document.getElementById("coachAuditBtn");
+  if (coachAuditBtn) coachAuditBtn.addEventListener("click", runRecruiterAudit);
+  const coachSkillsBtn = document.getElementById("coachSkillsBtn");
+  if (coachSkillsBtn) coachSkillsBtn.addEventListener("click", runSkillSuggestions);
+  const insightsMarketBtn = document.getElementById("insightsMarketBtn");
+  if (insightsMarketBtn) insightsMarketBtn.addEventListener("click", runMarketReport);
+  const headhunterBtn = document.getElementById("headhunterBtn");
+  if (headhunterBtn) headhunterBtn.addEventListener("click", runHeadhunter);
 
   // Maintenance
   const rescanBtn = document.getElementById("rescanCompaniesBtn");
@@ -3179,11 +3353,140 @@ function closeAutoApplySse() {
   }
 }
 
+// ── Pre-apply preview / selection ────────────────────────────────────────────
+
+let _previewCandidates = [];
+
+function renderPreviewModal(candidates) {
+  const list = $("previewCandidateList");
+  if (!list) return;
+  if (!candidates.length) {
+    list.innerHTML = '<p class="muted" style="padding:0.5rem">No ready packets found. Run the autopilot or generate packets first.</p>';
+    return;
+  }
+  list.innerHTML = candidates.map((c, i) => `
+    <label class="preview-candidate-row" style="display:flex;align-items:flex-start;gap:0.6rem;padding:0.55rem 0;border-bottom:1px solid var(--border,#e0e0e0)">
+      <input type="checkbox" class="preview-check" data-index="${i}" checked style="margin-top:0.2rem;flex-shrink:0" />
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.title)} — ${escapeHtml(c.company)}</div>
+        <div class="muted" style="font-size:0.82rem">${escapeHtml(c.location || "")} · Score ${c.fit_score != null ? Math.round(c.fit_score) : "—"}</div>
+        <div class="muted" style="font-size:0.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.apply_url || "")}</div>
+      </div>
+    </label>`).join("");
+}
+
+function getSelectedPreviewIds() {
+  return [...document.querySelectorAll(".preview-check:checked")]
+    .map((cb) => _previewCandidates[parseInt(cb.dataset.index, 10)]?.job_id)
+    .filter(Boolean);
+}
+
+async function openPreviewModal() {
+  const btn = $("autoApplyPreviewBtn");
+  setBusy(btn, true);
+  setNotice("autoApplyNotice", "");
+  try {
+    const minScore = parseFloat($("autoApplyMinScore")?.value || "70");
+    const limit = parseInt($("autoApplyLimit")?.value || "10", 10);
+    const result = await api(`/api/auto-apply/preview?min_score=${minScore}&limit=${limit}`, null, "GET");
+    _previewCandidates = result.candidates || [];
+    renderPreviewModal(_previewCandidates);
+    const modal = $("previewModal");
+    if (modal) modal.style.display = "flex";
+  } catch (err) {
+    setNotice("autoApplyNotice", err.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+async function startFromPreview() {
+  const selectedIds = getSelectedPreviewIds();
+  if (!selectedIds.length) {
+    toast("Select at least one job to apply to.");
+    return;
+  }
+  const modal = $("previewModal");
+  if (modal) modal.style.display = "none";
+
+  const nowBtn = $("autoApplyNowBtn");
+  setBusy(nowBtn, true);
+  setNotice("autoApplyNotice", "");
+  const minScore = parseFloat($("autoApplyMinScore")?.value || "70");
+  const limit = parseInt($("autoApplyLimit")?.value || "10", 10);
+  try {
+    const result = await api("/api/auto-apply/start", {
+      mode: autoApplyMode(),
+      min_score: minScore,
+      limit,
+      job_ids: selectedIds,
+    });
+    if (!result.ok) {
+      setNotice("autoApplyNotice", result.error || "Could not start session.", true);
+      setBusy(nowBtn, false);
+      return;
+    }
+    appendApplyLog(`Session started for ${selectedIds.length} selected job(s)…`, "progress");
+    subscribeAutoApplySse();
+  } catch (err) {
+    setNotice("autoApplyNotice", err.message, true);
+    setBusy(nowBtn, false);
+  }
+}
+
+async function openBrowserForLogin() {
+  const btn = $("autoApplyLoginBtn");
+  setBusy(btn, true);
+  setNotice("autoApplyNotice", "");
+  try {
+    const result = await api("/api/auto-apply/open-browser", {});
+    if (result.ok) {
+      setNotice("autoApplyNotice", result.message || "Browser opened. Log in, then close it.");
+    } else {
+      setNotice("autoApplyNotice", result.error || "Could not open browser.", true);
+    }
+  } catch (err) {
+    setNotice("autoApplyNotice", err.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
 function bindAutoApplyEvents() {
   document.querySelectorAll(".mode-btn").forEach((btn) => {
     btn.addEventListener("click", () => setAutoApplyMode(btn.dataset.mode));
   });
 
+  const previewBtn = $("autoApplyPreviewBtn");
+  if (previewBtn) previewBtn.addEventListener("click", openPreviewModal);
+
+  const loginBtn = $("autoApplyLoginBtn");
+  if (loginBtn) loginBtn.addEventListener("click", openBrowserForLogin);
+
+  // "Select all / deselect all" in preview modal
+  const selectAllBtn = $("previewSelectAll");
+  if (selectAllBtn) selectAllBtn.addEventListener("click", () => {
+    document.querySelectorAll(".preview-check").forEach((cb) => { cb.checked = true; });
+  });
+  const deselectAllBtn = $("previewDeselectAll");
+  if (deselectAllBtn) deselectAllBtn.addEventListener("click", () => {
+    document.querySelectorAll(".preview-check").forEach((cb) => { cb.checked = false; });
+  });
+
+  const previewStartBtn = $("previewStartBtn");
+  if (previewStartBtn) previewStartBtn.addEventListener("click", startFromPreview);
+
+  const _hidePreviewModal = () => { const m = $("previewModal"); if (m) m.style.display = "none"; };
+  const previewCloseBtn = $("previewCloseBtn");
+  if (previewCloseBtn) previewCloseBtn.addEventListener("click", _hidePreviewModal);
+  const previewCancelBtn = $("previewCancelBtn");
+  if (previewCancelBtn) previewCancelBtn.addEventListener("click", _hidePreviewModal);
+  const previewModal = $("previewModal");
+  if (previewModal) previewModal.addEventListener("click", (e) => {
+    if (e.target === previewModal) _hidePreviewModal();
+  });
+
+  // Legacy "Auto-Apply Now" still works (skips preview, uses all ready jobs)
   const nowBtn = $("autoApplyNowBtn");
   if (nowBtn) nowBtn.addEventListener("click", async () => {
     setBusy(nowBtn, true);

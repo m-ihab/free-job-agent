@@ -29,6 +29,8 @@ from job_agent.renderer.latex_render import (
     available_latex_compiler,
     compile_latex_to_pdf,
     copy_latex_assets,
+    detect_cvlang,
+    set_cvlang,
 )
 from job_agent.utils.html import strip_html
 
@@ -86,6 +88,8 @@ def load_studio(config: AppConfig) -> dict[str, Any]:
         "draft_path": str(draft),
         "main_path": str(_main_tex_path(config) or ""),
         "sections": sections,
+        "section_display": {s: section_display_name(s) for s in sections},
+        "language": detect_cvlang(text),
         "compiler": available_latex_compiler() or "",
         "ai_available": _ai_is_available is not None and _ai_is_available(),
     }
@@ -174,6 +178,84 @@ def _extract_section_titles(text: str) -> list[str]:
                 inner = inner.lstrip("\\").rstrip("}")
             titles.append(inner or "(section)")
     return titles
+
+
+# moderncv templates reference sections by command (\section{\sectedu}); map the
+# command tokens to human labels for the reorder UI. Unknown tokens echo back.
+_SECTION_DISPLAY = {
+    "sectsummary": "Profile",
+    "sectedu": "Education",
+    "sectexp": "Professional Experience",
+    "sectproj": "Projects",
+    "sectskills": "Technical Skills",
+    "sectlang": "Languages",
+}
+
+
+def section_display_name(label: str) -> str:
+    """Return a human-friendly name for a raw section label/command token."""
+    key = (label or "").strip().lstrip("\\").casefold()
+    if key in _SECTION_DISPLAY:
+        return _SECTION_DISPLAY[key]
+    # Title-case a plain literal section title, leave real words intact.
+    return (label or "").strip() or "(section)"
+
+
+def set_studio_language(config: AppConfig, language: str) -> dict[str, Any]:
+    """Switch the active draft between English and French via ``\\cvlang``.
+
+    Writes the result to the working draft (never to main.tex) so the change is
+    reversible and previewable. Returns the new detected language.
+    """
+    lang = (language or "").strip().lower()
+    if lang not in {"en", "fr"}:
+        return {"ok": False, "reason": "bad_language", "language": ""}
+    text, _, _ = _active_cv_text(config)
+    if not text or r"\cvlang" not in text:
+        return {"ok": False, "reason": "no_language_toggle", "language": detect_cvlang(text)}
+    updated = set_cvlang(text, lang)
+    _write_draft(config, updated)
+    return {"ok": True, "language": detect_cvlang(updated), "text": updated, "draft_path": str(_draft_path(config))}
+
+
+def swap_studio_sections(config: AppConfig, label_a: str, label_b: str) -> dict[str, Any]:
+    """Swap the position of two sections in the active draft and save it.
+
+    Matching is tolerant: it accepts raw command tokens (``sectedu``) or human
+    labels (``Education``). Only the order changes — section content is never
+    edited. The result is written to the working draft.
+    """
+    text, _, _ = _active_cv_text(config)
+    titles = _extract_section_titles(text)
+    if not titles:
+        return {"ok": False, "reason": "no_sections", "sections": []}
+
+    def _resolve(token: str) -> str | None:
+        token_cf = (token or "").strip().lstrip("\\").casefold()
+        for title in titles:
+            if title.casefold() == token_cf:
+                return title
+            if section_display_name(title).casefold() == token_cf:
+                return title
+        return None
+
+    first = _resolve(label_a)
+    second = _resolve(label_b)
+    if not first or not second or first == second:
+        return {"ok": False, "reason": "section_not_found", "sections": titles}
+    order = list(titles)
+    i, j = order.index(first), order.index(second)
+    order[i], order[j] = order[j], order[i]
+    updated = reorder_sections(text, order)
+    _write_draft(config, updated)
+    new_titles = _extract_section_titles(updated)
+    return {
+        "ok": True,
+        "text": updated,
+        "sections": new_titles,
+        "section_display": {s: section_display_name(s) for s in new_titles},
+        "draft_path": str(_draft_path(config)),
+    }
 
 
 # -----------------------------------------------------------------------------
@@ -325,6 +407,9 @@ __all__ = [
     "compile_preview",
     "suggest_edits",
     "reorder_sections",
+    "section_display_name",
+    "set_studio_language",
+    "swap_studio_sections",
     "list_assets",
     "read_asset",
     "write_asset",

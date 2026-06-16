@@ -117,6 +117,7 @@
           <button id="linksBtn">Build clean links</button>
           <button id="apiSearchBtn">Search France Travail API</button>
           <button id="refreshJobsBtn">Refresh jobs</button>
+          <button id="headhunterBtn" title="Batch recruiter-outreach packs + English-first strategy across your tracked jobs">Headhunter outreach</button>
         </div>
 
         <div class="metric-grid" id="searchMetrics"></div>
@@ -216,6 +217,14 @@
           <aside class="panel" id="enrichmentPanel">
             <h3>Job details</h3>
             <div id="enrichmentDetails" class="muted">Click a job to see details, enrichment, and a preview of the tailored docs.</div>
+            <div id="prepPanel" class="prep-panel hidden">
+              <div class="prep-panel-header">
+                <span class="prep-panel-title" id="prepPanelTitle">Interview Prep</span>
+                <button id="prepPanelCopyBtn" title="Copy prep to clipboard">Copy</button>
+                <button id="prepPanelCloseBtn" title="Close prep panel">✕</button>
+              </div>
+              <pre id="prepPanelBody" class="prep-panel-body"></pre>
+            </div>
           </aside>
         </div>
       </section>
@@ -271,7 +280,15 @@ data engineer</textarea>
             <div class="control-grid compact">
               <label class="check-row"><input id="autopilotUseFT" type="checkbox" checked /> Use France Travail</label>
               <label class="check-row"><input id="autopilotUseMulti" type="checkbox" checked /> Use multi-source</label>
-              <label class="check-row"><input id="autopilotInternships" type="checkbox" checked /> Internships only</label>
+              <div class="check-row contract-filter-wrap" style="grid-column:1/-1">
+                <span class="filter-label">Contract type</span>
+                <div class="contract-toggle" id="contractTypeToggle" role="group" aria-label="Contract type filter">
+                  <button class="contract-btn" id="ctAll" data-contract="all">All</button>
+                  <button class="contract-btn" id="ctStage" data-contract="stage">Stage</button>
+                  <button class="contract-btn" id="ctAlternance" data-contract="alternance">Alternance</button>
+                  <button class="contract-btn active" id="ctBoth" data-contract="stage_and_alternance">Stage + Alternance</button>
+                </div>
+              </div>
               <label class="check-row"><input id="autopilotFranceEuOnly" type="checkbox" checked /> France/EU only</label>
               <label class="check-row"><input id="autopilotEmailNotify" type="checkbox" /> Notify me for strong matches</label>
               <label>
@@ -341,10 +358,17 @@ data engineer</textarea>
             </div>
           </div>
 
-          <div class="action-row" style="margin-bottom:0.6rem">
-            <button class="primary" id="autoApplyNowBtn">▶ Auto-Apply Now</button>
+          <div class="action-row" style="margin-bottom:0.5rem;flex-wrap:wrap;gap:0.5rem">
+            <button class="primary" id="autoApplyPreviewBtn" title="Preview which jobs will be applied to, with checkboxes to select or skip each">⚙ Preview &amp; Select Jobs</button>
+            <button id="autoApplyNowBtn" title="Start immediately with all ready packets above the score threshold">▶ Apply All Now</button>
             <button id="autoApplyCancelBtn">■ Stop session</button>
           </div>
+          <div class="action-row" style="margin-bottom:0.6rem;flex-wrap:wrap;gap:0.5rem">
+            <button id="autoApplyLoginBtn" title="Open the Job Agent browser profile so you can log in to France Travail, LinkedIn, etc. — the session is remembered for future auto-apply runs">🔑 Setup Browser Login</button>
+          </div>
+          <p class="muted" style="font-size:0.8rem;margin:0 0 0.6rem">
+            First time? Click <strong>Setup Browser Login</strong> to open the Job Agent browser, sign in to each site, then close it. Your session is saved for all future runs.
+          </p>
           <label class="check-row" style="margin-bottom:0.6rem">
             <input id="autopilotAutoApply" type="checkbox" />
             Enable auto-apply automatically after each autopilot cycle
@@ -358,6 +382,28 @@ data engineer</textarea>
               <button class="ghost" id="autoApplyLogClear" style="font-size:0.75rem">Clear</button>
             </div>
             <div id="autoApplyLog" class="apply-log"></div>
+          </div>
+        </div>
+
+        <!-- ── Pre-Apply Job Selection Modal ──────────────────────────────── -->
+        <div id="previewModal" class="modal-overlay" style="display:none">
+          <div class="modal-box" style="max-width:620px;max-height:82vh;display:flex;flex-direction:column">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+              <strong>Select jobs to apply to</strong>
+              <button id="previewCloseBtn" class="ghost" style="font-size:1.1rem;line-height:1">✕</button>
+            </div>
+            <p class="muted" style="font-size:0.82rem;margin:0 0 0.5rem">
+              Tick the jobs you want Job Agent to fill and submit. Untick any you want to skip.
+            </p>
+            <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
+              <button id="previewSelectAll" class="ghost" style="font-size:0.8rem">Select all</button>
+              <button id="previewDeselectAll" class="ghost" style="font-size:0.8rem">Deselect all</button>
+            </div>
+            <div id="previewCandidateList" style="flex:1;overflow-y:auto;min-height:80px"></div>
+            <div class="action-row" style="margin-top:0.9rem">
+              <button class="primary" id="previewStartBtn">▶ Start Auto-Apply</button>
+              <button id="previewCancelBtn">Cancel</button>
+            </div>
           </div>
         </div>
 
@@ -429,6 +475,13 @@ data engineer</textarea>
               <button class="primary" id="studioCompileBtn">Compile preview</button>
               <button id="studioSuggestBtn">AI suggestions</button>
               <button id="studioSaveBtn" title="Save current text as the working draft">Save draft</button>
+              <label class="studio-lang" title="Switch the CV between English and French (your main.tex carries both)">
+                <span>Language</span>
+                <select id="studioLanguage">
+                  <option value="en">English</option>
+                  <option value="fr">Français</option>
+                </select>
+              </label>
               <span class="muted" id="studioStatus"></span>
             </div>
             <textarea id="studioTextarea" spellcheck="false" wrap="off"></textarea>
@@ -448,7 +501,10 @@ data engineer</textarea>
           <section class="panel">
             <h3>Sections (drag to reorder)</h3>
             <ul id="studioSections" class="studio-section-list"></ul>
-            <button id="studioReorderApplyBtn" class="primary-soft" style="margin-top:0.5rem">Apply new order to draft</button>
+            <div class="studio-section-actions">
+              <button id="studioReorderApplyBtn" class="primary-soft">Apply new order to draft</button>
+              <button id="studioSwapEduExpBtn" title="Swap the order of Education and Professional Experience in the draft (content unchanged)">Swap Education ↔ Experience</button>
+            </div>
           </section>
           <section class="panel">
             <h3>AI suggestions</h3>
@@ -659,6 +715,8 @@ data engineer</textarea>
           </div>
           <div class="action-row">
             <button class="primary" id="coachRefreshBtn">Generate plan</button>
+            <button id="coachAuditBtn" title="An AI recruiter's-eye audit of your profile and CV, with concrete fixes">Recruiter audit</button>
+            <button id="coachSkillsBtn" title="Targeted skill-gap suggestions from your profile and tracked jobs">Skill suggestions</button>
           </div>
         </div>
 
@@ -726,7 +784,10 @@ data engineer</textarea>
             <h2>Insights &amp; pipeline</h2>
             <p>How your applications are progressing this season — all calculated locally.</p>
           </div>
-          <button id="insightsRefreshBtn">Refresh</button>
+          <div class="action-row">
+            <button id="insightsRefreshBtn">Refresh</button>
+            <button id="insightsMarketBtn" title="Market intelligence report built from your tracked jobs">Market report</button>
+          </div>
         </div>
 
         <div class="metric-grid" id="insightsMetrics"></div>

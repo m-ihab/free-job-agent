@@ -24,7 +24,7 @@ from job_agent.intake.france_travail_auth import (
     invalidate_france_travail_token_cache,
 )
 from job_agent.intake.url import HEADERS
-from job_agent.intake.internships import is_internship_listing
+from job_agent.intake.internships import is_internship_listing, is_stage_listing, is_alternance_listing
 from job_agent.normalizer import normalize
 from job_agent.search_quality import assess_search_quality
 from job_agent.secrets import load_local_env
@@ -40,6 +40,61 @@ class FreeApiError(RuntimeError):
     """Raised when a public job-source API cannot be queried safely."""
 
 
+# France Travail typeContrat codes for contract filtering.
+_CONTRACT_TYPE_FT: dict[str, str] = {
+    "stage": "STG",
+    "alternance": "CA1,CA2",
+    "stage_and_alternance": "STG,CA1,CA2",
+}
+
+# Words that should appear in at least one title token for a job to be tech-relevant.
+_DATA_TECH_TITLE_TOKENS: frozenset[str] = frozenset({
+    "data", "science", "scientist", "analyst", "analytics", "engineer", "engineering",
+    "machine", "learning", "intelligence", "artificielle", "artificial", "nlp", "llm",
+    "computer", "vision", "python", "sql", "backend", "frontend", "developer", "software",
+    "ia", "ml", "ai", "bi", "etl", "mlops", "devops", "cloud", "platform", "research",
+    "modélisation", "modelisation", "statistique", "statisticien", "informaticien",
+    "chargé", "charge", "études", "etudes", "développeur", "developpeur",
+    "digital", "numerique", "numérique", "deep", "mining", "warehouse", "inference",
+    "ingénieur", "ingenieur", "fullstack", "tech", "big", "automatique", "apprentissage",
+    "architecture", "securite", "sécurité", "réseau", "reseau", "cybersecurity",
+})
+
+# Non-tech retail/manual roles that should never enter the tracker.
+_BLOCKED_ROLE_PREFIXES: tuple[str, ...] = (
+    "vendeur", "vendeuse", "caissier", "caissière", "caissiere",
+    "aide-soignant", "aide soignant", "infirmier", "infirmière",
+    "secrétaire", "secretaire", "comptable", "chauffeur",
+    "livreur", "livreuse", "opérateur de saisie", "manutentionnaire",
+    "électricien", "electricien", "plombier", "menuisier",
+    "cuisinier", "cuisinière", "cuisiniere", "serveur", "serveuse",
+    "conseiller de vente", "conseillère de vente",
+    "technicien de maintenance", "technicien de production",
+    "agent de sécurité", "agent de securite", "gardien",
+    "commercial terrain", "commercial itinérant",
+)
+
+
+def _is_tech_relevant_title(job: "JobListing") -> bool:
+    """Return True when the job title plausibly belongs in a tech/data list.
+
+    Hard-blocks obvious non-tech retail/manual roles first, then requires at
+    least one tech token OR two tech-stack entries. This prevents queries like
+    'alternance data' from returning 'Vendeur en magasin' whose description
+    mentions a POS 'data terminal'.
+    """
+    title_lower = job.title.casefold()
+    for blocked in _BLOCKED_ROLE_PREFIXES:
+        if blocked in title_lower:
+            return False
+    tokens = set(re.split(r"[\s\-/|,]+", title_lower))
+    if tokens & _DATA_TECH_TITLE_TOKENS:
+        return True
+    if len(job.tech_stack) >= 2:
+        return True
+    return False
+
+
 @dataclass(frozen=True)
 class FreeApiSearch:
     """Parameters for a read-only public job search."""
@@ -53,6 +108,7 @@ class FreeApiSearch:
     page: int = 1
     remote_only: bool = False
     internships_only: bool = False
+    contract_type: str = ""   # "stage" | "alternance" | "stage_and_alternance" | "" (all)
     min_relevance: int = 0
     france_eu_only: bool = False
     radius_km: int = 0
@@ -335,14 +391,29 @@ def _post_filter(jobs: list[JobListing], search: FreeApiSearch, apply_query_filt
     """Filter results then rank by query relevance.
 
     Source APIs that accept a search parameter (Remotive, RemoteOK, etc.) have
-    already done the keyword filtering. We only enforce remote/internship/
-    location constraints here, then sort by relevance to surface the best
-    matches first.
+    already done the keyword filtering. We enforce contract type, location,
+    relevance, and tech-title constraints here, then sort by relevance.
     """
+    # Resolve effective contract filter (contract_type takes precedence, then internships_only legacy flag).
+    ct = (search.contract_type or "").strip().lower()
+    if not ct and search.internships_only:
+        ct = "stage_and_alternance"
+
     filtered: list[JobListing] = []
     for job in jobs:
-        if search.internships_only and not is_internship_listing(job):
+        # Title-quality gate: block non-tech roles (e.g. "Vendeur en magasin").
+        if not _is_tech_relevant_title(job):
             continue
+        # Contract-type filter.
+        if ct == "stage":
+            if not is_stage_listing(job):
+                continue
+        elif ct == "alternance":
+            if not is_alternance_listing(job):
+                continue
+        elif ct in ("stage_and_alternance", "both"):
+            if not is_internship_listing(job):
+                continue
         if search.remote_only and not job.remote:
             continue
         if apply_query_filter and not _contains_query(job, search.query):
@@ -1048,6 +1119,12 @@ def _fetch_francetravail(search: FreeApiSearch) -> list[JobListing]:
     # Make sure we never end up with both commune and departement (FT rejects it).
     if "commune" in params and "departement" in params:
         params.pop("departement", None)
+    # Contract type filter at API level — narrows results before post-filter.
+    ct = (search.contract_type or "").strip().lower()
+    if not ct and search.internships_only:
+        ct = "stage_and_alternance"
+    if ct in _CONTRACT_TYPE_FT:
+        params["typeContrat"] = _CONTRACT_TYPE_FT[ct]
     try:
         data = _ft_request(url, params, search, token)
     except requests.HTTPError as exc:
@@ -1285,6 +1362,7 @@ def search_free_api_jobs(
     page: int = 1,
     remote_only: bool = False,
     internships_only: bool = False,
+    contract_type: str = "",
     min_relevance: int = 0,
     france_eu_only: bool = False,
     radius_km: int = 0,
@@ -1312,6 +1390,7 @@ def search_free_api_jobs(
         page=max(1, int(page or 1)),
         remote_only=remote_only,
         internships_only=internships_only,
+        contract_type=contract_type.strip().lower(),
         min_relevance=max(0, min(int(min_relevance or 0), 100)),
         france_eu_only=france_eu_only,
         radius_km=max(0, min(int(radius_km or 0), 100)),
@@ -1344,6 +1423,7 @@ def search_all_free_sources(
     limit_per_source: int = 10,
     remote_only: bool = False,
     internships_only: bool = False,
+    contract_type: str = "",
     min_relevance: int = 0,
     france_eu_only: bool = False,
     radius_km: int = 0,
@@ -1373,6 +1453,7 @@ def search_all_free_sources(
                 limit=limit_per_source,
                 remote_only=remote_only,
                 internships_only=internships_only,
+                contract_type=contract_type,
                 min_relevance=min_relevance,
                 france_eu_only=france_eu_only,
                 radius_km=radius_km,

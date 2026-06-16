@@ -176,7 +176,7 @@ def _is_french(text: str) -> bool:
     return bool(text and _FRENCH_HINT_RE.search(text))
 
 
-_STAGE_TERMS_RE = re.compile(r"\b(stage|stagiaire|internship|intern|graduate|junior)\b", re.IGNORECASE)
+_STAGE_TERMS_RE = re.compile(r"\b(stage|stagiaire|internship|intern)\b", re.IGNORECASE)
 _ALTERNANCE_TERMS_RE = re.compile(r"\b(alternance|apprentissage|apprenti|apprenticeship|alternant|alternant\.e)\b", re.IGNORECASE)
 _CDI_TERMS_RE = re.compile(r"\b(cdi|permanent|full[- ]time)\b", re.IGNORECASE)
 
@@ -332,9 +332,9 @@ def _contract_aware_tail(job: JobListing, focus: list[str], french: bool) -> str
 
     if contract == "stage":
         sentence = (
-            f" Recherche un stage de 6 mois en tant que {role}{company_suffix}"
+            f" Disponible immédiatement pour un stage de 6 mois en tant que {role}{company_suffix}"
             if french
-            else f" Seeking a 6-month {role} internship{company_suffix}"
+            else f" Available immediately for a 6-month {role} internship{company_suffix}"
         )
     elif contract == "alternance":
         sentence = (
@@ -504,18 +504,100 @@ def _github_handle(url: str | None) -> str:
     return url.rstrip("/").rsplit("/", 1)[-1]
 
 
+def set_cvlang(source: str, language: str | None) -> str:
+    """Force the moderncv ``\\cvlang`` toggle to ``en`` or ``fr``.
+
+    The bundled ``main.tex`` defines ``\\newcommand{\\cvlang}{en}`` and carries
+    full English + French content branches, so switching languages is a
+    one-line rewrite — no translation required. Unknown or empty languages, or
+    a template without the toggle, leave the source untouched.
+    """
+    if not language:
+        return source
+    lang = language.strip().lower()
+    if lang not in {"en", "fr"} or r"\cvlang" not in source:
+        return source
+    new_source, replaced = re.subn(
+        r"\\(?:re)?newcommand\s*\{\\cvlang\}\s*\{[^}]*\}",
+        rf"\\newcommand{{\\cvlang}}{{{lang}}}",
+        source,
+        count=1,
+    )
+    if not replaced:
+        return source
+    # Drop any leftover commented toggle line so it can't confuse a later edit.
+    new_source = re.sub(
+        r"(?m)^\s*%\s*\\(?:re)?newcommand\s*\{\\cvlang\}\s*\{[^}]*\}\s*$\n?",
+        "",
+        new_source,
+    )
+    return new_source
+
+
+def detect_cvlang(source: str) -> str:
+    """Return the active ``\\cvlang`` value (``en``/``fr``); defaults to ``en``."""
+    match = re.search(r"(?<!%)\\(?:re)?newcommand\s*\{\\cvlang\}\s*\{\s*(en|fr)\s*\}", source or "")
+    return match.group(1).lower() if match else "en"
+
+
+def count_pdf_pages(pdf_path: Path) -> int | None:
+    """Cheap PDF page count via ``/Type /Page`` markers (no pypdf dependency)."""
+    try:
+        data = pdf_path.read_bytes()
+    except Exception:
+        return None
+    return data.count(b"/Type /Page") - data.count(b"/Type /Pages")
+
+
+def _cap_itemize_items(block: str, max_items: int) -> str:
+    """Keep only the first ``max_items`` ``\\item`` entries in one itemize block."""
+    segments = block.split(r"\item")
+    if len(segments) <= max_items + 1:
+        return block
+    head = segments[0]
+    items = [re.sub(r"\\end\{itemize\}", "", seg) for seg in segments[1:]]
+    kept = items[:max_items]
+    return head + r"\item" + r"\item".join(kept).rstrip() + "\n        \\end{itemize}"
+
+
+def compact_cv_source(source: str, level: int) -> str:
+    """Tighten a moderncv source so a slightly-overflowing CV fits one page.
+
+    Level 1 is typography-only (no content removed): smaller base font and
+    tighter margins. Level 2 additionally caps each bullet list to its top 3
+    items — a factual trim that keeps the strongest bullets. Used only after a
+    compile shows the tailored CV spilled onto a second page.
+    """
+    out = source
+    if level >= 1:
+        out = re.sub(r"(\\documentclass\[[^\]]*?)11pt", r"\g<1>10pt", out, count=1)
+        out = re.sub(r"top=1\.2cm,\s*bottom=1\.2cm", "top=0.8cm, bottom=0.8cm", out)
+        out = re.sub(r"scale=0\.90", "scale=0.93", out)
+    if level >= 2:
+        out = re.sub(
+            r"\\begin\{itemize\}.*?\\end\{itemize\}",
+            lambda m: _cap_itemize_items(m.group(0), 3),
+            out,
+            flags=re.S,
+        )
+    return out
+
+
 def render_moderncv_template(
     template_path: Path,
     *,
     job: JobListing,
     master_cv: MasterCV,
     profile: CandidateProfile,
+    language: str | None = None,
 ) -> str:
     """Render a tailored CV by preserving the user's moderncv template.
 
     Only role-specific text is rewritten. The master template's design,
     section ordering, language toggle, photo, font, and curated narrative
-    skill blocks stay intact.
+    skill blocks stay intact. When ``language`` is ``en``/``fr`` the
+    ``\\cvlang`` toggle is set accordingly; otherwise the template's own value
+    is preserved.
     """
     source = template_path.read_text(encoding="utf-8")
     header_comment = "% Tailored by free-job-agent for " + _inline_latex(f"{job.title} at {job.company}") + "\n"
@@ -586,6 +668,7 @@ def render_moderncv_template(
                 for command_name, project in zip(defined_slots, ranked_projects):
                     source = _replace_newcommand_body(source, command_name, _project_body(project, job))
 
+    source = set_cvlang(source, language)
     return source
 
 
@@ -601,6 +684,7 @@ def render_latex_source(
     job: JobListing | None = None,
     master_cv: MasterCV | None = None,
     profile: CandidateProfile | None = None,
+    language: str | None = None,
 ) -> str:
     """Convert the generated CV markdown into editable LaTeX source.
 
@@ -611,7 +695,7 @@ def render_latex_source(
     the workflow still produces a valid ``cv.tex`` and PDF.
     """
     if template_path and template_path.exists() and job and master_cv and profile:
-        return render_moderncv_template(template_path, job=job, master_cv=master_cv, profile=profile)
+        return render_moderncv_template(template_path, job=job, master_cv=master_cv, profile=profile, language=language)
 
     body: list[str] = []
     in_list = False
@@ -778,15 +862,22 @@ def compile_latex_to_pdf(tex_path: Path | str, output_pdf: Path | str) -> Path:
 
     last_result: subprocess.CompletedProcess[str] | None = None
     for _ in range(2):
-        last_result = subprocess.run(
-            command,
-            cwd=workdir,
-            env=_latex_subprocess_env(),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
+        try:
+            last_result = subprocess.run(
+                command,
+                cwd=workdir,
+                env=_latex_subprocess_env(),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            raise LatexCompileError(
+                "LaTeX compilation timed out after 120 seconds. "
+                "A reportlab fallback PDF will be used instead."
+            )
         if last_result.returncode != 0:
             break
 

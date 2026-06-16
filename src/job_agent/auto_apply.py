@@ -31,6 +31,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from job_agent.apply_bridge import get_ready_candidates
+
 logger = logging.getLogger(__name__)
 
 _AUTO_APPLY_PROFILE_ENV = "JOB_AGENT_AUTO_APPLY_PROFILE_DIR"
@@ -98,12 +100,14 @@ class AutoApplySession:
         min_score: float = 70.0,
         limit: int = 10,
         headless: bool = False,
+        job_ids: "list[str] | None" = None,
     ) -> None:
         self.config = config
         self.mode = mode
         self.min_score = min_score
         self.limit = limit
         self.headless = headless
+        self.job_ids = job_ids  # if set, only apply to these job IDs
 
         self._progress_queue: queue.Queue[ApplyEvent] = queue.Queue()
         self._confirm_event = threading.Event()
@@ -133,6 +137,10 @@ class AutoApplySession:
         self._cancel_flag = True
         self._confirm_event.set()
 
+    def _reset_per_job_flags(self) -> None:
+        """Reset per-job state so a skip/cancel on one job doesn't bleed into the next."""
+        self._skip_flag = False
+
     def run_in_background(self) -> threading.Thread:
         t = threading.Thread(target=self._run, daemon=True, name="auto-apply")
         t.start()
@@ -157,6 +165,17 @@ class AutoApplySession:
 
             self._emit(ApplyEvent("progress", message=f"Found {len(candidates)} ready packet(s). Opening browser…"))
 
+            # Location pre-flight — let the user see what they're about to apply to.
+            _loc_lines = "; ".join(
+                f"{c.job.title} @ {c.job.company} ({c.job.location or 'location unknown'})"
+                for c in candidates[:6]
+            )
+            self._emit(ApplyEvent(
+                "preflight",
+                message=f"Applying to: {_loc_lines}",
+                data={"count": len(candidates), "locations": [c.job.location for c in candidates]},
+            ))
+
             from playwright.sync_api import sync_playwright
 
             with sync_playwright() as p:
@@ -176,6 +195,7 @@ class AutoApplySession:
                 for i, candidate in enumerate(candidates, 1):
                     if self._cancel_flag:
                         break
+                    self._reset_per_job_flags()
                     self._emit(ApplyEvent(
                         "progress",
                         job_id=candidate.job.id,
@@ -231,6 +251,11 @@ class AutoApplySession:
 
             page.goto(apply_url, wait_until="domcontentloaded", timeout=30_000)
             page.wait_for_timeout(2000)
+
+            # France Travail detail pages show a "Postuler" button — click it
+            # to reach the actual application form (external ATS or FT form).
+            if _is_france_travail_detail(apply_url):
+                ats = _click_postuler(page) or ats
 
             filled, summary = self._fill_form(page, candidate, ats)
 
@@ -293,7 +318,8 @@ class AutoApplySession:
 
     def _fill_form(self, page: Any, candidate: Any, ats: str) -> tuple[bool, str]:
         """Fill the application form. Returns (success, summary)."""
-        qa = candidate.packet.qa_answers or {}
+        profile = self._profile()
+        qa = _build_apply_qa(profile, candidate.packet.qa_answers or {})
         cv_path = candidate.packet.tailored_cv_pdf_path or ""
         cover_md = candidate.packet.cover_letter_md or ""
 
@@ -303,9 +329,23 @@ class AutoApplySession:
             return _fill_standard_ats(page, qa, cv_path, cover_md)
         return _fill_generic(page, qa, cv_path, cover_md)
 
+    def _profile(self) -> Any:
+        """Load candidate profile (cached on the session object)."""
+        if not hasattr(self, "_profile_cache"):
+            try:
+                from job_agent.validators import load_profile_bundle
+                profile, _, _ = load_profile_bundle(self.config)
+                self._profile_cache = profile
+            except Exception:
+                self._profile_cache = None
+        return self._profile_cache
+
     def _load_candidates(self) -> list:
-        from job_agent.apply_bridge import get_ready_candidates
-        return get_ready_candidates(min_score=self.min_score, limit=self.limit)
+        candidates = get_ready_candidates(min_score=self.min_score, limit=self.limit)
+        if self.job_ids is not None:
+            allowed = set(self.job_ids)
+            candidates = [c for c in candidates if c.job.id in allowed]
+        return candidates
 
     def _mark_submitted(self, candidate: Any) -> None:
         from job_agent.db.database import Database
@@ -331,6 +371,43 @@ class AutoApplySession:
             export_applied_internships(self.config)
         except Exception as exc:
             logger.warning("Excel export after submit: %s", exc)
+
+
+# ── France Travail helpers ────────────────────────────────────────────────────
+
+
+def _is_france_travail_detail(url: str) -> bool:
+    lower = (url or "").lower()
+    return "candidat.francetravail.fr" in lower or "francetravail.fr/offres" in lower
+
+
+def _click_postuler(page: Any) -> str | None:
+    """Click the apply button on a France Travail detail page.
+
+    Returns the detected ATS type of the destination page, or None if the
+    click succeeded but the ATS is unknown.
+    """
+    selectors = [
+        "button:has-text('Postuler')",
+        "a:has-text('Postuler')",
+        "button:has-text('Je postule')",
+        "a:has-text('Je postule')",
+        "button:has-text('Candidater')",
+        "a:has-text('Candidater')",
+        "[data-testid='apply-btn']",
+        "[class*='postuler']",
+    ]
+    for sel in selectors:
+        try:
+            btn = page.locator(sel).first
+            if btn.count() and btn.is_visible():
+                btn.click()
+                page.wait_for_timeout(2500)
+                new_url = page.url
+                return _detect_ats(new_url) or None
+        except Exception:
+            continue
+    return None
 
 
 # ── Form fillers ──────────────────────────────────────────────────────────────
@@ -458,25 +535,75 @@ def _fill_visible_fields(page: Any, qa: dict, filled: list[str]) -> None:
 
 
 def _field_label(page: Any, field: Any) -> str:
-    """Return the human-readable label for a form field."""
+    """Return the human-readable label for a form field.
+
+    Tries multiple strategies in priority order so React/Angular ATS forms
+    (which rarely use static <label for="..."> elements) are also handled.
+    """
     try:
         # 1. aria-label attribute
         label = field.get_attribute("aria-label") or ""
         if label.strip():
             return label.strip()
+
         # 2. <label for="id">
         field_id = field.get_attribute("id") or ""
         if field_id:
             label_el = page.locator(f"label[for='{field_id}']").first
             if label_el.count():
-                label = label_el.inner_text()
-                if label.strip():
-                    return label.strip()
-        # 3. placeholder
+                text = label_el.inner_text()
+                if text.strip():
+                    return text.strip()
+
+        # 3. aria-labelledby — one or more referenced element IDs
+        labelledby = field.get_attribute("aria-labelledby") or ""
+        if labelledby:
+            for ref_id in labelledby.split():
+                ref_id = ref_id.strip()
+                if not ref_id:
+                    continue
+                try:
+                    ref_el = page.locator(f"#{ref_id}").first
+                    if ref_el.count():
+                        text = ref_el.inner_text()
+                        if text.strip():
+                            return text.strip()
+                except Exception:
+                    pass
+
+        # 4. DOM walk — find the nearest <label> or labelling text node
+        try:
+            text = field.evaluate("""el => {
+                let node = el.parentElement;
+                for (let i = 0; i < 5; i++) {
+                    if (!node) break;
+                    const lbl = node.querySelector(
+                        'label, [class*="label" i], [class*="Label"], legend'
+                    );
+                    if (lbl) {
+                        const t = (lbl.innerText || lbl.textContent || '').trim();
+                        if (t && t.length < 120) return t;
+                    }
+                    node = node.parentElement;
+                }
+                return '';
+            }""")
+            if text and text.strip():
+                return text.strip()
+        except Exception:
+            pass
+
+        # 5. placeholder
         ph = field.get_attribute("placeholder") or ""
         if ph.strip():
             return ph.strip()
-        # 4. name attribute
+
+        # 6. autocomplete attribute (e.g. "given-name", "email", "tel")
+        ac = field.get_attribute("autocomplete") or ""
+        if ac.strip() and ac.lower() not in ("on", "off"):
+            return ac.replace("-", " ").replace("_", " ").strip()
+
+        # 7. name attribute as last resort
         name = field.get_attribute("name") or ""
         return name.replace("_", " ").replace("-", " ").strip()
     except Exception:
@@ -497,6 +624,59 @@ _HEURISTIC_KEYS = {
     "work authorization": ["work_authorization", "autorisation travail", "eligible to work"],
     "start date": ["start_date", "availability", "disponibilité", "date de début"],
 }
+
+
+def _build_apply_qa(profile: Any, job_qa: dict) -> dict:
+    """Merge candidate contact fields with job-specific QA answers.
+
+    Contact fields (name, email, phone, …) are injected first so the form
+    filler can fill even basic fields like "First name" or "Email".
+    Job-specific answers take precedence when a key conflicts.
+    """
+    base: dict[str, str] = {}
+    if profile is not None:
+        contact = getattr(profile, "contact", None)
+        if contact is not None:
+            full_name = str(getattr(contact, "name", "") or "").strip()
+            parts = full_name.split(None, 1)
+            base["first_name"] = parts[0] if parts else ""
+            base["last_name"] = parts[1] if len(parts) > 1 else ""
+            base["full_name"] = full_name
+            base["name"] = full_name
+            if getattr(contact, "email", None):
+                base["email"] = contact.email
+            if getattr(contact, "phone", None):
+                base["phone"] = contact.phone
+            if getattr(contact, "linkedin_url", None):
+                base["linkedin_url"] = contact.linkedin_url
+            if getattr(contact, "github_url", None):
+                base["github_url"] = contact.github_url
+            if getattr(contact, "work_authorization", None):
+                base["work_authorization"] = contact.work_authorization
+            if getattr(contact, "location", None):
+                base["city"] = contact.location
+    # Job-specific answers override base contact fields
+    return {**base, **{k: v for k, v in (job_qa or {}).items() if v}}
+
+
+def get_candidates_preview(min_score: float = 65.0, limit: int = 10) -> list[dict]:
+    """Return a preview list of candidates that would be processed by auto-apply.
+
+    Returns plain dicts safe for JSON serialisation.  No browser is opened.
+    """
+    candidates = get_ready_candidates(min_score=min_score, limit=limit)
+    return [
+        {
+            "job_id": c.job.id,
+            "title": c.job.title,
+            "company": c.job.company,
+            "location": c.job.location or "",
+            "apply_url": c.job.apply_url or "",
+            "packet_id": c.packet.id,
+            "fit_score": c.packet.fit_score,
+        }
+        for c in candidates
+    ]
 
 
 def _heuristic_match(label: str, qa: dict) -> tuple[str, str] | None:
@@ -762,7 +942,13 @@ def _finish_session_state(results: list[ApplyResult], error_message: str | None 
         }
 
 
-def start(config: Any, mode: str, min_score: float, limit: int) -> dict:
+def start(
+    config: Any,
+    mode: str,
+    min_score: float,
+    limit: int,
+    job_ids: "list[str] | None" = None,
+) -> dict:
     global _active, _state
     with _session_lock:
         if _state["running"]:
@@ -786,10 +972,54 @@ def start(config: Any, mode: str, min_score: float, limit: int) -> dict:
             mode=ApplyMode(mode),
             min_score=min_score,
             limit=limit,
+            job_ids=job_ids if job_ids else None,
         )
         _active._progress_queue = _event_queue
         _active.run_in_background()
     return {"ok": True, "state": get_state()}
+
+
+def open_browser_for_login(config: Any) -> dict:
+    """Open the dedicated Job Agent browser profile so the user can log in.
+
+    Launches the browser window in the foreground.  The user logs in to
+    France Travail, LinkedIn, etc.  Closing the browser persists cookies in
+    the dedicated profile directory for future sessions.
+    """
+    try:
+        _check_playwright()
+    except _PlaywrightNotInstalled as exc:
+        return {"ok": False, "error": str(exc)}
+
+    profile = _select_browser_profile(config)
+    try:
+        from playwright.sync_api import sync_playwright
+
+        def _open() -> None:
+            with sync_playwright() as p:
+                ctx = _launch_browser_context(p, profile.path, headless=False)
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                page.goto("https://candidat.francetravail.fr/espacepersonnel/", wait_until="domcontentloaded", timeout=15_000)
+                logger.info("[auto-apply] login-setup browser opened at %s", profile.path)
+                # Keep browser open until the user closes it
+                try:
+                    ctx.wait_for_event("close", timeout=0)
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_open, daemon=True, name="login-setup")
+        t.start()
+        return {
+            "ok": True,
+            "profile_path": str(profile.path),
+            "message": (
+                "Browser opened with the Job Agent profile. "
+                "Log in to France Travail and any other sites, then close the browser. "
+                "Job Agent will reuse your session next time."
+            ),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 def confirm() -> dict:

@@ -691,8 +691,7 @@ html[data-theme="dark"] .detail-block {
 }
 
 .row-actions button[data-action="ai-analyze"],
-.row-actions button[data-action="ai-chat"],
-.row-actions button[data-action="ai-summarize"] {
+.row-actions button[data-action="ai-chat"] {
   background: linear-gradient(135deg, var(--accent-soft) 0%, var(--accent-3-soft) 100%);
   border-color: transparent;
   color: var(--accent-3);
@@ -1156,6 +1155,27 @@ html[data-theme="dark"] .chat-bubble.thinking {
   flex-wrap: wrap;
 }
 
+.studio-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.studio-lang select {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.4rem;
+}
+
+.studio-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
 .studio-editor textarea#studioTextarea {
   flex: 1;
   width: 100%;
@@ -1542,6 +1562,49 @@ html[data-theme="dark"] .coach-list li {
   background: rgba(37, 99, 235, 0.03);
 }
 
+/* Contract-type filter toggle */
+.contract-filter-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.filter-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text, #111827);
+}
+
+.contract-toggle {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.contract-btn {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 1rem;
+  background: transparent;
+  font-size: 0.82rem;
+  cursor: pointer;
+  color: var(--color-text, #374151);
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+
+.contract-btn.active {
+  border-color: var(--color-primary, #2563eb);
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  font-weight: 600;
+}
+
+.contract-btn:hover:not(.active) {
+  border-color: var(--color-primary, #2563eb);
+  background: rgba(37, 99, 235, 0.06);
+}
+
 /* Live log */
 .apply-log-wrap {
   margin-top: 0.8rem;
@@ -1646,4 +1709,74 @@ html[data-theme="dark"] .coach-list li {
   font-weight: 700;
   font-size: 1rem;
   flex-shrink: 0;
+}
+
+/* Generic full-screen overlay used by LinkedIn, Prep, Follow-up, Outreach modals */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 12, 22, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  backdrop-filter: blur(3px);
+}
+
+.modal-box {
+  background: var(--surface, #fff);
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow, 0 4px 24px rgba(0,0,0,0.12));
+  padding: 1.25rem 1.5rem;
+  max-height: 88vh;
+  overflow-y: auto;
+  width: min(90vw, 660px);
+}
+
+/* Prep panel — collapsible section below job list */
+.prep-panel {
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--surface, #fff);
+  padding: 1.1rem 1.4rem;
+  margin: 0.75rem 0;
+}
+
+.prep-panel.hidden {
+  display: none;
+}
+
+.prep-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.prep-panel-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.prep-panel-body {
+  font-size: 0.85rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+/* Language mismatch badge */
+.badge-lang-warn {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(234, 88, 12, 0.12);
+  color: #ea580c;
+  border: 1px solid rgba(234, 88, 12, 0.3);
+  margin-left: 0.4rem;
+  vertical-align: middle;
 }

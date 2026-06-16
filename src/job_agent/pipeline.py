@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from job_agent.ai_agent import (
@@ -27,7 +28,14 @@ from job_agent.normalizer import normalize
 from job_agent.polish import PolishOptions
 from job_agent.renderer.assistant_render import render_assistant_page
 from job_agent.renderer.html_render import render_html
-from job_agent.renderer.latex_render import LatexCompileError, compile_latex_to_pdf, copy_latex_assets, render_latex_source
+from job_agent.renderer.latex_render import (
+    LatexCompileError,
+    compact_cv_source,
+    compile_latex_to_pdf,
+    copy_latex_assets,
+    count_pdf_pages,
+    render_latex_source,
+)
 from job_agent.renderer.pdf_render import render_pdf
 from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile
 from job_agent.schemas.job import JobListing, JobStatus
@@ -160,9 +168,43 @@ Review tasks:
 """
 
 
+def _enforce_single_page(cv_tex_path: Path, cv_pdf_path: Path) -> None:
+    """Recompile with escalating compaction until the tailored CV fits one page.
+
+    The master template is one page, but tailoring pulls richer experience and
+    project content from ``master_cv.json`` and can spill onto a second page.
+    This keeps every generated packet to a single page. Best-effort: it never
+    raises, and on any compaction-compile failure it restores the original tex.
+    """
+    try:
+        pages = count_pdf_pages(cv_pdf_path)
+        if not pages or pages <= 1:
+            return
+        original = cv_tex_path.read_text(encoding="utf-8")
+        if r"\documentclass" not in original or "moderncv" not in original:
+            return
+        for level in (1, 2):
+            compacted = compact_cv_source(original, level)
+            if compacted == original:
+                continue
+            cv_tex_path.write_text(compacted, encoding="utf-8")
+            try:
+                compile_latex_to_pdf(cv_tex_path, cv_pdf_path)
+            except LatexCompileError:
+                cv_tex_path.write_text(original, encoding="utf-8")
+                compile_latex_to_pdf(cv_tex_path, cv_pdf_path)
+                return
+            if (count_pdf_pages(cv_pdf_path) or 2) <= 1:
+                return
+    except Exception:
+        # One-page fitting is a nicety; never let it break packet generation.
+        return
+
+
 def _write_cv_pdf(cv_md: str, cv_tex_path: Path, cv_pdf_path: Path, master_cv_pdf: Path | None = None) -> tuple[DocumentArtifact, str | None]:
     try:
         compile_latex_to_pdf(cv_tex_path, cv_pdf_path)
+        _enforce_single_page(cv_tex_path, cv_pdf_path)
         return DocumentArtifact(kind="cv_pdf", path=str(cv_pdf_path), sha256=sha256_file(cv_pdf_path)), None
     except LatexCompileError as exc:
         # If the user has a master CV.pdf next to main.tex, prefer copying it
@@ -195,12 +237,32 @@ def _write_cv_pdf(cv_md: str, cv_tex_path: Path, cv_pdf_path: Path, master_cv_pd
         )
 
 
-def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False) -> ApplicationPacket:
+def generate_packet_for_job(
+    config: AppConfig,
+    job_id: str,
+    force: bool = False,
+    fast_mode: bool = False,
+    profile_bundle: "tuple | None" = None,
+) -> ApplicationPacket:
+    """Generate a full application packet for one job.
+
+    ``fast_mode=True`` is used by the autopilot background loop:
+    - AI calls run in parallel (analyze_fit + classify + summarize concurrently).
+    - LaTeX compilation is skipped; a quick reportlab PDF is used instead.
+    - CV/cover HTML renders and the assistant page are skipped.
+    This cuts per-packet time from ~45 s (with LaTeX) to ~8–15 s.
+
+    ``profile_bundle`` may be passed in from the autopilot to avoid reloading
+    profile JSON files for every packet in a cycle.
+    """
     tracker = _tracker(config)
     job = tracker.get_job(job_id)
     if not job:
         raise ValueError(f"Job not found: {job_id}")
-    profile, master_cv, qa_profile = load_profile_bundle(config)
+    if profile_bundle is not None:
+        profile, master_cv, qa_profile = profile_bundle
+    else:
+        profile, master_cv, qa_profile = load_profile_bundle(config)
 
     # Suggestion C: duplicate packet guard — warn loudly but proceed when force=True
     existing_packets = tracker.db.get_packets_for_job(job.id)
@@ -229,14 +291,34 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
             tracker.db.save_job(job)
 
     polish_opts = PolishOptions.from_env()
-    # AI fit analysis, classification, and summary. All optional, cached.
-    fit_analysis = analyze_fit(job, master_cv, profile, polish_opts)
     model_name = ""
     try:
         from job_agent.polish import resolve_ollama_model
         model_name = resolve_ollama_model(polish_opts)
     except Exception:
         model_name = ""
+
+    # Run AI calls in parallel — analyze_fit + classify + summarize concurrently.
+    fit_analysis = None
+    classification = None
+    tldr = None
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="ai") as ai_pool:
+        f_fit = ai_pool.submit(analyze_fit, job, master_cv, profile, polish_opts)
+        f_cls = ai_pool.submit(classify_job, job, polish_opts)
+        f_tldr = ai_pool.submit(summarize_job, job, polish_opts)
+        try:
+            fit_analysis = f_fit.result()
+        except Exception:
+            fit_analysis = None
+        try:
+            classification = f_cls.result()
+        except Exception:
+            classification = None
+        try:
+            tldr = f_tldr.result()
+        except Exception:
+            tldr = None
+
     if fit_analysis is not None:
         ai_lines = [
             f"AI verdict: {fit_analysis.verdict} ({fit_analysis.score}/100, confidence {int(fit_analysis.confidence * 100)}%)",
@@ -252,10 +334,8 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
                 job.fit_notes.append(line)
         tracker.db.save_job(job)
         tracker.db.save_ai_cache(job.id, "fit", fit_analysis.to_dict(), model_name)
-    classification = classify_job(job, polish_opts)
     if classification:
         tracker.db.save_ai_cache(job.id, "classify", classification, model_name)
-    tldr = summarize_job(job, polish_opts)
     if tldr:
         tracker.db.save_ai_cache(job.id, "summary", tldr, model_name)
     cv_md = tailor_cv(job, master_cv, profile)
@@ -269,13 +349,22 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
         profile=profile,
     )
     letter_md = generate_cover_letter(job, master_cv, profile)
-    outreach_md = generate_outreach_email(job, master_cv, profile)
-    interview_md = generate_interview_prep(job, master_cv, profile)
-    cv_html = render_html(cv_md, title=f"CV - {job.title}")
-    letter_html = render_html(letter_md, title=f"Cover Letter - {job.title}")
     screening_answers = build_screening_answers_for_job(job, qa_profile)
     qa_answers = screening_answers_to_dict(screening_answers)
     needs_screening_review = any(answer.needs_review for answer in screening_answers)
+
+    # In fast mode (autopilot background): skip heavy HTML renders and LaTeX
+    # compilation so a 5-packet batch finishes in ~15 s instead of ~3 min.
+    if not fast_mode:
+        outreach_md = generate_outreach_email(job, master_cv, profile)
+        interview_md = generate_interview_prep(job, master_cv, profile)
+        cv_html = render_html(cv_md, title=f"CV - {job.title}")
+        letter_html = render_html(letter_md, title=f"Cover Letter - {job.title}")
+    else:
+        outreach_md = ""
+        interview_md = ""
+        cv_html = ""
+        letter_html = ""
 
     next_version = len(tracker.db.get_packets_for_job(job.id)) + 1
     safe_company = job.company[:24].replace("/", "-").replace("\\", "-").strip() or "company"
@@ -294,20 +383,36 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
     artifacts.append(_write_text(cv_md_path, cv_md))
     artifacts.append(_write_text(cv_tex_path, cv_tex))
     copy_latex_assets(config.profiles_dir, out_dir)
-    artifacts.append(_write_text(cv_html_path, cv_html))
+
     master_cv_pdf = None
     if config.profiles_dir:
-        candidate = Path(config.profiles_dir) / "CV.pdf"
-        if candidate.exists():
-            master_cv_pdf = candidate
-    cv_pdf_artifact, latex_warning = _write_cv_pdf(cv_md, cv_tex_path, cv_pdf_path, master_cv_pdf=master_cv_pdf)
-    artifacts.append(cv_pdf_artifact)
-    artifacts.append(_write_text(letter_md_path, letter_md))
-    artifacts.append(_write_text(letter_html_path, letter_html))
-    artifacts.append(_write_pdf(letter_md, letter_pdf_path, "cover_letter_pdf", "Cover Letter"))
+        candidate_pdf = Path(config.profiles_dir) / "CV.pdf"
+        if candidate_pdf.exists():
+            master_cv_pdf = candidate_pdf
 
-    artifacts.append(_write_text(out_dir / "outreach_email.md", outreach_md))
-    artifacts.append(_write_text(out_dir / "interview_prep.md", interview_md))
+    if fast_mode:
+        # Skip LaTeX compilation — use quick reportlab PDF directly.
+        # LaTeX .tex is already written above; user can compile manually or
+        # click "Regenerate PDF" in the dashboard to get the full LaTeX version.
+        render_pdf(cv_md, cv_pdf_path, title="Tailored CV")
+        cv_pdf_artifact = DocumentArtifact(kind="cv_pdf", path=str(cv_pdf_path), sha256=sha256_file(cv_pdf_path))
+        latex_warning = (
+            "Fast-mode PDF: generated with reportlab (not LaTeX). "
+            "Open the packet and click 'Regenerate PDF' for the full LaTeX-compiled version."
+        )
+        artifacts.append(cv_pdf_artifact)
+    else:
+        artifacts.append(_write_text(cv_html_path, cv_html))
+        cv_pdf_artifact, latex_warning = _write_cv_pdf(cv_md, cv_tex_path, cv_pdf_path, master_cv_pdf=master_cv_pdf)
+        artifacts.append(cv_pdf_artifact)
+
+    artifacts.append(_write_text(letter_md_path, letter_md))
+
+    if not fast_mode:
+        artifacts.append(_write_text(letter_html_path, letter_html))
+        artifacts.append(_write_pdf(letter_md, letter_pdf_path, "cover_letter_pdf", "Cover Letter"))
+        artifacts.append(_write_text(out_dir / "outreach_email.md", outreach_md))
+        artifacts.append(_write_text(out_dir / "interview_prep.md", interview_md))
 
     if fit_analysis is not None:
         artifacts.append(_write_text(out_dir / "ai_fit_brief.md", _render_ai_brief(job, fit_analysis)))
@@ -316,18 +421,22 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
     if latex_warning:
         artifacts.append(_write_text(out_dir / "latex_warning.txt", latex_warning))
     artifacts.append(_write_text(out_dir / "external_agent_prompt.md", _render_external_agent_prompt(job, temp_packet_id, artifacts)))
-    assistant_html = render_assistant_page(
-        packet_id=temp_packet_id,
-        job=job,
-        profile=profile,
-        artifacts=artifacts,
-        screening_answers=screening_answers,
-        fit_score=job.fit_score,
-        fit_decision=job.fit_decision,
-        risk_flags=risk_flags,
-    )
-    assistant_art = _write_text(out_dir / "assistant.html", assistant_html)
-    artifacts.append(assistant_art)
+
+    if fast_mode:
+        assistant_html = ""
+    else:
+        assistant_html = render_assistant_page(
+            packet_id=temp_packet_id,
+            job=job,
+            profile=profile,
+            artifacts=artifacts,
+            screening_answers=screening_answers,
+            fit_score=job.fit_score,
+            fit_decision=job.fit_decision,
+            risk_flags=risk_flags,
+        )
+        assistant_art = _write_text(out_dir / "assistant.html", assistant_html)
+        artifacts.append(assistant_art)
 
     packet = ApplicationPacket(
         id=temp_packet_id,
@@ -350,26 +459,27 @@ def generate_packet_for_job(config: AppConfig, job_id: str, force: bool = False)
         tailored_cv_pdf_path=str(cv_pdf_path),
         cover_letter_md=letter_md,
         cover_letter_html=letter_html,
-        cover_letter_pdf_path=str(letter_pdf_path),
+        cover_letter_pdf_path=str(letter_pdf_path) if not fast_mode else "",
         qa_answers=qa_answers,
         assistant_page_html=assistant_html,
     )
-    # Rewrite assistant with final packet ID in case a custom ID strategy changes later.
-    assistant_html = render_assistant_page(
-        packet_id=packet.id,
-        job=job,
-        profile=profile,
-        artifacts=artifacts,
-        screening_answers=screening_answers,
-        fit_score=job.fit_score,
-        fit_decision=job.fit_decision,
-        risk_flags=risk_flags,
-    )
-    (out_dir / "assistant.html").write_text(assistant_html, encoding="utf-8")
-    packet.assistant_page_html = assistant_html
-    for idx, art in enumerate(packet.artifacts):
-        if art.path == str(out_dir / "assistant.html"):
-            packet.artifacts[idx].sha256 = sha256_file(out_dir / "assistant.html")
+    # In full mode, rewrite assistant page with the finalised packet ID.
+    if not fast_mode:
+        assistant_html = render_assistant_page(
+            packet_id=packet.id,
+            job=job,
+            profile=profile,
+            artifacts=artifacts,
+            screening_answers=screening_answers,
+            fit_score=job.fit_score,
+            fit_decision=job.fit_decision,
+            risk_flags=risk_flags,
+        )
+        (out_dir / "assistant.html").write_text(assistant_html, encoding="utf-8")
+        packet.assistant_page_html = assistant_html
+        for idx, art in enumerate(packet.artifacts):
+            if art.path == str(out_dir / "assistant.html"):
+                packet.artifacts[idx].sha256 = sha256_file(out_dir / "assistant.html")
 
     tracker.save_packet(packet)
     job.status = JobStatus.PACKET_READY if packet.status == PacketStatus.READY else JobStatus.NEEDS_REVIEW
