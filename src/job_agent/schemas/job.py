@@ -21,6 +21,7 @@ class JobStatus(str, Enum):
     NEEDS_REVIEW = "NEEDS_REVIEW"
     PACKET_READY = "PACKET_READY"
     APPLYING = "APPLYING"
+    NEEDS_MANUAL = "NEEDS_MANUAL"  # full-auto hit a human-presence wall; draft queued for manual apply
     ASSISTED_APPLY_OPENED = "ASSISTED_APPLY_OPENED"
     APPLIED = "APPLIED"  # kept for backward compatibility
     MANUALLY_SUBMITTED = "MANUALLY_SUBMITTED"

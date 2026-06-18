@@ -3,14 +3,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import mimetypes
 import os
+import re
 import sys
 import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+from job_agent.ui.security import SESSION_TOKEN, check_request, is_loopback_host
+from job_agent.utils.net import UnsafeUrlError
 
 from job_agent.ai_agent import (
     analyze_fit as _ai_analyze_fit,
@@ -90,7 +95,6 @@ from job_agent.generator.followup_email import generate_followup_email
 from job_agent.headhunter import (
     build_batch_outreach,
     english_first_strategy_report,
-    write_batch_outreach_file,
 )
 from job_agent.generator.interview_prep import generate_interview_prep
 from job_agent.generator.linkedin_message import (
@@ -102,7 +106,7 @@ from job_agent.generator.outreach_email import generate_outreach_email
 from job_agent.market_intelligence import build_market_report
 from job_agent.pipeline import add_job_to_tracker, add_text_job, add_url_job, generate_packet_for_job
 from job_agent.profile_audit import audit_profile
-from job_agent.skill_extractor import extract_implied_skills, mine_job_keywords, suggest_trend_gaps
+from job_agent.skill_extractor import extract_implied_skills, suggest_trend_gaps
 from job_agent.schemas.job import JobStatus
 from job_agent.timeutil import utc_now
 from job_agent.tracker import ApplicationTracker
@@ -120,6 +124,7 @@ from job_agent.ui.services import (
 )
 from job_agent.validators import load_profile_bundle
 
+logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).with_name("static")
 
@@ -172,6 +177,30 @@ def _latest_packet_for_job(db: Database, job_id: str):
     return packets[0] if packets else None
 
 
+# GitHub usernames: alphanumeric or hyphen, 1–39 chars, not starting with hyphen.
+_GITHUB_HANDLE_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
+
+
+def _resolve_github_handle(config: AppConfig, payload: dict) -> str:
+    """Resolve a GitHub handle from the request or the saved profile.
+
+    The handle is sanitized to GitHub's allowed charset so it cannot inject
+    extra path/query segments into the ``api.github.com`` URLs built downstream.
+    Returns ``""`` when absent or invalid.
+    """
+    handle = str(payload.get("handle") or "").strip()
+    if not handle and config.profiles_dir:
+        try:
+            data = json.loads((config.profiles_dir / "candidate_profile.json").read_text(encoding="utf-8"))
+            url = (data.get("contact") or {}).get("github_url") or ""
+            handle = url.rstrip("/").rsplit("/", 1)[-1] if url else ""
+        except (OSError, ValueError) as exc:
+            logger.debug("Could not read github_url from profile: %s", exc)
+            handle = ""
+    handle = handle.strip().lstrip("@")
+    return handle if _GITHUB_HANDLE_RE.match(handle) else ""
+
+
 def _list_jobs(config: AppConfig, status: str = "") -> list[dict]:
     """Fetch all jobs + their enrichments / AI cache / latest packet in 4 queries
     instead of N*3 — significantly faster on databases with 50+ jobs."""
@@ -193,6 +222,26 @@ def _list_jobs(config: AppConfig, status: str = "") -> list[dict]:
             ai_cache=ai_caches.get(job.id, {}),
         ))
     return results
+
+
+def _needs_manual_jobs(config: AppConfig) -> list[dict]:
+    """NEEDS_MANUAL jobs plus the wall reason from their latest hand-off event.
+
+    Full-auto logs a ``NEEDS_MANUAL`` event (with the detected wall reason) when
+    it queues a job, so the dashboard queue can show *why* each one needs a human
+    instead of just listing them.
+    """
+    jobs = _list_jobs(config, status=JobStatus.NEEDS_MANUAL.value)
+    if not jobs:
+        return jobs
+    db = _tracker(config).db
+    for job in jobs:
+        reason = ""
+        for event in db.get_events(job["id"]):
+            if event.get("event_type") == "NEEDS_MANUAL":
+                reason = str((event.get("event_data") or {}).get("reason") or "")
+        job["needs_manual_reason"] = reason
+    return jobs
 
 
 def _search_links(payload: dict) -> dict:
@@ -520,7 +569,7 @@ class JobAgentHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         if parsed.path == "/":
-            return self._send_static(STATIC_DIR / "index.html")
+            return self._send_index()
         if parsed.path.startswith("/static/"):
             return self._send_static(STATIC_DIR / parsed.path.removeprefix("/static/"))
         if parsed.path == "/api/state":
@@ -544,6 +593,10 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 return self._send_json({"jobs": _list_jobs(self._config(), status=status)})
             except ValueError as exc:
                 return self._send_error_json(str(exc))
+        if parsed.path == "/api/needs-manual":
+            # Jobs full-auto handed off at a CAPTCHA/login/anti-bot wall; their
+            # prepared packets are ready for the user to finish by hand.
+            return self._send_json({"jobs": _needs_manual_jobs(self._config())})
         if parsed.path == "/api/packets":
             query = parse_qs(parsed.query)
             job_id = (query.get("job_id") or [""])[0]
@@ -560,8 +613,13 @@ class JobAgentHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/auto-apply/status":
             return self._send_json(_auto_apply.get_state())
         if parsed.path == "/api/auto-apply/preview":
-            min_score = float((parse_qs(parsed.query).get("min_score") or ["65"])[0])
-            limit = int((parse_qs(parsed.query).get("limit") or ["20"])[0])
+            query = parse_qs(parsed.query)
+            raw_min = (query.get("min_score") or ["65"])[0]
+            try:
+                min_score = max(0.0, min(float(raw_min), 100.0))
+            except (TypeError, ValueError):
+                min_score = 65.0
+            limit = _safe_int((query.get("limit") or ["20"])[0], 20, minimum=1, maximum=50)
             return self._send_json({"candidates": _auto_apply.get_candidates_preview(min_score=min_score, limit=limit)})
         if parsed.path == "/api/cv-studio":
             return self._send_json(_studio_load(self._config()))
@@ -685,6 +743,18 @@ class JobAgentHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        bound_host, bound_port = self.server.server_address[0], int(self.server.server_address[1])
+        ok, reason = check_request(self, "POST", bound_host=str(bound_host), bound_port=bound_port)
+        if not ok:
+            logger.warning("Blocked POST %s (%s)", parsed.path, reason)
+            return self._send_error_json("Forbidden.", HTTPStatus.FORBIDDEN)
+        body_len = int(self.headers.get("Content-Length", "0") or 0)
+        if body_len > 0:
+            ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+            if ctype and ctype != "application/json":
+                return self._send_error_json(
+                    "Content-Type must be application/json.", HTTPStatus.UNSUPPORTED_MEDIA_TYPE
+                )
         try:
             payload = _read_json(self)
             config = self._config()
@@ -700,7 +770,10 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 url = str(payload.get("url") or "").strip()
                 if not url:
                     return self._send_error_json("URL is required.")
-                job, created = add_url_job(config, url)
+                try:
+                    job, created = add_url_job(config, url)
+                except UnsafeUrlError as exc:
+                    return self._send_error_json(str(exc), HTTPStatus.BAD_REQUEST)
                 db = Database(config.db_path)  # type: ignore[arg-type]
                 db.initialize()
                 packet = _latest_packet_for_job(db, job.id)
@@ -794,15 +867,7 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/portfolio/tagline":
                 return self._send_json(_portfolio_tagline(config))
             if parsed.path == "/api/portfolio/github-repos":
-                handle = str(payload.get("handle") or "").strip()
-                if not handle and config.profiles_dir:
-                    try:
-                        import json as _json
-                        profile_data = _json.loads((config.profiles_dir / "candidate_profile.json").read_text(encoding="utf-8"))
-                        url = (profile_data.get("contact") or {}).get("github_url") or ""
-                        handle = url.rstrip("/").rsplit("/", 1)[-1] if url else ""
-                    except Exception:
-                        handle = ""
+                handle = _resolve_github_handle(config, payload)
                 if not handle:
                     return self._send_error_json("Set contact.github_url first or pass `handle`.")
                 return self._send_json({"handle": handle, "repos": _portfolio_github_repos(handle, limit=int(payload.get("limit") or 20))})
@@ -974,15 +1039,7 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                     )
                 return self._send_json({"analysis": analysis.to_dict()})
             if parsed.path == "/api/enrich-github":
-                handle = str(payload.get("handle") or "").strip()
-                if not handle and config.profiles_dir:
-                    try:
-                        import json as _j
-                        profile_json = _j.loads((config.profiles_dir / "candidate_profile.json").read_text(encoding="utf-8"))
-                        github_url = (profile_json.get("contact") or {}).get("github_url") or ""
-                        handle = github_url.rstrip("/").rsplit("/", 1)[-1] if github_url else ""
-                    except Exception:
-                        handle = ""
+                handle = _resolve_github_handle(config, payload)
                 if not handle:
                     return self._send_error_json("GitHub handle is required. Set contact.github_url in candidate_profile.json or pass 'handle'.")
                 report = enrich_from_github(Path(config.profiles_dir), handle, add_projects=bool(payload.get("add_projects", True)))
@@ -1159,10 +1216,13 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/auto-apply/open-browser":
                 return self._send_json(_auto_apply.open_browser_for_login(config))
             return self._send_error_json("Unknown API route.", HTTPStatus.NOT_FOUND)
+        except json.JSONDecodeError:
+            return self._send_error_json("Malformed JSON body.", HTTPStatus.BAD_REQUEST)
         except FreeApiError as exc:
             return self._send_error_json(str(exc), HTTPStatus.BAD_GATEWAY)
-        except Exception as exc:
-            return self._send_error_json(str(exc), HTTPStatus.INTERNAL_SERVER_ERROR)
+        except Exception:
+            logger.exception("Unhandled error in POST %s", parsed.path)
+            return self._send_error_json("Internal server error.", HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _stream_autopilot(self) -> None:
         """SSE stream that pushes the autopilot status every few seconds."""
@@ -1208,7 +1268,6 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             self.end_headers()
         except Exception:
             return None
-        import time as _time
         q = _auto_apply.get_event_queue()
         try:
             while True:
@@ -1239,6 +1298,24 @@ class JobAgentHandler(BaseHTTPRequestHandler):
             pass
         return None
 
+    def _send_index(self) -> None:
+        """Serve index.html with the per-process CSRF token injected as a meta tag.
+
+        A cross-origin page cannot read this token (same-origin HTML), and every
+        mutating fetch echoes it back via the ``X-Job-Agent-Token`` header.
+        """
+        index = STATIC_DIR / "index.html"
+        try:
+            html_text = index.read_text(encoding="utf-8")
+        except OSError:
+            return self._send_error_json("Not found.", HTTPStatus.NOT_FOUND)
+        meta = f'<meta name="csrf-token" content="{SESSION_TOKEN}">'
+        if "<head>" in html_text:
+            html_text = html_text.replace("<head>", f"<head>\n    {meta}", 1)
+        else:
+            html_text = meta + html_text
+        self._send(HTTPStatus.OK, html_text.encode("utf-8"), "text/html; charset=utf-8")
+
     def _send_static(self, path: Path) -> None:
         try:
             resolved = path.resolve()
@@ -1267,7 +1344,25 @@ class JobAgentServer(ThreadingHTTPServer):
         self.config = config
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True) -> None:
+def run_server(
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    open_browser: bool = True,
+    allow_remote: bool = False,
+) -> None:
+    from job_agent.logging_config import configure_logging
+    configure_logging()
+    if not is_loopback_host(host) and not allow_remote:
+        raise SystemExit(
+            f"Refusing to bind non-loopback host {host!r} without --allow-remote "
+            "(or JOB_AGENT_UI_ALLOW_REMOTE=1). The dashboard can drive auto-apply and "
+            "fetch URLs, so exposing it to the network is opt-in."
+        )
+    if not is_loopback_host(host):
+        print(
+            "WARNING: binding a non-loopback host exposes this dashboard "
+            "(auto-apply, URL fetch, job data) to your network."
+        )
     config = configured_app()
     server = JobAgentServer((host, port), JobAgentHandler, config)
     url = f"http://{host}:{port}"
@@ -1289,8 +1384,19 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--host", default=os.environ.get("JOB_AGENT_UI_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("JOB_AGENT_UI_PORT", "8765")))
     parser.add_argument("--no-open", action="store_true", help="Do not open the browser automatically.")
+    parser.add_argument(
+        "--allow-remote",
+        action="store_true",
+        default=os.environ.get("JOB_AGENT_UI_ALLOW_REMOTE") == "1",
+        help="Allow binding a non-loopback host. Exposes the dashboard to the network.",
+    )
     args = parser.parse_args(argv)
-    run_server(host=args.host, port=args.port, open_browser=not args.no_open)
+    run_server(
+        host=args.host,
+        port=args.port,
+        open_browser=not args.no_open,
+        allow_remote=args.allow_remote,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

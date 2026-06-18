@@ -13,8 +13,17 @@ Two apply modes:
   FILL_AND_CONFIRM  Playwright fills every detectable field, then pauses.
                     The dashboard shows a confirmation modal; the user clicks
                     Submit or Skip.
-  FULL_AUTO         Playwright fills and submits automatically.  A 10-second
-                    cancellation window is broadcast to the dashboard first.
+  FULL_AUTO         Genuinely hands-off: Playwright fills and submits without any
+                    per-job confirmation. The run never blocks. If it detects a
+                    human-presence wall (CAPTCHA, login challenge, anti-bot
+                    interstitial) it does NOT attempt to defeat it — it saves the
+                    prepared packet as a draft, marks the job ``NEEDS_MANUAL``,
+                    and moves on. Those jobs surface in the dashboard's
+                    "Needs manual apply" queue for the user to finish by hand.
+
+Wall handling is detection-only by design. Bypassing CAPTCHAs / anti-bot
+controls is out of scope: it circumvents third-party access controls and risks
+account bans. We detect and hand off instead.
 
 Dependencies:  playwright (pip install playwright && playwright install chromium)
                No API key, no paid service.
@@ -48,7 +57,7 @@ class ApplyMode(str, Enum):
 
 @dataclass
 class ApplyEvent:
-    kind: str  # progress | pending_confirm | pre_submit | result | done | error
+    kind: str  # progress | pending_confirm | needs_manual | result | done | error
     job_id: str = ""
     packet_id: str = ""
     message: str = ""
@@ -61,7 +70,7 @@ class ApplyEvent:
 class ApplyResult:
     job_id: str
     packet_id: str
-    status: str  # submitted | skipped | error
+    status: str  # submitted | skipped | needs_manual | error
     message: str = ""
 
 
@@ -85,6 +94,45 @@ def _detect_ats(url: str) -> str:
         if any(p in url_lower for p in patterns):
             return ats
     return "generic"
+
+
+# ── Human-presence wall detection (detection only — never bypassed) ───────────
+
+_WALL_SIGNATURES = {
+    "reCAPTCHA": ["g-recaptcha", "google.com/recaptcha", "grecaptcha"],
+    "hCaptcha": ["hcaptcha.com", "h-captcha"],
+    "Cloudflare Turnstile": ["challenges.cloudflare.com", "cf-turnstile"],
+    "Cloudflare challenge": ["cf-chl", "checking your browser before accessing"],
+    "login required": [
+        "please log in to continue",
+        "sign in to apply",
+        "log in to apply",
+        "you must be logged in",
+    ],
+}
+
+
+def _detect_human_wall(page: Any) -> tuple[bool, str]:
+    """Recognize a CAPTCHA / login / anti-bot wall so full-auto can hand off.
+
+    This only *detects* the wall (reads the DOM + iframe URLs for known markers).
+    It never solves or circumvents it — that would mean defeating a third party's
+    access control. Returns ``(is_wall, reason)``.
+    """
+    try:
+        html = (page.content() or "").lower()
+    except Exception:  # pragma: no cover - page may be mid-navigation
+        return False, ""
+    frame_urls = ""
+    try:
+        frame_urls = " ".join((getattr(f, "url", "") or "") for f in page.frames).lower()
+    except Exception:  # pragma: no cover
+        frame_urls = ""
+    haystack = f"{html} {frame_urls}"
+    for reason, markers in _WALL_SIGNATURES.items():
+        if any(marker in haystack for marker in markers):
+            return True, reason
+    return False, ""
 
 
 # ── Core session ──────────────────────────────────────────────────────────────
@@ -219,11 +267,20 @@ class AutoApplySession:
 
             submitted = sum(1 for r in results if r.status == "submitted")
             skipped = sum(1 for r in results if r.status == "skipped")
+            needs_manual = sum(1 for r in results if r.status == "needs_manual")
             errors = sum(1 for r in results if r.status == "error")
             self._emit(ApplyEvent(
                 "done",
-                message=f"Session complete — submitted: {submitted} · skipped: {skipped} · errors: {errors}",
-                data={"submitted": submitted, "skipped": skipped, "errors": errors},
+                message=(
+                    f"Session complete — submitted: {submitted} · skipped: {skipped} · "
+                    f"needs manual: {needs_manual} · errors: {errors}"
+                ),
+                data={
+                    "submitted": submitted,
+                    "skipped": skipped,
+                    "needs_manual": needs_manual,
+                    "errors": errors,
+                },
             ))
         except _PlaywrightNotInstalled as exc:
             error_message = str(exc)
@@ -260,6 +317,10 @@ class AutoApplySession:
             filled, summary = self._fill_form(page, candidate, ats)
 
             if not filled:
+                if self.mode == ApplyMode.FULL_AUTO:
+                    wall, reason = _detect_human_wall(page)
+                    if wall:
+                        return self._queue_needs_manual(candidate, summary, reason)
                 return ApplyResult(job.id, packet.id, "error",
                                    f"Could not fill form for {label}: {summary}")
 
@@ -281,22 +342,14 @@ class AutoApplySession:
                 if self._skip_flag:
                     return ApplyResult(job.id, packet.id, "skipped", f"Skipped {label}.")
             else:
-                screenshot = _screenshot_b64(page)
-                self._emit(ApplyEvent(
-                    "pre_submit",
-                    job_id=job.id,
-                    packet_id=packet.id,
-                    message=f"Submitting {label} in 10 seconds — click Cancel to stop.",
-                    summary=summary,
-                    screenshot_b64=screenshot,
-                    data={"countdown": 10},
-                ))
-                self._confirm_event.clear()
-                cancelled = self._confirm_event.wait(timeout=10)
-                if cancelled and self._skip_flag:
-                    return ApplyResult(job.id, packet.id, "skipped", f"Cancelled {label}.")
+                # FULL_AUTO — genuinely hands-off; the run never blocks. Detect
+                # (never defeat) a human-presence wall and hand off to the manual
+                # queue, otherwise submit straight away with no confirmation gate.
                 if self._cancel_flag:
                     return ApplyResult(job.id, packet.id, "skipped", "Session cancelled.")
+                wall, reason = _detect_human_wall(page)
+                if wall:
+                    return self._queue_needs_manual(candidate, summary, reason)
 
             # Submit
             self._emit(ApplyEvent("progress", job_id=job.id, packet_id=packet.id,
@@ -371,6 +424,45 @@ class AutoApplySession:
             export_applied_internships(self.config)
         except Exception as exc:
             logger.warning("Excel export after submit: %s", exc)
+
+    def _mark_needs_manual(self, candidate: Any, reason: str) -> None:
+        """Flag a job for manual apply (full-auto hit a wall). The prepared
+        packet is left intact as the ready-to-submit draft."""
+        from job_agent.db.database import Database
+        from job_agent.schemas.job import JobStatus
+
+        db = Database(self.config.db_path)
+        db.initialize()
+        db.update_job_status(candidate.job.id, JobStatus.NEEDS_MANUAL)
+        db.log_event(
+            candidate.job.id,
+            "NEEDS_MANUAL",
+            {"packet_id": candidate.packet.id, "reason": reason, "note": "Full-auto hand-off"},
+            packet_id=candidate.packet.id,
+        )
+
+    def _queue_needs_manual(self, candidate: Any, summary: str, reason: str) -> ApplyResult:
+        """Persist the hand-off, emit an event, and return a needs_manual result.
+        The session loop keeps going — full-auto never blocks on a wall."""
+        job = candidate.job
+        packet = candidate.packet
+        label = f"{job.title} @ {job.company}"
+        try:
+            self._mark_needs_manual(candidate, reason)
+        except Exception as exc:  # persistence must not abort the run
+            logger.warning("Could not mark %s needs_manual: %s", label, exc)
+        self._emit(ApplyEvent(
+            "needs_manual",
+            job_id=job.id,
+            packet_id=packet.id,
+            message=f"{label} needs manual apply ({reason}). Draft saved; continuing.",
+            summary=summary,
+            data={"reason": reason},
+        ))
+        return ApplyResult(
+            job.id, packet.id, "needs_manual",
+            f"{label}: {reason} — draft queued for manual apply.",
+        )
 
 
 # ── France Travail helpers ────────────────────────────────────────────────────

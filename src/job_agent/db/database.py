@@ -265,6 +265,11 @@ class Database:
                     rows = conn.execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
         return [self._row_to_job(r) for r in rows]
 
+    def get_needs_manual(self, limit: Optional[int] = 100) -> list[JobListing]:
+        """Jobs the full-auto run handed off (hit a CAPTCHA/login/anti-bot wall);
+        their prepared packets are ready for the user to submit by hand."""
+        return self.list_jobs(status=JobStatus.NEEDS_MANUAL, limit=limit)
+
     def list_jobs_without_packets(self, min_score: Optional[float] = None, limit: int = 20) -> list[JobListing]:
         """Return jobs that have no associated packets yet, skipping terminal statuses."""
         _terminal = ("FILTERED", "DUPLICATE", "WITHDRAWN", "REJECTED", "APPLYING", "APPLIED", "MANUALLY_SUBMITTED")

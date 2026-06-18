@@ -16,6 +16,25 @@ import json
 from playwright.sync_api import Page, expect
 
 
+def _post_json(page: Page, live_server_url: str, path: str, payload: dict):
+    """POST through the dashboard's CSRF guard.
+
+    APIRequestContext bypasses the page's fetch wrapper, so we navigate first to
+    read the injected per-process token and replay it as a same-origin request.
+    """
+    page.goto(live_server_url)
+    token = page.get_attribute('meta[name="csrf-token"]', "content") or ""
+    return page.request.post(
+        f"{live_server_url}{path}",
+        data=json.dumps(payload).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Origin": live_server_url,
+            "X-Job-Agent-Token": token,
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Page load
 # ---------------------------------------------------------------------------
@@ -102,10 +121,9 @@ def test_api_stats_returns_total_key(page: Page, live_server_url: str) -> None:
 
 
 def test_api_search_links_returns_groups(page: Page, live_server_url: str) -> None:
-    resp = page.request.post(
-        f"{live_server_url}/api/search-links",
-        data=json.dumps({"query": "data scientist", "location": "Paris"}).encode(),
-        headers={"Content-Type": "application/json"},
+    resp = _post_json(
+        page, live_server_url, "/api/search-links",
+        {"query": "data scientist", "location": "Paris"},
     )
     assert resp.ok
     data = resp.json()
@@ -117,10 +135,9 @@ def test_api_studio_compile_bad_input_returns_structured_error(
     page: Page, live_server_url: str
 ) -> None:
     """Compile with JSON (not LaTeX) must return {'ok': False}, not a 500."""
-    resp = page.request.post(
-        f"{live_server_url}/api/cv-studio/compile",
-        data=json.dumps({"text": '{"contact": {}}'}).encode(),
-        headers={"Content-Type": "application/json"},
+    resp = _post_json(
+        page, live_server_url, "/api/cv-studio/compile",
+        {"text": '{"contact": {}}'},
     )
     data = resp.json()
     assert "ok" in data

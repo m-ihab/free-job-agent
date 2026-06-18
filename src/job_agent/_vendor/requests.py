@@ -86,6 +86,11 @@ def _request(
     timeout: int | float | None = None,
 ) -> Response:
     final_url = _build_url(url, params)
+    scheme = parse.urlsplit(final_url).scheme.lower()
+    if scheme not in ("http", "https"):
+        # Defense-in-depth: urllib would otherwise honor file://, ftp://, etc.,
+        # turning a fetched URL into a local-file/SSRF read.
+        raise ConnectionError(f"Refusing to fetch non-http(s) URL (scheme={scheme or 'none'}).")
     payload: bytes | None = None
     req_headers = _coerce_headers(headers)
     if isinstance(data, dict):

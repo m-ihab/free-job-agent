@@ -55,8 +55,9 @@ def compute_stats(db: Database, weeks: int = 8) -> dict:
         if not included:
             count = total
         else:
-            allowed = {status.value for status in included}
-            count = sum(1 for job in jobs if job.status.value in allowed)
+            # Each job has exactly one status, so summing the precomputed
+            # per-status counts matches a full rescan without re-iterating jobs.
+            count = sum(statuses[status.value] for status in included)
         funnel.append({"label": label, "count": count})
 
     now = datetime.now(timezone.utc)

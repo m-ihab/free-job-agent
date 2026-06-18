@@ -352,7 +352,7 @@ data engineer</textarea>
                 <span class="mode-icon">⚡</span>
                 <span>
                   <strong>Full Auto</strong>
-                  <small>Job Agent fills &amp; submits · 10 s cancel window</small>
+                  <small>Job Agent fills &amp; submits unattended · walls handed off to the queue</small>
                 </span>
               </button>
             </div>
@@ -383,6 +383,19 @@ data engineer</textarea>
             </div>
             <div id="autoApplyLog" class="apply-log"></div>
           </div>
+        </div>
+
+        <div class="panel" id="needsManualPanel">
+          <div class="panel-header-row">
+            <h3>Needs manual apply</h3>
+            <button class="ghost" id="needsManualRefreshBtn" style="font-size:0.75rem" title="Refresh the queue">↻ Refresh</button>
+          </div>
+          <p class="muted" style="margin:0 0 0.8rem">
+            Full-auto queues a job here when it hits a CAPTCHA, login, or anti-bot wall —
+            it never tries to defeat the wall. The prepared CV + cover-letter draft is saved
+            so you can open the listing and finish the application by hand.
+          </p>
+          <div id="needsManualList"></div>
         </div>
 
         <!-- ── Pre-Apply Job Selection Modal ──────────────────────────────── -->

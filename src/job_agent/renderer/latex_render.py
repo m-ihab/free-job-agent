@@ -726,7 +726,8 @@ def render_latex_source(
             if not in_list:
                 body.append(r"\begin{itemize}")
                 in_list = True
-            body.append(rf"\item {_inline_latex(re.sub(r'^[-*]\s+', '', line))}")
+            item_text = re.sub(r"^[-*]\s+", "", line)
+            body.append(rf"\item {_inline_latex(item_text)}")
         else:
             close_list()
             body.append(_inline_latex(line) + r"\\")

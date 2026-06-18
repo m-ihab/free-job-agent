@@ -397,11 +397,12 @@ def _section_card_html(items: list[dict[str, Any]], reveal_idx: int) -> str:
         title = html.escape(str(item.get("title") or item.get("name") or ""))
         detail = html.escape(str(item.get("detail") or item.get("description") or ""))
         meta = html.escape(str(item.get("meta") or item.get("year") or ""))
+        small = f'<small class="muted">{meta}</small>' if meta else ""
         parts.append(
             f'<article class="card" data-reveal="{reveal_idx + idx}">'
             f'<h3>{title}</h3>'
             f'<p class="muted">{detail}</p>'
-            f'{f"<small class=\"muted\">{meta}</small>" if meta else ""}'
+            f'{small}'
             "</article>"
         )
     return "<div class='grid cards-2'>" + "".join(parts) + "</div>"

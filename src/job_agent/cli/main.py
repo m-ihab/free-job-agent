@@ -1588,6 +1588,8 @@ class LocalCLIApp:
         parser.add_argument("--cache-ttl-hours", type=float, default=6.0)
 
     def invoke(self, argv: list[str] | None = None) -> int:
+        from job_agent.logging_config import configure_logging
+        configure_logging()
         parser = self.build_parser()
         argv = list(argv or [])
         try:

@@ -12,10 +12,15 @@ def _skill_overlap(job_tech: list[str], candidate_skills: list[str]) -> tuple[in
         return 50, ["No tech stack specified in job"], []
     job_lower = [t.lower() for t in job_tech]
     cand_lower = [s.lower() for s in candidate_skills]
+    cand_set = set(cand_lower)
     matched: list[str] = []
     missing: list[str] = []
     for jt in job_lower:
-        if any(fuzzy.ratio(jt, cs) >= 85 or fuzzy.partial_ratio(jt, cs) >= 90 for cs in cand_lower):
+        # Exact matches already score 100 on fuzzy.ratio; short-circuit to skip
+        # the expensive fuzzy scan over every candidate skill.
+        if jt in cand_set or any(
+            fuzzy.ratio(jt, cs) >= 85 or fuzzy.partial_ratio(jt, cs) >= 90 for cs in cand_lower
+        ):
             matched.append(jt)
         else:
             missing.append(jt)
