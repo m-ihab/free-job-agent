@@ -984,7 +984,7 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 try:
                     db.save_ai_cache(job.id, "summary", tldr, resolve_ollama_model())
                 except Exception:
-                    pass
+                    logger.warning("Failed to cache AI summary for job %s", job.id, exc_info=True)
                 return self._send_json({"summary": tldr})
             if parsed.path == "/api/ai-classify":
                 job_id = str(payload.get("job_id") or "")
@@ -1001,7 +1001,7 @@ class JobAgentHandler(BaseHTTPRequestHandler):
                 try:
                     db.save_ai_cache(job.id, "classify", classification, resolve_ollama_model())
                 except Exception:
-                    pass
+                    logger.warning("Failed to cache AI classification for job %s", job.id, exc_info=True)
                 return self._send_json({"classification": classification})
             if parsed.path == "/api/ollama-launch":
                 result = start_ollama_server(PolishOptions.from_env())

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -10,6 +11,8 @@ from typing import Generator, Optional
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.schemas.packet import ApplicationPacket
 from job_agent.timeutil import utc_now
+
+logger = logging.getLogger(__name__)
 
 
 class Database:
@@ -162,8 +165,8 @@ class Database:
             ]:
                 try:
                     conn.execute(_migration)
-                except Exception:
-                    pass  # column already exists
+                except sqlite3.OperationalError:
+                    logger.debug("Migration skipped (column already exists): %s", _migration)
 
     # ---- Job methods ----
 
@@ -418,7 +421,8 @@ class Database:
             return None
         try:
             payload = json.loads(row["payload_json"])
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("Corrupt enrichment JSON for job %s; ignoring cached row", job_id)
             return None
         payload["updated_at"] = row["updated_at"]
         return payload
@@ -443,7 +447,8 @@ class Database:
             return None
         try:
             payload = json.loads(row["payload_json"])
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("Corrupt AI-cache JSON for job %s kind %s; ignoring", job_id, kind)
             return None
         if isinstance(payload, dict):
             payload["model"] = row["model"]
@@ -460,7 +465,8 @@ class Database:
         for row in rows:
             try:
                 payload = json.loads(row["payload_json"])
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
+                logger.debug("Skipping corrupt cached JSON row in bulk read")
                 continue
             if isinstance(payload, dict):
                 payload["model"] = row["model"]
@@ -484,7 +490,8 @@ class Database:
         for row in rows:
             try:
                 payload = json.loads(row["payload_json"])
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
+                logger.debug("Skipping corrupt cached JSON row in bulk read")
                 continue
             if isinstance(payload, dict):
                 payload["updated_at"] = row["updated_at"]
@@ -505,7 +512,8 @@ class Database:
         for row in rows:
             try:
                 payload = json.loads(row["payload_json"])
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
+                logger.debug("Skipping corrupt cached JSON row in bulk read")
                 continue
             if isinstance(payload, dict):
                 payload["model"] = row["model"]

@@ -263,7 +263,7 @@ class AutoApplySession:
                 try:
                     ctx.close()
                 except Exception:
-                    pass
+                    logger.debug("[auto-apply] browser context close failed (already gone)", exc_info=True)
 
             submitted = sum(1 for r in results if r.status == "submitted")
             skipped = sum(1 for r in results if r.status == "skipped")
