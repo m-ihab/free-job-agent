@@ -8,7 +8,6 @@ Two sources of missing skills:
 """
 from __future__ import annotations
 
-import re
 from collections import Counter
 from dataclasses import dataclass
 

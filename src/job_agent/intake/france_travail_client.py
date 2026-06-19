@@ -8,7 +8,7 @@ from typing import Any
 import requests
 
 from job_agent.intake.api_cache import read_cached_json, write_cached_json
-from job_agent.intake.france_travail_auth import france_travail_env, france_travail_token
+from job_agent.intake.france_travail_auth import france_travail_token
 from job_agent.intake.france_travail_endpoints import EndpointSpec, load_endpoint_base_url, load_endpoint_registry
 
 

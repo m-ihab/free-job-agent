@@ -8,14 +8,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from job_agent.cli.main import app
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.exporters.internship_workbook import DEFAULT_WORKBOOK_NAME
-from job_agent.schemas.job import JobListing, JobStatus
+from job_agent.schemas.job import JobListing
 from job_agent.schemas.packet import ApplicationPacket, PacketStatus
 from job_agent.tracker import ApplicationTracker
 

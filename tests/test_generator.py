@@ -1,5 +1,4 @@
 """Tests for the generator modules."""
-import pytest
 
 from job_agent.generator.cover_letter import generate_cover_letter
 from job_agent.generator.cv import tailor_cv

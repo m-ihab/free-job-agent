@@ -11,7 +11,7 @@ import pytest
 from job_agent import maintenance
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
-from job_agent.schemas.job import JobListing, JobStatus
+from job_agent.schemas.job import JobListing
 
 
 @pytest.fixture

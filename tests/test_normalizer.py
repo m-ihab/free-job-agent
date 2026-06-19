@@ -1,5 +1,4 @@
 """Tests for the normalizer module."""
-import pytest
 
 from job_agent.normalizer import (
     _extract_salary,

@@ -1,5 +1,4 @@
 """Tests for the renderer modules."""
-import pytest
 
 from job_agent.renderer.html_render import render_html
 from job_agent.renderer.latex_render import render_latex_source

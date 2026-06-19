@@ -1,4 +1,3 @@
-from pathlib import Path
 
 from job_agent.config import AppConfig
 

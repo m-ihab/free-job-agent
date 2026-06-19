@@ -5,7 +5,6 @@ All tests here are expected to FAIL before the fixes are applied.
 """
 from __future__ import annotations
 
-import pytest
 
 from job_agent.renderer.latex_render import _detect_contract_family, _tailored_summary
 from job_agent.generator.cover_letter import generate_cover_letter, _adjust_summary_for_contract

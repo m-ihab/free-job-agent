@@ -36,9 +36,9 @@ def _ensure_accessible_pytest_temproot() -> None:
 
 _ensure_accessible_pytest_temproot()
 
-from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile
-from job_agent.schemas.job import JobListing, JobStatus
-from job_agent.db.database import Database
+from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile  # noqa: E402  (after the temp-root workaround above)
+from job_agent.schemas.job import JobListing  # noqa: E402
+from job_agent.db.database import Database  # noqa: E402
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 

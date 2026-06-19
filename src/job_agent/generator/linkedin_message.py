@@ -6,7 +6,6 @@ from the candidate profile and job description — nothing invented.
 """
 from __future__ import annotations
 
-import re
 from urllib.parse import urlparse
 
 from job_agent.schemas.candidate import CandidateProfile, MasterCV
@@ -42,7 +41,6 @@ def generate_linkedin_connect_request(
 
     Short, specific, no formal opener. Grounded in role + profile.
     """
-    first = _first_name(profile.contact.name if profile.contact else "")
     skills = _top_skills(job, profile, limit=2)
     skill_str = " and ".join(skills) if skills else "data science"
     hook = _company_hook(job)
@@ -89,7 +87,7 @@ def generate_linkedin_recruiter_message(
             pass
 
     lines = [
-        f"Hi,",
+        "Hi,",
         "",
         f"I spotted the {role} position at {company} and wanted to reach out directly.",
         f"{school_line}{apply_ref}",

@@ -131,9 +131,9 @@ def _normalize_skill(raw: str) -> str:
 def _is_blocked_skill(label: str) -> bool:
     return label.casefold() in _BLOCKED_GAP_TERMS
 
-from job_agent.config import AppConfig
-from job_agent.db.database import Database
-from job_agent.validators import load_profile_bundle
+from job_agent.config import AppConfig  # noqa: E402  (intentional: after module helpers to avoid an import cycle)
+from job_agent.db.database import Database  # noqa: E402
+from job_agent.validators import load_profile_bundle  # noqa: E402
 
 
 try:

@@ -1,5 +1,4 @@
 """Tests for intake modules."""
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

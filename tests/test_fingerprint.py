@@ -1,5 +1,4 @@
 """Tests for fingerprinting."""
-import pytest
 
 from job_agent.fingerprint import compute_fingerprint, set_fingerprint
 from job_agent.schemas.job import JobListing

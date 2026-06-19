@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from urllib.parse import urlencode, quote_plus
+from urllib.parse import quote_plus
 
 
 ROLE_QUERY_TERMS = [

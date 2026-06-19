@@ -1,10 +1,8 @@
 """Regression tests for the Portfolio Builder v2 capabilities."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-import pytest
 
 from job_agent.config import AppConfig
 from job_agent.portfolio_builder import (
@@ -67,9 +65,9 @@ def test_portfolio_each_layout_changes_hero(tmp_path):
     for layout in HERO_LAYOUTS:
         result = generate_portfolio(config, theme="signal", font="inter", layout=layout)
         htmls[layout] = result["html"]
-    assert f'hero-grid split' in htmls["split"]
-    assert f'hero-grid centered' in htmls["centered"]
-    assert f'hero-grid cinematic' in htmls["cinematic"]
+    assert 'hero-grid split' in htmls["split"]
+    assert 'hero-grid centered' in htmls["centered"]
+    assert 'hero-grid cinematic' in htmls["cinematic"]
 
 
 def test_portfolio_custom_accent_applied(tmp_path):

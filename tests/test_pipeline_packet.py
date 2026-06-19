@@ -1,16 +1,13 @@
 """End-to-end packet-generation safety tests."""
 from pathlib import Path
-import json
 import shutil
 
-import pytest
 
 from job_agent.config import AppConfig
 from job_agent.db import Database
 from job_agent.generator.cover_letter import generate_cover_letter
 from job_agent.generator.qa import standard_locked_answers
 from job_agent.pipeline import generate_packet_for_job
-from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile
 from job_agent.schemas.job import JobListing
 from job_agent.tracker import ApplicationTracker
 

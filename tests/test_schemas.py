@@ -2,7 +2,6 @@
 import json
 from pathlib import Path
 
-import pytest
 
 from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile
 from job_agent.schemas.job import JobListing, JobStatus

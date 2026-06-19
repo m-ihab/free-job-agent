@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import re
 
-import pytest
 
 from job_agent.generator.outreach_email import generate_outreach_email
 from job_agent.schemas.candidate import CandidateProfile, ContactInfo, MasterCV, Skill

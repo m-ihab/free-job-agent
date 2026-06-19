@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from job_agent.intake.markitdown_intake import (
     _basic_text_extract,

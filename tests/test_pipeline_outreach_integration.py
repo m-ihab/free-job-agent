@@ -8,7 +8,6 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-import pytest
 
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
@@ -134,7 +133,7 @@ class TestLanguageMismatchFlag:
             raw_text="Data Scientist à Paris. Français courant requis. Python, pandas.",
         )
         # The example candidate_profile.json is English-only
-        packet = generate_packet_for_job(config, job.id)
+        generate_packet_for_job(config, job.id)
         updated_db = Database(config.db_path)
         updated_db.initialize()
         updated_job = ApplicationTracker(updated_db).get_job(job.id)
@@ -148,7 +147,7 @@ class TestLanguageMismatchFlag:
             languages=["English"],
             raw_text="Data Scientist. English fluency required. Python, pandas.",
         )
-        packet = generate_packet_for_job(config, job.id)
+        generate_packet_for_job(config, job.id)
         updated_db = Database(config.db_path)
         updated_db.initialize()
         updated_job = ApplicationTracker(updated_db).get_job(job.id)
@@ -157,7 +156,7 @@ class TestLanguageMismatchFlag:
     def test_flag_not_added_when_no_language_requirement(self, tmp_path: Path) -> None:
         config = _config(tmp_path)
         job = _add_job(config)
-        packet = generate_packet_for_job(config, job.id)
+        generate_packet_for_job(config, job.id)
         updated_db = Database(config.db_path)
         updated_db.initialize()
         updated_job = ApplicationTracker(updated_db).get_job(job.id)

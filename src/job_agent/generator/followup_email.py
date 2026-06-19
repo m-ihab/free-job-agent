@@ -27,7 +27,6 @@ def generate_followup_email(
     """
     contact = profile.contact
     full_name = contact.name if contact else ""
-    candidate_first = _first_name(full_name)
     recruiter = recruiter_name or job.recruiter_name or ""
     greeting = f"Dear {recruiter}," if recruiter else "Dear Hiring Team,"
     role = job.title or "the position"

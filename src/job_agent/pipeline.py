@@ -1,14 +1,12 @@
 """End-to-end orchestration helpers used by the CLI."""
 from __future__ import annotations
 
-import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from job_agent.ai_agent import (
     analyze_fit,
     classify_job,
-    draft_cover_letter_body,
     summarize_job,
 )
 from job_agent.config import AppConfig
@@ -37,7 +35,7 @@ from job_agent.renderer.latex_render import (
     render_latex_source,
 )
 from job_agent.renderer.pdf_render import render_pdf
-from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile
+from job_agent.schemas.candidate import CandidateProfile
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.schemas.packet import ApplicationPacket, DocumentArtifact, PacketStatus
 from job_agent.scorer import score_job
