@@ -25,12 +25,17 @@ def _best_project(master_cv: MasterCV, job: JobListing) -> dict | None:
     if not master_cv.projects:
         return None
     job_techs_lower = {t.lower() for t in job.tech_stack}
+    fallback: dict | None = None
     for proj in master_cv.projects:
         proj_dict = proj if isinstance(proj, dict) else proj.dict() if hasattr(proj, "dict") else {}
+        if fallback is None:
+            fallback = proj_dict
         techs = [t.lower() for t in proj_dict.get("technologies", [])]
         if any(t in job_techs_lower for t in techs):
             return proj_dict
-    return master_cv.projects[0] if master_cv.projects else None
+    # No tech overlap: return the first project as a dict (not the raw model,
+    # which callers index with .get()).
+    return fallback
 
 
 def generate_interview_prep(
@@ -50,7 +55,6 @@ def generate_interview_prep(
     role = job.title or "this role"
 
     exp_company = exp.get("company", "") if exp else ""
-    exp_title = exp.get("title", "") if exp else ""
     exp_bullets = exp.get("bullet_points", [])[:3] if exp else []
 
     proj_name = proj.get("name", "") if proj else ""
@@ -73,16 +77,16 @@ def generate_interview_prep(
         f"**Q1: Walk me through your experience with {skills[0] if skills else 'machine learning'}.**",
         f"Your talking point: Focus on {exp_company or 'your most recent role'} — {exp_bullets[0] if exp_bullets else 'describe a specific project or output'}.",
         "",
-        f"**Q2: Describe a data pipeline or automation you built end-to-end.**",
+        "**Q2: Describe a data pipeline or automation you built end-to-end.**",
         f"Your talking point: {exp_company} — {exp_bullets[1] if len(exp_bullets) > 1 else 'describe the input, processing steps, and output clearly'}.",
         "",
-        f"**Q3: How would you explain model evaluation to a non-technical stakeholder?**",
+        "**Q3: How would you explain model evaluation to a non-technical stakeholder?**",
         "Your talking point: Use an analogy (e.g., a spam filter — precision vs recall trade-off in business terms). Anchor it in a real project.",
         "",
         f"**Q4: What's your experience with {skills[1] if len(skills) > 1 else 'deep learning'}?**",
         f"Your talking point: {proj_name} — {proj_desc[:120] + '...' if proj_desc and len(proj_desc) > 120 else proj_desc}. Tech: {proj_techs}.",
         "",
-        f"**Q5: How do you handle missing or noisy data?**",
+        "**Q5: How do you handle missing or noisy data?**",
         "Your talking point: Walk through imputation strategies, outlier detection, domain knowledge checks. Give a concrete example from your CV.",
         "",
         "---",

@@ -28,7 +28,12 @@ def _ingest_rss_fallback(feed_url: str, limit: Optional[int] = None) -> list[Job
     for item in items[:limit] if limit else items:
         def find_text(names: list[str]) -> str:
             for name in names:
-                node = item.find(name) or item.find(f"{{http://www.w3.org/2005/Atom}}{name}")
+                # An ElementTree Element with no children is falsy, so `a or b`
+                # would skip the Atom-namespaced fallback even when `a` matched
+                # a text-only element. Use explicit None checks.
+                node = item.find(name)
+                if node is None:
+                    node = item.find(f"{{http://www.w3.org/2005/Atom}}{name}")
                 if node is not None and node.text:
                     return node.text
             return ""

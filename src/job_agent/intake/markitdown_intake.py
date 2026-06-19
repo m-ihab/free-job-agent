@@ -84,8 +84,8 @@ def _basic_text_extract(path: Path) -> Optional[str]:
             return None
     if suffix == ".html":
         try:
-            from job_agent.utils.html import extract_text
-            return extract_text(path.read_text(encoding="utf-8", errors="replace")) or None
+            from job_agent.utils.html import strip_html
+            return strip_html(path.read_text(encoding="utf-8", errors="replace")) or None
         except Exception:
             return None
     # Binary formats (PDF, DOCX etc.) without markitdown: cannot extract.
