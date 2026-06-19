@@ -10,17 +10,18 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import NoReturn
 
 try:  # pragma: no cover - optional pretty output
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
 except Exception:  # pragma: no cover
-    class Console:
+    class Console:  # type: ignore[no-redef]  # intentional fallback when rich is unavailable
         def print(self, *args, **kwargs):
             print(*[str(a) for a in args])
 
-    class Table:
+    class Table:  # type: ignore[no-redef]  # intentional fallback when rich is unavailable
         def __init__(self, title: str | None = None, *cols, **kwargs):
             self.title = title
             self.cols = list(cols)
@@ -39,7 +40,7 @@ except Exception:  # pragma: no cover
             lines.extend(" | ".join(row) for row in self.rows)
             return "\n".join(lines)
 
-    class Panel:
+    class Panel:  # type: ignore[no-redef]  # intentional fallback when rich is unavailable
         def __init__(self, text, title: str | None = None):
             self.text = text
             self.title = title
@@ -82,7 +83,7 @@ def _load_profiles(config: AppConfig):
         return None, None, None
 
 
-def _fail(message: str, code: int = 1) -> None:
+def _fail(message: str, code: int = 1) -> NoReturn:
     raise CLIError(message, code=code)
 
 

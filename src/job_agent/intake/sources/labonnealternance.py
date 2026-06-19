@@ -11,6 +11,7 @@ from job_agent.secrets import load_local_env
 from .base import (
     FreeApiError,
     FreeApiSearch,
+    _as_dict,
     _fetch_json,
     _first_nonempty,
     _join_nonempty,
@@ -98,15 +99,15 @@ def fetch(search: FreeApiSearch) -> list[JobListing]:
     for item in items:
         if not isinstance(item, dict):
             continue
-        identifier = item.get("identifier") if isinstance(item.get("identifier"), dict) else {}
-        offer = item.get("offer") if isinstance(item.get("offer"), dict) else {}
-        workplace = item.get("workplace") if isinstance(item.get("workplace"), dict) else {}
-        contract = item.get("contract") if isinstance(item.get("contract"), dict) else {}
-        apply = item.get("apply") if isinstance(item.get("apply"), dict) else {}
-        publication = offer.get("publication") if isinstance(offer.get("publication"), dict) else {}
-        location_data = workplace.get("location") if isinstance(workplace.get("location"), dict) else {}
-        domain = workplace.get("domain") if isinstance(workplace.get("domain"), dict) else {}
-        naf = domain.get("naf") if isinstance(domain.get("naf"), dict) else {}
+        identifier = _as_dict(item.get("identifier"))
+        offer = _as_dict(item.get("offer"))
+        workplace = _as_dict(item.get("workplace"))
+        contract = _as_dict(item.get("contract"))
+        apply = _as_dict(item.get("apply"))
+        publication = _as_dict(offer.get("publication"))
+        location_data = _as_dict(workplace.get("location"))
+        domain = _as_dict(workplace.get("domain"))
+        naf = _as_dict(domain.get("naf"))
         desired = _string_list(offer.get("desired_skills"))
         acquired = _string_list(offer.get("to_be_acquired_skills"))
         access = _string_list(offer.get("access_conditions"))

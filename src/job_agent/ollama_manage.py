@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from job_agent.polish import PolishOptions, available_ollama_models, is_ollama_reachable
 
@@ -118,12 +118,12 @@ def start_ollama_server(options: PolishOptions | None = None, *, wait_seconds: i
             return {"ok": False, "running": False, "started": False, "reason": "starting_slowly"}
         try:
             # CREATE_NO_WINDOW on Windows; otherwise detached on POSIX.
-            kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+            kwargs: dict[str, Any] = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
             if sys.platform.startswith("win"):
                 creationflags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-                kwargs["creationflags"] = creationflags  # type: ignore[assignment]
+                kwargs["creationflags"] = creationflags
             else:
-                kwargs["start_new_session"] = True  # type: ignore[assignment]
+                kwargs["start_new_session"] = True
             _SERVE_PROCESS = subprocess.Popen([binary, "serve"], **kwargs)
         except Exception as exc:
             return {"ok": False, "running": False, "started": False, "reason": str(exc)}

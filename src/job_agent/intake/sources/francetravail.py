@@ -16,6 +16,8 @@ from .base import (
     _CONTRACT_TYPE_FT,
     FreeApiError,
     FreeApiSearch,
+    _as_dict,
+    _as_list,
     _bounded_limit,
     _get_json,
     _join_nonempty,
@@ -164,10 +166,10 @@ def fetch(search: FreeApiSearch) -> list[JobListing]:
     for item in items:
         if not isinstance(item, dict):
             continue
-        entreprise = item.get("entreprise") if isinstance(item.get("entreprise"), dict) else {}
-        lieu = item.get("lieuTravail") if isinstance(item.get("lieuTravail"), dict) else {}
-        salaire = item.get("salaire") if isinstance(item.get("salaire"), dict) else {}
-        competences = item.get("competences") if isinstance(item.get("competences"), list) else []
+        entreprise = _as_dict(item.get("entreprise"))
+        lieu = _as_dict(item.get("lieuTravail"))
+        salaire = _as_dict(item.get("salaire"))
+        competences = _as_list(item.get("competences"))
         skills = []
         for comp in competences:
             if isinstance(comp, dict) and comp.get("libelle"):

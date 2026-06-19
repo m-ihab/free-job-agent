@@ -6,7 +6,9 @@ installed, but this module keeps the core project usable without it.
 from __future__ import annotations
 
 from difflib import SequenceMatcher
+from typing import Any
 
+_rapidfuzz_fuzz: Any
 try:  # pragma: no cover - depends on optional dependency
     from rapidfuzz import fuzz as _rapidfuzz_fuzz
 except Exception:  # pragma: no cover - exercised when rapidfuzz is absent

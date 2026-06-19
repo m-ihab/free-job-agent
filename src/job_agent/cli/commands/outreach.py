@@ -127,7 +127,7 @@ def _handle_headhunter_batch(args: argparse.Namespace) -> None:
     if not packs:
         console.print(f"No jobs found with score ≥ {args.min_score}. Run scoring first with: job-agent score <job-id>")
         return
-    out = args.output or (Path(config.outputs_dir) / "batch_outreach.md")
+    out = args.output or (Path(config.outputs_dir) / "batch_outreach.md")  # type: ignore[arg-type]  # outputs_dir set in AppConfig.__init__
     out.parent.mkdir(parents=True, exist_ok=True)
     count = write_batch_outreach_file(packs, out)
     console.print(Panel(

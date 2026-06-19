@@ -143,7 +143,8 @@ def export_applied_internships(
 ) -> tuple[Path, int]:
     """Write submitted internship applications into the tracking workbook."""
     config.ensure_dirs()
-    tracker = ApplicationTracker(Database(config.db_path))
+    # ensure_dirs() guarantees db_path is set
+    tracker = ApplicationTracker(Database(config.db_path))  # type: ignore[arg-type]
     workbook_file = _default_workbook_path(config, workbook_path)
     workbook_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -195,8 +196,8 @@ def export_applied_internships(
 
     for column_index in range(1, max(header_map.values()) + 1):
         column_letter = worksheet.cell(row=header_row, column=column_index).column_letter
-        values = [worksheet.cell(row=row, column=column_index).value for row in range(1, worksheet.max_row + 1)]
-        max_length = max((len(str(value)) for value in values if value is not None), default=0)
+        column_values = [worksheet.cell(row=row, column=column_index).value for row in range(1, worksheet.max_row + 1)]
+        max_length = max((len(str(value)) for value in column_values if value is not None), default=0)
         worksheet.column_dimensions[column_letter].width = min(max(max_length + 2, 12), 60)
 
     workbook.save(workbook_file)

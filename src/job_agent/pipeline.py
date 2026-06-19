@@ -394,7 +394,7 @@ def generate_packet_for_job(
         # click "Regenerate PDF" in the dashboard to get the full LaTeX version.
         render_pdf(cv_md, cv_pdf_path, title="Tailored CV")
         cv_pdf_artifact = DocumentArtifact(kind="cv_pdf", path=str(cv_pdf_path), sha256=sha256_file(cv_pdf_path))
-        latex_warning = (
+        latex_warning: str | None = (
             "Fast-mode PDF: generated with reportlab (not LaTeX). "
             "Open the packet and click 'Regenerate PDF' for the full LaTeX-compiled version."
         )

@@ -36,7 +36,7 @@ class ApplyCandidate:
 
 def _get_db() -> Database:
     cfg = AppConfig()
-    db = Database(cfg.db_path)
+    db = Database(cfg.db_path)  # type: ignore[arg-type]  # db_path is always set by AppConfig
     db.initialize()
     return db
 

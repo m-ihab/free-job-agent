@@ -63,7 +63,7 @@ try:
 except Exception:  # pragma: no cover - AI is optional
     _ai_is_available = None  # type: ignore[assignment]
     _ai_call_json = None  # type: ignore[assignment]
-    PolishOptions = None  # type: ignore[assignment]
+    PolishOptions = None  # type: ignore[assignment,misc]
 
 
 # -----------------------------------------------------------------------------

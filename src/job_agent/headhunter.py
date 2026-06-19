@@ -122,7 +122,7 @@ def build_outreach_pack(
         job_id=job.id,
         job_title=job.title or "Unknown role",
         company=job.company or "Unknown company",
-        score=job.fit_score or 0,
+        score=int(job.fit_score or 0),
         is_english_first=english_first,
         connect_request=connect,
         recruiter_message=recruiter,

@@ -317,7 +317,7 @@ class AutoApplySession:
                 profile, _, _ = load_profile_bundle(self.config)
                 self._profile_cache = profile
             except Exception:
-                self._profile_cache = None
+                self._profile_cache = None  # type: ignore[assignment]  # cache holds an Optional profile
         return self._profile_cache
 
     def _load_candidates(self) -> list:

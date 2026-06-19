@@ -10,7 +10,7 @@ from job_agent.secrets import load_local_env
 try:
     from pydantic.v1 import BaseModel, Field
 except Exception:  # pragma: no cover
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, Field  # type: ignore[assignment]
 
 
 def _default_data_dir() -> Path:

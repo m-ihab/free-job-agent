@@ -58,7 +58,7 @@ try:
 except Exception:  # pragma: no cover
     _ai_is_available = None  # type: ignore[assignment]
     _ai_call_json = None  # type: ignore[assignment]
-    PolishOptions = None  # type: ignore[assignment]
+    PolishOptions = None  # type: ignore[assignment,misc]
     _tokens = None  # type: ignore[assignment]
 
 
@@ -210,7 +210,7 @@ def export_portfolio_zip(config: AppConfig) -> Path:
 # ---------------------------------------------------------------------------
 
 
-_PUBLISH_HOSTS = {
+_PUBLISH_HOSTS: dict[str, dict[str, Any]] = {
     "github_pages": {
         "label": "GitHub Pages",
         "free": True,
@@ -365,9 +365,10 @@ def fetch_github_repos(handle: str, *, limit: int = 12) -> list[dict[str, Any]]:
     if not handle or requests is None:
         return []
     try:
+        params: dict[str, Any] = {"sort": "updated", "per_page": min(limit, 30)}
         response = requests.get(
             f"https://api.github.com/users/{handle}/repos",
-            params={"sort": "updated", "per_page": min(limit, 30)},
+            params=params,
             headers={"Accept": "application/vnd.github+json", "User-Agent": "job-agent"},
             timeout=15,
         )

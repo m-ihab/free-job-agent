@@ -146,10 +146,10 @@ def _fill_visible_fields(page: Any, qa: dict, filled: list[str]) -> None:
             match = fuzz_process.extractOne(label_text, qa_keys, score_cutoff=55)
             if not match:
                 # Also try matching directly against QA values by common field names
-                match = _heuristic_match(label_text, qa)
-                if not match:
+                heuristic = _heuristic_match(label_text, qa)
+                if not heuristic:
                     continue
-                key, answer = match
+                key, answer = heuristic
             else:
                 key = match[0]
                 answer = qa[key]

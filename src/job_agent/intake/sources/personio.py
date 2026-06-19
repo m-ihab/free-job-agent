@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from typing import Any
 
 from job_agent.intake.url import HEADERS
 from job_agent.schemas.job import JobListing
@@ -24,7 +25,7 @@ def fetch(search: FreeApiSearch) -> list[JobListing]:
             "personio requires --board with the company subdomain. Example: personio --board examplecompany"
         )
     url = f"https://{search.board}.jobs.personio.com/xml"
-    clean_params = {}  # noqa: F841
+    clean_params: dict[str, Any] = {}  # noqa: F841
     headers = {**HEADERS, "Accept": "application/xml,text/xml,*/*"}
     response = base.requests.get(url, headers=headers, timeout=search.timeout)
     response.raise_for_status()

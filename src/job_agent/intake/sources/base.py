@@ -188,6 +188,20 @@ def _fetch_json(
     )
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    """Return ``value`` when it is a dict, else an empty dict.
+
+    Behaviour-identical to the inline ``value if isinstance(value, dict) else {}``
+    idiom, but typed so callers narrow to ``dict[str, Any]`` cleanly.
+    """
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    """Return ``value`` when it is a list, else an empty list."""
+    return value if isinstance(value, list) else []
+
+
 def _strip_html(value: Any) -> str:
     text = "" if value is None else str(value)
     if not text:
@@ -386,10 +400,12 @@ def _post_filter(jobs: list[JobListing], search: FreeApiSearch, apply_query_filt
         if not _contains_location(job, search.location):
             continue
         quality = assess_search_quality(job, query=search.query, location=search.location)
-        job.search_quality_score = quality["score"]
-        job.search_role_family = quality["role_family"]
-        job.search_contract = quality["contract"]
-        job.search_quality_flags = quality["flags"]
+        # JobListing uses pydantic v1 `extra="allow"`, so these dynamic search-result
+        # attributes are valid at runtime but not declared as model fields.
+        job.search_quality_score = quality["score"]  # type: ignore[attr-defined]
+        job.search_role_family = quality["role_family"]  # type: ignore[attr-defined]
+        job.search_contract = quality["contract"]  # type: ignore[attr-defined]
+        job.search_quality_flags = quality["flags"]  # type: ignore[attr-defined]
         if search.france_eu_only and "outside-target-region" in quality["flags"]:
             continue
         if search.min_relevance and int(quality["score"]) < int(search.min_relevance):

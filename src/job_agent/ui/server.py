@@ -11,6 +11,7 @@ import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import cast
 from urllib.parse import parse_qs, urlparse
 
 from job_agent.ui.security import SESSION_TOKEN, check_request, is_loopback_host
@@ -115,7 +116,9 @@ class JobAgentHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
-        bound_host, bound_port = self.server.server_address[0], int(self.server.server_address[1])
+        # TCP servers expose server_address as a (host, port) tuple.
+        server_address = cast("tuple[object, ...]", self.server.server_address)
+        bound_host, bound_port = server_address[0], int(server_address[1])  # type: ignore[call-overload]
         ok, reason = check_request(self, "POST", bound_host=str(bound_host), bound_port=bound_port)
         if not ok:
             logger.warning("Blocked POST %s (%s)", parsed.path, reason)

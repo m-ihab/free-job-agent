@@ -12,6 +12,7 @@ import logging
 import re
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from typing import Any
 
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
@@ -59,7 +60,7 @@ def _read_json(handler: BaseHTTPRequestHandler) -> dict:
 
 def _safe_int(value: object, default: int, minimum: int = 1, maximum: int = 100) -> int:
     try:
-        parsed = int(value)
+        parsed = int(value)  # type: ignore[call-overload]  # value is validated by the except
     except (TypeError, ValueError):
         parsed = default
     return max(minimum, min(parsed, maximum))
@@ -369,7 +370,7 @@ def _one_click_hunt(config: AppConfig, payload: dict) -> dict:
         failures.extend(saved["failures"])
         jobs_out.extend(saved["jobs"])
 
-    multi_summary = None
+    multi_summary: dict[str, Any] | None = None
     if include_multi_source:
         per_source: dict[str, int] = {}
         errors: dict[str, str] = {}

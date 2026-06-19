@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Iterable
 
 try:
     import requests
@@ -224,7 +224,7 @@ def _ollama_available(options: PolishOptions, *, require_enabled: bool = True) -
 def _call_ollama(prompt: str, options: PolishOptions) -> str | None:
     if requests is None:
         return None
-    payload = {
+    payload: dict[str, Any] = {
         "model": resolve_ollama_model(options),
         "prompt": prompt,
         "stream": False,

@@ -81,7 +81,7 @@ def _handle_enrich_github(args: argparse.Namespace) -> None:
     if not handle:
         _fail("Provide --handle or set contact.github_url in candidate_profile.json.")
     try:
-        report = enrich_from_github(Path(config.profiles_dir), handle, add_projects=not args.no_projects)
+        report = enrich_from_github(Path(config.profiles_dir), handle, add_projects=not args.no_projects)  # type: ignore[arg-type]  # profiles_dir set in AppConfig.__init__
     except Exception as exc:
         _fail(f"GitHub enrichment failed: {exc}")
     console.print(Panel(
@@ -107,7 +107,7 @@ def _handle_enrich_linkedin(args: argparse.Namespace) -> None:
         console.print("Paste your LinkedIn Skills section (one per line). Press Ctrl+D (Ctrl+Z on Windows) when done:")
         text = sys.stdin.read()
     try:
-        report = enrich_from_linkedin_skills(Path(config.profiles_dir), text)
+        report = enrich_from_linkedin_skills(Path(config.profiles_dir), text)  # type: ignore[arg-type]  # profiles_dir set in AppConfig.__init__
     except Exception as exc:
         _fail(f"LinkedIn enrichment failed: {exc}")
     console.print(Panel(
@@ -137,8 +137,10 @@ def _handle_setup_wizard(args: argparse.Namespace) -> None:
             answers[key] = default
 
     qa_path = config.profiles_dir / "master_qa_profile.json"  # type: ignore[operator]
+    existing: dict = {"entries": [], "hold_if_missing": True}
     try:
-        existing = json.loads(qa_path.read_text(encoding="utf-8")) if qa_path.exists() else {"entries": [], "hold_if_missing": True}
+        if qa_path.exists():
+            existing = json.loads(qa_path.read_text(encoding="utf-8"))
     except Exception:
         existing = {"entries": [], "hold_if_missing": True}
 

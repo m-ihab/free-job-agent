@@ -144,10 +144,10 @@ try:
     )
     from job_agent.polish import PolishOptions
 except Exception:  # pragma: no cover
-    _ai_candidate_summary = None
-    _ai_call_json = None
-    _ai_is_available = None
-    PolishOptions = None
+    _ai_candidate_summary = None  # type: ignore[assignment]
+    _ai_call_json = None  # type: ignore[assignment]
+    _ai_is_available = None  # type: ignore[assignment]
+    PolishOptions = None  # type: ignore[assignment,misc]
 
 
 _COACH_PROMPT = """You are a career coach for a Paris-based data/AI candidate.

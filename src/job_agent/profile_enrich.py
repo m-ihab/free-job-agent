@@ -153,7 +153,7 @@ def merge_github_into_profile(
     Returns a small report describing what was added/updated. Existing
     entries are NOT overwritten — this is additive enrichment only.
     """
-    report = {
+    report: dict[str, Any] = {
         "added_skills": [],
         "added_projects": [],
         "updated_contact": False,

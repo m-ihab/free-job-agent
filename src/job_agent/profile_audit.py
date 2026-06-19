@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from job_agent.schemas.candidate import CandidateProfile, MasterCV
+from job_agent.schemas.candidate import CandidateProfile, Education, MasterCV
 from job_agent.schemas.job import JobListing
 from job_agent.skill_extractor import extract_implied_skills, mine_job_keywords, suggest_trend_gaps
 
@@ -293,7 +293,7 @@ def audit_profile(
     if len(profile.skills or []) >= 20:
         strengths.append("Strong skills breadth — 20+ skills listed")
     if master_cv.education:
-        edu = master_cv.education[0] if master_cv.education else {}
+        edu: Education | dict = master_cv.education[0] if master_cv.education else {}
         school = edu.get("institution", "") if isinstance(edu, dict) else getattr(edu, "institution", "")
         if "dsti" in school.lower() or "engineering" in school.lower():
             strengths.append("MSc at DSTI Paris — well-regarded for DS/AI in France")
