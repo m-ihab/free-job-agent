@@ -6,6 +6,13 @@ from job_agent.schemas.job import JobListing
 from job_agent.schemas.scoring import ScoreBreakdown
 from job_agent.utils import fuzzy
 
+# Fuzzy-match acceptance thresholds (0-100). A skill counts as matched when its
+# full-string similarity clears _SKILL_RATIO_MIN or its partial (substring)
+# similarity clears _SKILL_PARTIAL_MIN; a location matches at _LOCATION_PARTIAL_MIN.
+_SKILL_RATIO_MIN = 85
+_SKILL_PARTIAL_MIN = 90
+_LOCATION_PARTIAL_MIN = 70
+
 
 def _skill_overlap(job_tech: list[str], candidate_skills: list[str]) -> tuple[int, list[str], list[str]]:
     if not job_tech:
@@ -19,7 +26,8 @@ def _skill_overlap(job_tech: list[str], candidate_skills: list[str]) -> tuple[in
         # Exact matches already score 100 on fuzzy.ratio; short-circuit to skip
         # the expensive fuzzy scan over every candidate skill.
         if jt in cand_set or any(
-            fuzzy.ratio(jt, cs) >= 85 or fuzzy.partial_ratio(jt, cs) >= 90 for cs in cand_lower
+            fuzzy.ratio(jt, cs) >= _SKILL_RATIO_MIN or fuzzy.partial_ratio(jt, cs) >= _SKILL_PARTIAL_MIN
+            for cs in cand_lower
         ):
             matched.append(jt)
         else:
@@ -48,7 +56,7 @@ def _location_score(job: JobListing, profile: CandidateProfile) -> tuple[int, li
         return 50, ["No target locations specified"]
     job_loc = (job.location or "").lower()
     for loc in profile.target_locations:
-        if fuzzy.partial_ratio(loc.lower(), job_loc) >= 70:
+        if fuzzy.partial_ratio(loc.lower(), job_loc) >= _LOCATION_PARTIAL_MIN:
             return 100, [f"Location match: {job.location}"]
     if profile.relocation_ok:
         return 60, ["No location match, but relocation is acceptable"]
