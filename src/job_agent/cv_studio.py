@@ -15,15 +15,19 @@ This module also supports:
 """
 from __future__ import annotations
 
-import base64
-import binascii
-import json
 import re
 import shutil
 from pathlib import Path
 from typing import Any
 
 from job_agent.config import AppConfig
+from job_agent.cv_studio_core import (
+    _active_cv_text,
+    _draft_path,
+    _main_tex_path,
+    _studio_dir,
+    _write_draft,
+)
 from job_agent.renderer.latex_render import (
     LatexCompileError,
     available_latex_compiler,
@@ -33,6 +37,24 @@ from job_agent.renderer.latex_render import (
     set_cvlang,
 )
 from job_agent.utils.html import strip_html
+
+# Asset / icon-pack and project helpers live in sibling modules. Re-imported
+# here so the historical public import paths
+# (``from job_agent.cv_studio import list_assets, ICON_PACKS, save_project`` …)
+# keep working unchanged.
+from job_agent.cv_studio_assets import (  # noqa: F401  (public re-export seam)
+    ICON_PACKS,
+    apply_icon_pack,
+    list_assets,
+    read_asset,
+    remove_photo,
+    replace_photo,
+    write_asset,
+)
+from job_agent.cv_studio_projects import (  # noqa: F401  (public re-export seam)
+    import_github_project,
+    save_project,
+)
 
 try:
     from job_agent.ai_agent import is_available as _ai_is_available
@@ -44,29 +66,9 @@ except Exception:  # pragma: no cover - AI is optional
     PolishOptions = None  # type: ignore[assignment]
 
 
-STUDIO_DIRNAME = "cv_studio"
-
-
 # -----------------------------------------------------------------------------
-# File I/O helpers
+# File I/O helpers — shared primitives now live in ``cv_studio_core``.
 # -----------------------------------------------------------------------------
-
-
-def _studio_dir(config: AppConfig) -> Path:
-    base = Path(config.data_dir or Path.cwd() / ".job_agent") / STUDIO_DIRNAME
-    base.mkdir(parents=True, exist_ok=True)
-    return base
-
-
-def _main_tex_path(config: AppConfig) -> Path | None:
-    if not config.profiles_dir:
-        return None
-    candidate = Path(config.profiles_dir) / "main.tex"
-    return candidate if candidate.exists() else None
-
-
-def _draft_path(config: AppConfig) -> Path:
-    return _studio_dir(config) / "draft.tex"
 
 
 def load_studio(config: AppConfig) -> dict[str, Any]:
@@ -419,406 +421,6 @@ __all__ = [
     "import_github_project",
     "single_page_guard",
 ]
-
-
-# -----------------------------------------------------------------------------
-# Asset management
-# -----------------------------------------------------------------------------
-
-
-_TEXT_ASSET_SUFFIXES = {".tex", ".sty", ".cls", ".bib", ".json", ".md", ".txt"}
-_IMAGE_ASSET_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".pdf"}
-
-
-def _profiles_root(config: AppConfig) -> Path:
-    if not config.profiles_dir:
-        raise ValueError("Profiles directory is not configured.")
-    return Path(config.profiles_dir).resolve()
-
-
-def _safe_asset_path(config: AppConfig, name: str) -> Path:
-    """Return the safe path for ``name`` inside ``profiles/`` or raise."""
-    root = _profiles_root(config)
-    # No directory traversal — strip any leading slashes and ".."
-    cleaned = Path(name).name
-    if not cleaned:
-        raise ValueError("Asset name required.")
-    candidate = (root / cleaned).resolve()
-    if root not in candidate.parents and candidate != root:
-        raise ValueError("Asset must live in profiles/.")
-    return candidate
-
-
-def list_assets(config: AppConfig) -> list[dict[str, Any]]:
-    """Return all asset files in the profiles directory."""
-    try:
-        root = _profiles_root(config)
-    except ValueError:
-        return []
-    items: list[dict[str, Any]] = []
-    for path in sorted(root.iterdir()):
-        if path.is_dir():
-            continue
-        if path.suffix.lower() not in _TEXT_ASSET_SUFFIXES | _IMAGE_ASSET_SUFFIXES:
-            continue
-        items.append({
-            "name": path.name,
-            "kind": "text" if path.suffix.lower() in _TEXT_ASSET_SUFFIXES else "image",
-            "size": path.stat().st_size,
-            "modified": path.stat().st_mtime,
-        })
-    return items
-
-
-def read_asset(config: AppConfig, name: str) -> dict[str, Any]:
-    """Read a text asset's contents (returns base64 for images)."""
-    path = _safe_asset_path(config, name)
-    if not path.exists():
-        return {"ok": False, "reason": "not_found"}
-    kind = "text" if path.suffix.lower() in _TEXT_ASSET_SUFFIXES else "image"
-    if kind == "text":
-        return {"ok": True, "kind": "text", "name": path.name, "text": path.read_text(encoding="utf-8", errors="replace")}
-    return {"ok": True, "kind": "image", "name": path.name, "url": f"/file?path={path}"}
-
-
-def write_asset(config: AppConfig, name: str, text: str) -> dict[str, Any]:
-    """Overwrite a text asset under profiles/. Keeps a .bak of the previous content."""
-    path = _safe_asset_path(config, name)
-    if path.suffix.lower() not in _TEXT_ASSET_SUFFIXES:
-        return {"ok": False, "reason": "binary_asset"}
-    if path.exists():
-        try:
-            shutil.copyfile(path, path.with_suffix(path.suffix + ".bak"))
-        except Exception:
-            pass
-    path.write_text(text or "", encoding="utf-8")
-    return {"ok": True, "name": path.name, "size": path.stat().st_size}
-
-
-def replace_photo(config: AppConfig, name: str, base64_data: str) -> dict[str, Any]:
-    """Replace (or create) a CV photo from a base64-encoded data URL."""
-    try:
-        root = _profiles_root(config)
-    except ValueError as exc:
-        return {"ok": False, "reason": str(exc)}
-    # Strip "data:image/jpeg;base64,..." prefix if present.
-    payload = base64_data or ""
-    if "," in payload[:80]:
-        payload = payload.split(",", 1)[1]
-    try:
-        raw = base64.b64decode(payload, validate=True)
-    except (binascii.Error, ValueError):
-        return {"ok": False, "reason": "invalid_base64"}
-    safe_name = Path(name or "me.jpg").name
-    if Path(safe_name).suffix.lower() not in {".jpg", ".jpeg", ".png"}:
-        safe_name = "me.jpg"
-    target = root / safe_name
-    if target.exists():
-        try:
-            shutil.copyfile(target, target.with_suffix(target.suffix + ".bak"))
-        except Exception:
-            pass
-    target.write_bytes(raw)
-    return {"ok": True, "name": safe_name, "bytes": len(raw)}
-
-
-def remove_photo(config: AppConfig, name: str = "me.jpg") -> dict[str, Any]:
-    """Comment out the ``\\photo{...}`` line in main.tex and delete the photo file."""
-    try:
-        root = _profiles_root(config)
-    except ValueError as exc:
-        return {"ok": False, "reason": str(exc)}
-    main = root / "main.tex"
-    if main.exists():
-        text = main.read_text(encoding="utf-8")
-        new_text = re.sub(r"^(\\photo\[[^\]]*\])?\{[^}]+\}", lambda m: "% " + m.group(0), text, count=1, flags=re.MULTILINE)
-        if new_text != text:
-            main.with_suffix(".tex.bak").write_text(text, encoding="utf-8")
-            main.write_text(new_text, encoding="utf-8")
-    safe_name = Path(name or "me.jpg").name
-    photo = root / safe_name
-    if photo.exists():
-        try:
-            shutil.copyfile(photo, photo.with_suffix(photo.suffix + ".bak"))
-            photo.unlink()
-        except Exception:
-            pass
-    return {"ok": True}
-
-
-# -----------------------------------------------------------------------------
-# Icon pack picker
-# -----------------------------------------------------------------------------
-
-
-ICON_PACKS = {
-    "moderncv": {
-        "label": "moderncv default (text)",
-        "phone": r"\phone[mobile]{",
-        "email": r"\email{",
-        "linkedin": r"\social[linkedin]{",
-        "github": r"\social[github]{",
-        "snippet": "% moderncv default contact lines (text labels).",
-    },
-    "fontawesome": {
-        "label": "FontAwesome 5 (icons)",
-        "snippet": (
-            "% Replaces text contact labels with FontAwesome icons.\n"
-            "\\usepackage{fontawesome5}\n"
-        ),
-        # Drop-in renames keep the moderncv layout intact.
-        # Use direct command names instead of \faIcon{...}; the repo ships a
-        # tiny local fontawesome5.sty fallback for MiKTeX installs that do not
-        # have the full package yet.
-        "phone": r"\renewcommand*\phonesymbol{\faMobile*~}",
-        "email": r"\renewcommand*\emailsymbol{\faEnvelope~}",
-        "linkedin": r"\renewcommand*\linkedinsocialsymbol{\faLinkedin~}",
-        "github": r"\renewcommand*\githubsocialsymbol{\faGithub~}",
-    },
-    "academicons": {
-        "label": "Academicons (research icons)",
-        "snippet": (
-            "% Academicons preview pack: kept as comments unless academicons.sty is present.\n"
-        ),
-        "phone": r"% phone icon kept as moderncv default",
-        "email": r"% email icon kept as moderncv default",
-        "linkedin": r"% linkedin icon kept as moderncv default",
-        "github": r"% github icon kept as moderncv default",
-    },
-}
-
-
-_ICON_BLOCK_RE = re.compile(
-    r"% --- BEGIN CV-STUDIO ICON PACK ---.*?% --- END CV-STUDIO ICON PACK ---\n?",
-    flags=re.DOTALL,
-)
-
-
-def _active_cv_text(config: AppConfig) -> tuple[str, Path | None, str]:
-    """Return the editable CV source, preferring the Studio draft."""
-    draft = _draft_path(config)
-    if draft.exists():
-        return draft.read_text(encoding="utf-8"), draft, "draft"
-    main = _main_tex_path(config)
-    if main and main.exists():
-        return main.read_text(encoding="utf-8"), main, "main"
-    return "", None, "empty"
-
-
-def _write_draft(config: AppConfig, text: str) -> Path:
-    draft = _draft_path(config)
-    draft.write_text(text or "", encoding="utf-8")
-    return draft
-
-
-def _icon_pack_block(pack: str, pack_data: dict[str, Any]) -> str:
-    block_lines = ["% --- BEGIN CV-STUDIO ICON PACK ---", str(pack_data["snippet"]).rstrip()]
-    if pack == "fontawesome":
-        block_lines.extend([pack_data["phone"], pack_data["email"], pack_data["linkedin"], pack_data["github"]])
-    elif pack == "academicons":
-        # Academicons doesn't redefine moderncv hooks; the chosen pack remains
-        # visible in source and can be extended when academicons.sty is present.
-        pass
-    block_lines.append("% --- END CV-STUDIO ICON PACK ---")
-    return "\n".join(block_lines) + "\n"
-
-
-def _apply_icon_pack_to_text(text: str, pack: str, pack_data: dict[str, Any]) -> str:
-    text = _ICON_BLOCK_RE.sub("", text or "")
-    block = _icon_pack_block(pack, pack_data)
-    if r"\begin{document}" in text:
-        return text.replace(r"\begin{document}", block + r"\begin{document}", 1)
-    return text.rstrip() + "\n\n" + block
-
-
-def apply_icon_pack(config: AppConfig, pack: str) -> dict[str, Any]:
-    """Inject the chosen icon pack's directives into main.tex and the draft."""
-    try:
-        root = _profiles_root(config)
-    except ValueError as exc:
-        return {"ok": False, "reason": str(exc)}
-    main = root / "main.tex"
-    if not main.exists():
-        return {"ok": False, "reason": "no_main_tex"}
-    pack_data = ICON_PACKS.get(pack)
-    if not pack_data:
-        return {"ok": False, "reason": "unknown_pack"}
-    original_main = main.read_text(encoding="utf-8")
-    main_text = _apply_icon_pack_to_text(original_main, pack, pack_data)
-    main.with_suffix(".tex.bak").write_text(original_main, encoding="utf-8")
-    main.write_text(main_text, encoding="utf-8")
-
-    # Compile Preview reads the Studio draft when it exists. Keep the draft in
-    # sync so choosing an icon pack has an immediate visible effect.
-    active_text, active_path, origin = _active_cv_text(config)
-    preview_text = main_text
-    if active_path and origin == "draft":
-        preview_text = _apply_icon_pack_to_text(active_text, pack, pack_data)
-        active_path.with_suffix(".tex.bak").write_text(active_text, encoding="utf-8")
-        active_path.write_text(preview_text, encoding="utf-8")
-    else:
-        _write_draft(config, main_text)
-
-    return {"ok": True, "pack": pack, "label": pack_data["label"], "text": preview_text}
-
-
-# -----------------------------------------------------------------------------
-# GitHub project import
-# -----------------------------------------------------------------------------
-
-
-def _latex_escape_text(value: Any) -> str:
-    text = str(value or "").strip()
-    replacements = {
-        "\\": r"\textbackslash{}",
-        "&": r"\&",
-        "%": r"\%",
-        "$": r"\$",
-        "#": r"\#",
-        "_": r"\_",
-        "{": r"\{",
-        "}": r"\}",
-        "~": r"\textasciitilde{}",
-        "^": r"\textasciicircum{}",
-    }
-    return "".join(replacements.get(ch, ch) for ch in text)
-
-
-def _project_to_projone_line(project: dict[str, Any]) -> str:
-    name = _latex_escape_text(project.get("name") or "Selected project")
-    desc = _latex_escape_text(project.get("description") or "")
-    bullets = [_latex_escape_text(item) for item in (project.get("bullet_points") or []) if str(item).strip()]
-    tech = [_latex_escape_text(item) for item in (project.get("technologies") or []) if str(item).strip()]
-    pieces: list[str] = []
-    if desc:
-        pieces.append(desc.rstrip(".") + ".")
-    pieces.extend(item.rstrip(".") + "." for item in bullets[:3])
-    if tech:
-        pieces.append(r"\textit{Stack: " + ", ".join(tech[:8]) + ".}")
-    body = " ".join(pieces) or "Relevant data/AI project selected from the local profile."
-    return rf"\newcommand{{\projone}}{{\cvitem{{\textbf{{{name}}}}}{{{body}}}}}"
-
-
-def _sync_project_into_draft(config: AppConfig, project: dict[str, Any]) -> tuple[bool, str, str]:
-    text, _, _ = _active_cv_text(config)
-    if not text:
-        return False, "", "no_cv_source"
-    line = _project_to_projone_line(project)
-    # Remove any previous fallback line we may have injected before the
-    # document. The real template defines \projone inside language branches.
-    text = re.sub(r"(?m)^\\newcommand\{\\projone\}\{.*\}\n?", "", text)
-    pattern = re.compile(r"(?m)^(\s*)\\newcommand\{\\projone\}\{.*\}$")
-    rewritten, count = pattern.subn(lambda match: match.group(1) + line, text)
-    if count == 0:
-        marker = r"\begin{document}"
-        if marker in text:
-            rewritten = text.replace(marker, line + "\n" + marker, 1)
-            count = 1
-        else:
-            return False, text, "projone_not_found"
-    _write_draft(config, rewritten)
-    return True, rewritten, f"updated_{count}_projone_command"
-
-
-def import_github_project(config: AppConfig, project_name: str) -> dict[str, Any]:
-    """Inject one of the enriched GitHub projects into the CV's ``\\projone``."""
-    try:
-        root = _profiles_root(config)
-    except ValueError as exc:
-        return {"ok": False, "reason": str(exc)}
-    import json
-    master_cv_path = root / "master_cv.json"
-    if not master_cv_path.exists():
-        return {"ok": False, "reason": "no_master_cv"}
-    try:
-        master = json.loads(master_cv_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        return {"ok": False, "reason": f"bad_json: {exc}"}
-    project_lookup = {p.get("name", "").casefold(): p for p in master.get("projects", []) if isinstance(p, dict)}
-    project = project_lookup.get((project_name or "").casefold())
-    if not project:
-        return {"ok": False, "reason": "project_not_found"}
-    main_tex = root / "main.tex"
-    if not main_tex.exists():
-        return {"ok": False, "reason": "no_main_tex"}
-    # We don't rewrite main.tex content here — the LaTeX renderer already
-    # picks the top 3 ranked projects per job. Instead we ensure the project
-    # is at the *top* of master_cv.json so the renderer prefers it.
-    others = [p for p in master.get("projects", []) if p is not project]
-    master["projects"] = [project] + others
-    master_cv_path.write_text(json.dumps(master, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    synced, text, sync_note = _sync_project_into_draft(config, project)
-    return {
-        "ok": True,
-        "promoted": project.get("name"),
-        "text": text if synced else "",
-        "draft_updated": synced,
-        "note": sync_note,
-    }
-
-
-def save_project(config: AppConfig, project: dict[str, Any], *, promote: bool = True) -> dict[str, Any]:
-    """Add or update a project in ``master_cv.json``.
-
-    This is intentionally local-profile only. It lets CV Studio capture work
-    that lives in a team repository or external repo where the GitHub API will
-    not list the project under the user's own account.
-    """
-    try:
-        root = _profiles_root(config)
-    except ValueError as exc:
-        return {"ok": False, "reason": str(exc)}
-    master_cv_path = root / "master_cv.json"
-    if not master_cv_path.exists():
-        return {"ok": False, "reason": "no_master_cv"}
-    try:
-        master = json.loads(master_cv_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        return {"ok": False, "reason": f"bad_json: {exc}"}
-
-    name = str(project.get("name") or "").strip()
-    if not name:
-        return {"ok": False, "reason": "name_required"}
-    technologies = project.get("technologies") or []
-    bullet_points = project.get("bullet_points") or []
-    clean_project = {
-        "name": name[:100],
-        "description": str(project.get("description") or "").strip()[:500],
-        "url": str(project.get("url") or "").strip()[:300],
-        "technologies": [str(item).strip()[:60] for item in technologies if str(item).strip()][:16],
-        "bullet_points": [str(item).strip()[:240] for item in bullet_points if str(item).strip()][:6],
-    }
-
-    projects = [p for p in master.get("projects", []) if isinstance(p, dict)]
-    existing_index = next((idx for idx, p in enumerate(projects) if str(p.get("name") or "").casefold() == name.casefold()), None)
-    if existing_index is None:
-        projects.insert(0 if promote else len(projects), clean_project)
-        action = "added"
-    else:
-        projects[existing_index] = {**projects[existing_index], **clean_project}
-        if promote:
-            projects.insert(0, projects.pop(existing_index))
-        action = "updated"
-    master["projects"] = projects
-    backup = master_cv_path.with_suffix(".json.bak")
-    try:
-        shutil.copyfile(master_cv_path, backup)
-    except Exception:
-        pass
-    master_cv_path.write_text(json.dumps(master, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    synced = False
-    text = ""
-    sync_note = ""
-    if promote:
-        synced, text, sync_note = _sync_project_into_draft(config, clean_project)
-    return {
-        "ok": True,
-        "action": action,
-        "project": clean_project,
-        "text": text if synced else "",
-        "draft_updated": synced,
-        "note": sync_note,
-    }
 
 
 # -----------------------------------------------------------------------------
