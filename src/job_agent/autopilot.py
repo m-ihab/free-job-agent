@@ -32,10 +32,8 @@ from job_agent.intake.free_apis import (
     search_free_api_jobs,
 )
 from job_agent.intake.france_market import expand_france_search_queries, expand_role_family
-from job_agent.intake.france_travail_auth import france_travail_token
 from job_agent.notifier import notify_packet_ready
 from job_agent.pipeline import add_job_to_tracker, generate_packet_for_job
-from job_agent.schemas.job import JobStatus
 from job_agent.tracker import ApplicationTracker
 from job_agent.validators import load_profile_bundle
 
@@ -240,7 +238,7 @@ class Autopilot:
     def _run_cycle(self) -> dict[str, Any]:
         db = Database(self.config.db_path)  # type: ignore[arg-type]
         db.initialize()
-        tracker = ApplicationTracker(db)
+        tracker = ApplicationTracker(db)  # noqa: F841  (constructed for its DB side effect; the autopilot tests patch this seam)
         added: list[str] = []
         packets: list[str] = []
         errors: list[str] = []

@@ -1,4 +1,3 @@
-/* global FileReader */
 const state = {
   profile: null,
   statuses: [],
@@ -24,6 +23,10 @@ async function api(path, body = null, method = body ? "POST" : "GET", timeoutMs 
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   const options = { method, headers: {}, signal: controller.signal };
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+  if (csrfToken) {
+    options.headers["X-Job-Agent-Token"] = csrfToken;
+  }
   if (body) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
@@ -1291,6 +1294,7 @@ function activateTab(name) {
   if (name === "autopilot") {
     loadAutopilot();
     loadAiSetup();
+    loadNeedsManual();
   }
   if (name === "studio") {
     loadStudio();
@@ -1539,52 +1543,6 @@ async function loadStudioAssets() {
   }
 }
 
-async function openStudioAsset(name) {
-  if (!name) return;
-  state.studioActiveAsset = name;
-  const status = document.getElementById("studioAssetActive");
-  if (status) status.textContent = `Editing ${name}`;
-  try {
-    const data = await api(`/api/cv-studio/asset?name=${encodeURIComponent(name)}`);
-    if (!data.ok) {
-      toast(`Could not open ${name}: ${data.reason}`);
-      return;
-    }
-    if (data.kind === "text") {
-      const textarea = document.getElementById("studioTextarea");
-      if (textarea) {
-        textarea.value = data.text || "";
-        textarea.dataset.dirty = "1";
-      }
-      toast(`Loaded ${name} into the editor.`);
-    } else {
-      toast(`${name} is an image — use the photo panel to replace.`);
-    }
-  } catch (error) {
-    toast(error.message);
-  }
-}
-
-async function saveStudioAsset() {
-  const name = state.studioActiveAsset;
-  if (!name) {
-    toast("Open an asset from the list first.");
-    return;
-  }
-  const textarea = document.getElementById("studioTextarea");
-  try {
-    const result = await api("/api/cv-studio/asset-save", { name, text: textarea ? textarea.value : "" });
-    if (result.ok) {
-      toast(`Saved ${name}.`);
-      if (textarea) delete textarea.dataset.dirty;
-    } else {
-      toast(`Could not save: ${result.reason}`);
-    }
-  } catch (error) {
-    toast(error.message);
-  }
-}
-
 async function uploadStudioPhoto() {
   const input = document.getElementById("studioPhotoInput");
   const notice = document.getElementById("studioPhotoNotice");
@@ -1621,24 +1579,6 @@ async function removeStudioPhoto() {
   loadStudioAssets();
 }
 
-async function applyIconPack() {
-  const select = document.getElementById("studioIconPack");
-  const notice = document.getElementById("studioIconPackNotice");
-  if (!select) return;
-  try {
-    const result = await api("/api/cv-studio/icon-pack", { pack: select.value });
-    if (result.ok) {
-      if (notice) notice.textContent = `Applied ${result.label}. Recompile to preview.`;
-      toast(`Icon pack updated.`);
-      await loadStudio();
-    } else {
-      if (notice) notice.textContent = `Failed: ${result.reason}`;
-    }
-  } catch (error) {
-    if (notice) notice.textContent = error.message;
-  }
-}
-
 async function loadStudioGithubProjects() {
   try {
     const data = await api(`/api/cv-studio/asset?name=master_cv.json`);
@@ -1650,26 +1590,6 @@ async function loadStudioGithubProjects() {
     if (!select) return;
     select.innerHTML = '<option value="">— select a project —</option>' + projects.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
   } catch {}
-}
-
-async function importGithubProject() {
-  const select = document.getElementById("studioGithubProjectSelect");
-  const notice = document.getElementById("studioGithubNotice");
-  if (!select || !select.value) {
-    if (notice) notice.textContent = "Pick a project first.";
-    return;
-  }
-  try {
-    const result = await api("/api/cv-studio/import-github-project", { name: select.value });
-    if (result.ok) {
-      if (notice) notice.textContent = `Promoted "${result.promoted}" to top of projects. Tailor a CV to see it.`;
-      toast("Project promoted.");
-    } else {
-      if (notice) notice.textContent = `Failed: ${result.reason}`;
-    }
-  } catch (error) {
-    if (notice) notice.textContent = error.message;
-  }
 }
 
 async function checkSinglePage() {
@@ -2886,6 +2806,8 @@ function bindEvents() {
     renderState();
   });
   $("insightsRefreshBtn").addEventListener("click", loadInsights);
+  const needsManualRefreshBtn = document.getElementById("needsManualRefreshBtn");
+  if (needsManualRefreshBtn) needsManualRefreshBtn.addEventListener("click", loadNeedsManual);
   $("statusFilter").addEventListener("change", loadJobs);
   $("jobsSearchInput").addEventListener("input", renderJobs);
   $("jobsSortSelect").addEventListener("change", renderJobs);
@@ -3236,6 +3158,11 @@ function bindEvents() {
       updateJobStatus(statusTarget.dataset.job, statusTarget.dataset.status, statusTarget);
       return;
     }
+    const needsManualDone = event.target.closest("[data-action='needs-manual-done']");
+    if (needsManualDone) {
+      markNeedsManualDone(needsManualDone.dataset.job, needsManualDone);
+      return;
+    }
     const deleteTarget = event.target.closest("[data-action='delete-job']");
     if (deleteTarget) {
       deleteJob(deleteTarget.dataset.job, deleteTarget);
@@ -3336,6 +3263,11 @@ function subscribeAutoApplySse() {
     appendApplyLog(data.message || "", kind);
     if (kind === "pending_confirm") showConfirmModal(data);
     if (kind === "pre_submit") showPreSubmitToast(data);
+    if (kind === "needs_manual") {
+      const reason = (data.data && data.data.reason) || "needs manual apply";
+      toast(`Queued for manual apply (${reason}). Auto-apply continues.`);
+      loadNeedsManual();
+    }
     if (kind === "result") { hideConfirmModal(); hidePreSubmitToast(); }
     if (kind === "done" || kind === "error") {
       closeAutoApplySse();
@@ -3350,6 +3282,63 @@ function closeAutoApplySse() {
   if (autoApplyState.stream) {
     try { autoApplyState.stream.close(); } catch {}
     autoApplyState.stream = null;
+  }
+}
+
+// ── Needs-manual queue ───────────────────────────────────────────────────────
+// Full-auto hands a job off here when it detects a CAPTCHA/login/anti-bot wall.
+// The prepared draft is saved; the user opens the listing and finishes by hand.
+async function loadNeedsManual() {
+  const wrap = $("needsManualList");
+  if (!wrap) return;
+  try {
+    const data = await api("/api/needs-manual");
+    renderNeedsManual(data.jobs || []);
+  } catch (error) {
+    wrap.innerHTML = `<div class="notice error">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderNeedsManual(jobs) {
+  const wrap = $("needsManualList");
+  if (!wrap) return;
+  if (!jobs.length) {
+    wrap.innerHTML = `<div class="notice">Nothing waiting. Jobs only land here when full-auto hits a human-presence wall.</div>`;
+    return;
+  }
+  wrap.innerHTML = jobs
+    .map((job) => {
+      const reason = escapeHtml(job.needs_manual_reason || "human-presence wall");
+      const listing = job.apply_url ? `<a href="${escapeHtml(job.apply_url)}" target="_blank" rel="noreferrer">Open listing</a>` : "";
+      const assistant = job.assistant_page ? `<a href="${fileHref(job.assistant_page)}" target="_blank">Assistant</a>` : "";
+      const cv = job.cv_pdf ? `<a href="${fileHref(job.cv_pdf)}" target="_blank">CV draft</a>` : "";
+      const letter = job.cover_letter_pdf ? `<a href="${fileHref(job.cover_letter_pdf)}" target="_blank">Letter draft</a>` : "";
+      return `<div style="padding:0.6rem 0;border-top:1px solid var(--border,#2a2a2a);display:flex;justify-content:space-between;gap:0.8rem;flex-wrap:wrap;align-items:flex-start">
+        <div style="min-width:14rem;flex:1">
+          <strong>${escapeHtml(job.title)}</strong> <span class="row-tag warn" title="Why full-auto handed this off">${reason}</span><br>
+          ${companyLine(job)} <span class="muted">${escapeHtml(job.location || "")}</span>
+        </div>
+        <div class="row-actions">
+          ${listing}${assistant}${cv}${letter}
+          <button data-action="needs-manual-done" data-job="${escapeHtml(job.id)}" title="Mark as manually submitted and clear from this queue">Mark done</button>
+        </div>
+      </div>`;
+    })
+    .join("");
+}
+
+async function markNeedsManualDone(jobId, button) {
+  setBusy(button, true);
+  try {
+    await api("/api/status", { job_id: jobId, status: "MANUALLY_SUBMITTED", note: "Completed from needs-manual queue" });
+    toast("Marked as submitted.");
+    await loadNeedsManual();
+    await loadJobs();
+    renderState();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    setBusy(button, false);
   }
 }
 
@@ -3517,7 +3506,7 @@ function bindAutoApplyEvents() {
     closeAutoApplySse();
     hideConfirmModal();
     hidePreSubmitToast();
-    try { await api("/api/auto-apply/cancel", {}); } catch {}
+    try { await api("/api/auto-apply/cancel", {}); } catch (err) { toast(`Could not reach server to cancel: ${err.message}`); }
     appendApplyLog("Session cancelled.", "error");
     setBusy($("autoApplyNowBtn"), false);
   });
@@ -3525,21 +3514,21 @@ function bindAutoApplyEvents() {
   const submitBtn = $("applyConfirmSubmitBtn");
   if (submitBtn) submitBtn.addEventListener("click", async () => {
     hideConfirmModal();
-    try { await api("/api/auto-apply/confirm", {}); } catch {}
+    try { await api("/api/auto-apply/confirm", {}); } catch (err) { toast(`Confirm failed: ${err.message}`); }
     appendApplyLog("Confirmed — submitting…", "progress");
   });
 
   const skipBtn = $("applyConfirmSkipBtn");
   if (skipBtn) skipBtn.addEventListener("click", async () => {
     hideConfirmModal();
-    try { await api("/api/auto-apply/skip", {}); } catch {}
+    try { await api("/api/auto-apply/skip", {}); } catch (err) { toast(`Skip failed: ${err.message}`); }
     appendApplyLog("Skipped.", "result");
   });
 
   const preSubmitCancel = $("preSubmitCancelBtn");
   if (preSubmitCancel) preSubmitCancel.addEventListener("click", async () => {
     hidePreSubmitToast();
-    try { await api("/api/auto-apply/skip", {}); } catch {}
+    try { await api("/api/auto-apply/skip", {}); } catch (err) { toast(`Cancel failed: ${err.message}`); }
     appendApplyLog("Full-auto submission cancelled.", "result");
   });
 

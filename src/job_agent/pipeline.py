@@ -1,14 +1,12 @@
 """End-to-end orchestration helpers used by the CLI."""
 from __future__ import annotations
 
-import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from job_agent.ai_agent import (
     analyze_fit,
     classify_job,
-    draft_cover_letter_body,
     summarize_job,
 )
 from job_agent.config import AppConfig
@@ -37,7 +35,7 @@ from job_agent.renderer.latex_render import (
     render_latex_source,
 )
 from job_agent.renderer.pdf_render import render_pdf
-from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile
+from job_agent.schemas.candidate import CandidateProfile
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.schemas.packet import ApplicationPacket, DocumentArtifact, PacketStatus
 from job_agent.scorer import score_job
@@ -396,7 +394,7 @@ def generate_packet_for_job(
         # click "Regenerate PDF" in the dashboard to get the full LaTeX version.
         render_pdf(cv_md, cv_pdf_path, title="Tailored CV")
         cv_pdf_artifact = DocumentArtifact(kind="cv_pdf", path=str(cv_pdf_path), sha256=sha256_file(cv_pdf_path))
-        latex_warning = (
+        latex_warning: str | None = (
             "Fast-mode PDF: generated with reportlab (not LaTeX). "
             "Open the packet and click 'Regenerate PDF' for the full LaTeX-compiled version."
         )

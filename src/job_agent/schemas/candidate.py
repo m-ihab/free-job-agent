@@ -11,7 +11,12 @@ from uuid import uuid4
 try:
     from pydantic.v1 import BaseModel, Field, root_validator, validator
 except Exception:  # pragma: no cover
-    from pydantic import BaseModel, Field, root_validator, validator
+    from pydantic import (  # type: ignore[assignment,no-redef]
+        BaseModel,
+        Field,
+        root_validator,
+        validator,
+    )
 
 
 class _Base(BaseModel):

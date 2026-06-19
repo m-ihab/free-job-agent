@@ -131,9 +131,9 @@ def _normalize_skill(raw: str) -> str:
 def _is_blocked_skill(label: str) -> bool:
     return label.casefold() in _BLOCKED_GAP_TERMS
 
-from job_agent.config import AppConfig
-from job_agent.db.database import Database
-from job_agent.validators import load_profile_bundle
+from job_agent.config import AppConfig  # noqa: E402  (intentional: after module helpers to avoid an import cycle)
+from job_agent.db.database import Database  # noqa: E402
+from job_agent.validators import load_profile_bundle  # noqa: E402
 
 
 try:
@@ -144,10 +144,10 @@ try:
     )
     from job_agent.polish import PolishOptions
 except Exception:  # pragma: no cover
-    _ai_candidate_summary = None
-    _ai_call_json = None
-    _ai_is_available = None
-    PolishOptions = None
+    _ai_candidate_summary = None  # type: ignore[assignment]
+    _ai_call_json = None  # type: ignore[assignment]
+    _ai_is_available = None  # type: ignore[assignment]
+    PolishOptions = None  # type: ignore[assignment,misc]
 
 
 _COACH_PROMPT = """You are a career coach for a Paris-based data/AI candidate.
@@ -673,7 +673,12 @@ def _interview_prep(profile, master_cv, gaps: list[dict]) -> dict[str, Any]:
     Heuristic role pick: choose the role family the user most often targets
     based on the candidate target_roles. Fall back to data_science.
     """
-    target_text = " ".join((getattr(profile, "target_roles", None) or []) + [profile.summary or ""]).casefold()
+    # profile / master_cv are None on a fresh install with no profile bundle —
+    # the plan is still useful (market gaps, generic questions), so degrade
+    # gracefully instead of crashing.
+    target_text = " ".join(
+        list(getattr(profile, "target_roles", None) or []) + [getattr(profile, "summary", None) or ""]
+    ).casefold()
     role = "data_science"
     if "data engineer" in target_text or "data engineering" in target_text:
         role = "data_engineering"
@@ -691,7 +696,11 @@ def _interview_prep(profile, master_cv, gaps: list[dict]) -> dict[str, Any]:
         "Describe a time you disagreed with a manager / professor. What did you do?",
         "Decrivez vous brièvement en français.",
     ])
-    scaffolds = _star_scaffold(master_cv.experience or [], master_cv.projects or [], target_text)
+    scaffolds = _star_scaffold(
+        getattr(master_cv, "experience", None) or [],
+        getattr(master_cv, "projects", None) or [],
+        target_text,
+    )
     return {
         "primary_role": role,
         "questions": questions[:10],

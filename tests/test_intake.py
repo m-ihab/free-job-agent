@@ -1,5 +1,4 @@
 """Tests for intake modules."""
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -49,7 +48,7 @@ def test_ingest_url_mock():
     mock_response.text = "<html><body><h1>Python Dev</h1><p>Join us!</p></body></html>"
     mock_response.raise_for_status = MagicMock()
 
-    with patch("job_agent.intake.url.requests.get", return_value=mock_response):
+    with patch("job_agent.intake.url.safe_get", return_value=mock_response):
         job = ingest_url("https://example.com/job/123")
 
     assert job.source == "url"
@@ -63,7 +62,7 @@ def test_ingest_url_raises_on_http_error():
     mock_response = MagicMock()
     mock_response.raise_for_status.side_effect = req.HTTPError("404")
 
-    with patch("job_agent.intake.url.requests.get", return_value=mock_response):
+    with patch("job_agent.intake.url.safe_get", return_value=mock_response):
         with pytest.raises(req.HTTPError):
             ingest_url("https://example.com/bad-url")
 

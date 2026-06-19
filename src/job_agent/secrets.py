@@ -1,10 +1,12 @@
 """Local-only environment loading for API credentials."""
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Iterable
 
+logger = logging.getLogger(__name__)
 
 _ENV_LOADED = False
 
@@ -32,7 +34,8 @@ def load_env_file(path: Path, *, override: bool = False) -> bool:
         return False
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
-    except Exception:
+    except OSError as exc:
+        logger.warning("Could not read env file %s: %s", path, exc)
         return False
     for line in lines:
         parsed = _parse_env_line(line)

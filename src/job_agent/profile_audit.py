@@ -10,9 +10,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 
-from job_agent.schemas.candidate import CandidateProfile, MasterCV
+from job_agent.schemas.candidate import CandidateProfile, Education, MasterCV
 from job_agent.schemas.job import JobListing
 from job_agent.skill_extractor import extract_implied_skills, mine_job_keywords, suggest_trend_gaps
 
@@ -39,10 +38,10 @@ class ProfileAuditReport:
 
     def to_markdown(self) -> str:
         lines: list[str] = [
-            f"# Profile Audit Report",
-            f"",
+            "# Profile Audit Report",
+            "",
             f"**Strength Score**: {self.strength_score}/100  |  **Grade**: {self.grade}",
-            f"",
+            "",
         ]
         if self.strengths:
             lines += ["## Strengths", ""]
@@ -62,11 +61,11 @@ class ProfileAuditReport:
                 lines += [
                     f"### {issue.title}",
                     f"**Category**: {issue.category}",
-                    f"",
+                    "",
                     issue.detail,
-                    f"",
+                    "",
                     f"**Fix**: {issue.fix}",
-                    f"",
+                    "",
                 ]
 
         if self.implied_skills:
@@ -100,8 +99,8 @@ class ProfileAuditReport:
 
 def _check_language(profile: CandidateProfile) -> list[AuditIssue]:
     issues: list[AuditIssue] = []
-    langs_lower = [l.lower() for l in (profile.languages or [])]
-    has_french = any("french" in l or "français" in l for l in langs_lower)
+    langs_lower = [lang.lower() for lang in (profile.languages or [])]
+    has_french = any("french" in lang or "français" in lang for lang in langs_lower)
     levels = getattr(profile, "language_levels", {}) or {}
     french_level = (levels.get("French") or levels.get("french") or "").upper()
 
@@ -294,7 +293,7 @@ def audit_profile(
     if len(profile.skills or []) >= 20:
         strengths.append("Strong skills breadth — 20+ skills listed")
     if master_cv.education:
-        edu = master_cv.education[0] if master_cv.education else {}
+        edu: Education | dict = master_cv.education[0] if master_cv.education else {}
         school = edu.get("institution", "") if isinstance(edu, dict) else getattr(edu, "institution", "")
         if "dsti" in school.lower() or "engineering" in school.lower():
             strengths.append("MSc at DSTI Paris — well-regarded for DS/AI in France")

@@ -1,7 +1,6 @@
 """Tests for the language and work authorization scoring additions to scorer.py."""
 from __future__ import annotations
 
-import pytest
 
 from job_agent.schemas.candidate import CandidateProfile, ContactInfo, Skill
 from job_agent.schemas.job import JobListing

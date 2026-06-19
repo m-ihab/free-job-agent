@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from job_agent.timeutil import utc_now
 
@@ -56,15 +56,20 @@ SECTION_HEADERS = {
 }
 
 
+# Pre-compile one word-boundary pattern per tech keyword so normalization does
+# not rebuild 40+ regexes on every call (this runs once per job).
+_TECH_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (tech, re.compile(r"(?<![\w+#.-])" + re.escape(tech.lower()) + r"(?![\w+#.-])"))
+    for tech in TECH_KEYWORDS
+)
+_TECH_ALIASES = {"golang": "go", "postgres": "postgresql", "sklearn": "scikit-learn", "k8s": "kubernetes"}
+
+
 def _extract_tech_stack(text: str) -> list[str]:
     text_lower = text.lower()
-    found = []
-    for tech in TECH_KEYWORDS:
-        if re.search(r"(?<![\w+#.-])" + re.escape(tech.lower()) + r"(?![\w+#.-])", text_lower):
-            found.append(tech)
+    found = [tech for tech, pattern in _TECH_PATTERNS if pattern.search(text_lower)]
     # Normalize common aliases.
-    aliases = {"golang": "go", "postgres": "postgresql", "sklearn": "scikit-learn", "k8s": "kubernetes"}
-    normalized = [aliases.get(t, t) for t in found]
+    normalized = [_TECH_ALIASES.get(t, t) for t in found]
     return sorted(set(normalized), key=str.lower)
 
 
@@ -75,7 +80,7 @@ def _parse_salary_num(value: str) -> int:
     return int(re.sub(r"[^\d]", "", value))
 
 
-def _extract_salary(text: str) -> tuple[Optional[int], Optional[int]]:
+def _extract_salary(text: str) -> tuple[int | None, int | None]:
     for match in SALARY_RE.finditer(text):
         a = match.group("a")
         if not a:
@@ -114,7 +119,7 @@ def _is_remote(text: str) -> bool:
     return any(kw in lower for kw in REMOTE_KEYWORDS)
 
 
-def _work_mode(text: str) -> Optional[str]:
+def _work_mode(text: str) -> str | None:
     lower = text.lower()
     if any(kw in lower for kw in REMOTE_KEYWORDS):
         return "remote"
@@ -125,7 +130,7 @@ def _work_mode(text: str) -> Optional[str]:
     return None
 
 
-def _seniority(text: str) -> Optional[str]:
+def _seniority(text: str) -> str | None:
     lower = text.lower()
     for label, keywords in SENIORITY_KEYWORDS.items():
         if any(kw in lower for kw in keywords):
@@ -161,14 +166,14 @@ def _extract_lines_after_header(text: str, headers: list[str]) -> list[str]:
     return results[:20]
 
 
-def _extract_location(text: str) -> Optional[str]:
+def _extract_location(text: str) -> str | None:
     match = re.search(r"(?:Location|Lieu)\s*[:\-]\s*([^\n]{2,100})", text, flags=re.IGNORECASE)
     if match:
         return match.group(1).strip(" .")
     return None
 
 
-def _guess_title(text: str) -> Optional[str]:
+def _guess_title(text: str) -> str | None:
     for line in text.splitlines():
         clean = line.strip(" #\t")
         if clean and 4 <= len(clean) <= 120 and not clean.lower().startswith(("about ", "we are ")):

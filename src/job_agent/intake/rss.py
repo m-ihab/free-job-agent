@@ -5,10 +5,9 @@ from typing import Optional
 from types import SimpleNamespace
 from xml.etree import ElementTree as ET
 
-import requests
-
 from job_agent.schemas.job import JobListing
 from job_agent.utils.html import strip_html
+from job_agent.utils.net import safe_get
 
 try:  # pragma: no cover - optional dependency
     import feedparser  # type: ignore
@@ -21,7 +20,7 @@ def _strip_html(html: str) -> str:
 
 
 def _ingest_rss_fallback(feed_url: str, limit: Optional[int] = None) -> list[JobListing]:
-    resp = requests.get(feed_url, timeout=20)
+    resp = safe_get(feed_url, timeout=20)
     resp.raise_for_status()
     root = ET.fromstring(resp.content)
     items = root.findall(".//item") or root.findall(".//{http://www.w3.org/2005/Atom}entry")
@@ -29,7 +28,12 @@ def _ingest_rss_fallback(feed_url: str, limit: Optional[int] = None) -> list[Job
     for item in items[:limit] if limit else items:
         def find_text(names: list[str]) -> str:
             for name in names:
-                node = item.find(name) or item.find(f"{{http://www.w3.org/2005/Atom}}{name}")
+                # An ElementTree Element with no children is falsy, so `a or b`
+                # would skip the Atom-namespaced fallback even when `a` matched
+                # a text-only element. Use explicit None checks.
+                node = item.find(name)
+                if node is None:
+                    node = item.find(f"{{http://www.w3.org/2005/Atom}}{name}")
                 if node is not None and node.text:
                     return node.text
             return ""

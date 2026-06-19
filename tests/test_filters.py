@@ -1,7 +1,6 @@
 """Tests for the filters module."""
-import pytest
 
-from job_agent.filters import FilterConfig, FilterResult, apply_filters
+from job_agent.filters import FilterConfig, apply_filters
 from job_agent.schemas.job import JobListing
 
 

@@ -1,7 +1,7 @@
 """Tests for the scorer module."""
 from job_agent.schemas.candidate import CandidateProfile
 from job_agent.schemas.job import JobListing
-from job_agent.scorer import ScoreBreakdown, score_job
+from job_agent.scorer import score_job
 
 
 def test_score_breakdown_fields(sample_job, sample_profile):

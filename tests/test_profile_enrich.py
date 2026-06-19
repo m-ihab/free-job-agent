@@ -1,9 +1,7 @@
 """TDD: GitHub and LinkedIn profile enrichment."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 from job_agent.profile_enrich import (
     GithubSnapshot,

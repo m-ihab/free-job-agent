@@ -8,7 +8,7 @@ from uuid import uuid4
 try:
     from pydantic.v1 import BaseModel, Field
 except Exception:  # pragma: no cover
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, Field  # type: ignore[assignment]
 
 from job_agent.timeutil import utc_now
 

@@ -34,7 +34,7 @@ def _backup(path: Path) -> Path | None:
 
 def import_cv_template_upload(config: AppConfig, *, filename: str, content_base64: str) -> dict:
     """Import an uploaded template into the local profiles directory."""
-    profiles_dir = Path(config.profiles_dir)
+    profiles_dir = Path(config.profiles_dir)  # type: ignore[arg-type]  # always set by AppConfig
     profiles_dir.mkdir(parents=True, exist_ok=True)
     safe_name = _safe_filename(filename)
     ext = Path(safe_name).suffix.casefold()

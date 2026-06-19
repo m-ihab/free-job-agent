@@ -5,8 +5,8 @@ based on all jobs you've tracked, so you can adjust your profile and targeting.
 """
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from collections import Counter
+from dataclasses import dataclass
 
 from job_agent.schemas.job import JobListing
 
@@ -35,7 +35,6 @@ class MarketReport:
         ]
         for skill, count in self.top_skills[:15]:
             pct = round(count / max(self.total_jobs, 1) * 100)
-            bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
             lines.append(f"- **{skill}** — {count} jobs ({pct}%)")
         lines.append("")
 
@@ -116,7 +115,7 @@ def build_market_report(
         if job.remote:
             remote_count += 1
 
-        if "french" in [l.lower() for l in (job.languages or [])]:
+        if "french" in [lang.lower() for lang in (job.languages or [])]:
             french_required_count += 1
 
         if job.company:

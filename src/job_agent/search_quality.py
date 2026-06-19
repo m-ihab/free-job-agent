@@ -113,6 +113,27 @@ NON_EU_LOCATION_PATTERNS = (
 )
 
 
+# Pre-compiled mirrors of the pattern tuples above. The string definitions are
+# kept as the readable source of truth; these compiled versions avoid
+# re-parsing the same patterns on every per-job call in the hot search path.
+_ROLE_PATTERNS_C: dict[str, tuple[re.Pattern[str], ...]] = {
+    family: tuple(re.compile(p, re.IGNORECASE) for p in patterns)
+    for family, patterns in ROLE_PATTERNS.items()
+}
+_GENERIC_DATA_SIGNALS_C: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(p, re.IGNORECASE) for p in GENERIC_DATA_SIGNALS
+)
+_OFF_TOPIC_PATTERNS_C: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(p, re.IGNORECASE) for p in OFF_TOPIC_PATTERNS
+)
+_BARRIER_PATTERNS_C: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(p, re.IGNORECASE) for p in BARRIER_PATTERNS
+)
+_NON_EU_LOCATION_PATTERNS_C: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(p, re.IGNORECASE) for p in NON_EU_LOCATION_PATTERNS
+)
+
+
 def _text(job: JobListing, *, include_description: bool = True) -> str:
     parts = [
         job.title,
@@ -126,17 +147,17 @@ def _text(job: JobListing, *, include_description: bool = True) -> str:
     return "\n".join(str(part or "") for part in parts).casefold()
 
 
-def _matches(patterns: tuple[str, ...], text: str) -> list[str]:
-    return [pattern for pattern in patterns if re.search(pattern, text, flags=re.IGNORECASE)]
+def _matches(patterns: tuple[re.Pattern[str], ...], text: str) -> list[re.Pattern[str]]:
+    return [pattern for pattern in patterns if pattern.search(text)]
 
 
 def detect_role_family(job: JobListing) -> str:
     title_text = (job.title or "").casefold()
     full_text = _text(job)
-    for family, patterns in ROLE_PATTERNS.items():
+    for family, patterns in _ROLE_PATTERNS_C.items():
         if _matches(patterns, title_text):
             return family
-    for family, patterns in ROLE_PATTERNS.items():
+    for family, patterns in _ROLE_PATTERNS_C.items():
         if _matches(patterns, full_text):
             return family
     return ""
@@ -159,7 +180,7 @@ def is_france_or_eu_location(job: JobListing) -> bool:
     location = (job.location or "").casefold()
     if not location:
         return True
-    return not any(re.search(pattern, location, flags=re.IGNORECASE) for pattern in NON_EU_LOCATION_PATTERNS)
+    return not any(pattern.search(location) for pattern in _NON_EU_LOCATION_PATTERNS_C)
 
 
 def assess_search_quality(job: JobListing, *, query: str = "", location: str = "") -> dict[str, Any]:
@@ -172,9 +193,9 @@ def assess_search_quality(job: JobListing, *, query: str = "", location: str = "
     score = 0
 
     if family:
-        score += 55 if _matches(ROLE_PATTERNS[family], title_text) else 35
+        score += 55 if _matches(_ROLE_PATTERNS_C[family], title_text) else 35
     else:
-        generic_hits = sum(1 for pattern in GENERIC_DATA_SIGNALS if re.search(pattern, full_text, flags=re.IGNORECASE))
+        generic_hits = sum(1 for pattern in _GENERIC_DATA_SIGNALS_C if pattern.search(full_text))
         if re.search(r"\bdata\b", title_text) and generic_hits:
             score += 30
         elif re.search(r"\bdata\b", title_text):
@@ -186,7 +207,7 @@ def assess_search_quality(job: JobListing, *, query: str = "", location: str = "
     elif contract == "cdi":
         score += 5
 
-    generic_hits = sum(1 for pattern in GENERIC_DATA_SIGNALS if re.search(pattern, full_text, flags=re.IGNORECASE))
+    generic_hits = sum(1 for pattern in _GENERIC_DATA_SIGNALS_C if pattern.search(full_text))
     score += min(20, generic_hits * 4)
 
     if job.remote or is_france_or_eu_location(job):
@@ -198,12 +219,12 @@ def assess_search_quality(job: JobListing, *, query: str = "", location: str = "
     if location and location.casefold() in {"paris", "ile-de-france", "idf", "france"} and not is_france_or_eu_location(job):
         score -= 25
 
-    off_topic = _matches(OFF_TOPIC_PATTERNS, title_text)
+    off_topic = _matches(_OFF_TOPIC_PATTERNS_C, title_text)
     if off_topic:
         score -= 45
         flags.append("off-topic-title")
 
-    barriers = _matches(BARRIER_PATTERNS, full_text)
+    barriers = _matches(_BARRIER_PATTERNS_C, full_text)
     if barriers:
         score -= 20
         flags.append("seniority-or-degree-barrier")
@@ -212,8 +233,8 @@ def assess_search_quality(job: JobListing, *, query: str = "", location: str = "
     if query_text:
         query_family_hits = [
             family_name
-            for family_name, patterns in ROLE_PATTERNS.items()
-            if any(re.search(pattern, query_text, flags=re.IGNORECASE) for pattern in patterns)
+            for family_name, patterns in _ROLE_PATTERNS_C.items()
+            if any(pattern.search(query_text) for pattern in patterns)
         ]
         if query_family_hits and family and family not in query_family_hits:
             score -= 10

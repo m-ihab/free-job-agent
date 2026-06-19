@@ -66,6 +66,7 @@ test-results/
 .smoke_home/
 .smoke_job.txt
 UsersmihabDocumentstmppytest/
+.pytest_tmp/
 
 # Misc local files
 france_urls.json

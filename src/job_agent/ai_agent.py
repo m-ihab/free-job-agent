@@ -97,7 +97,7 @@ def _call_ollama_json(prompt: str, options: PolishOptions, *, task: str = "gener
     if requests is None:
         return None
     route = choose_route(task, prompt, options)
-    payload = {
+    payload: dict[str, Any] = {
         "model": route.model,
         "prompt": prompt,
         "stream": False,
@@ -519,7 +519,7 @@ def chat_about_job(job: JobListing, master_cv: MasterCV, profile: CandidateProfi
     if requests is None:
         return None
     route = choose_route("chat", prompt, options)
-    payload = {
+    payload: dict[str, Any] = {
         "model": route.model,
         "prompt": prompt,
         "stream": False,

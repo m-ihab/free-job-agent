@@ -1,8 +1,7 @@
 """Tests for the database layer."""
-import pytest
 
 from job_agent.schemas.job import JobListing, JobStatus
-from job_agent.schemas.packet import ApplicationPacket, PacketStatus
+from job_agent.schemas.packet import ApplicationPacket
 
 
 def test_initialize_creates_tables(tmp_db):
