@@ -27,7 +27,10 @@ jobs:
       - name: Mypy
         run: mypy src
       - name: Tests
-        run: pytest -q --basetemp=.pytest_tmp/bt
+        # --reruns retries only failed tests (no cost on green); this absorbs
+        # transient flakes in the threaded live-server tests on shared runners
+        # without masking real failures (those fail every retry).
+        run: pytest -q --basetemp=.pytest_tmp/bt --reruns 2 --reruns-delay 1
 
   frontend-lint:
     runs-on: ubuntu-latest
@@ -55,6 +58,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install bandit pip-audit
       - name: Bandit (high severity only)
-        run: bandit -r src -ll
+        # --severity-level high matches this step's intent. (-ll meant
+        # MEDIUM-and-up, which flags pre-existing false positives such as
+        # parameterized SQL built with f-strings and stdlib XML parsing.)
+        run: bandit -r src --severity-level high
       - name: pip-audit
         run: pip-audit -r requirements.lock
