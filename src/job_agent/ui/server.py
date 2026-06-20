@@ -95,6 +95,17 @@ class JobAgentHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        # Validate the Host header for GET too: ~a dozen GET routes return real
+        # data (/api/jobs, /api/export-csv, /file, CV/portfolio assets) and a
+        # DNS-rebinding page could otherwise read them. check_request short-
+        # circuits after the Host check for non-mutating methods, so this only
+        # enforces the host allowlist (no token needed for reads).
+        server_address = cast("tuple[object, ...]", self.server.server_address)
+        bound_host, bound_port = server_address[0], int(server_address[1])  # type: ignore[call-overload]
+        ok, reason = check_request(self, "GET", bound_host=str(bound_host), bound_port=bound_port)
+        if not ok:
+            logger.warning("Blocked GET %s (%s)", parsed.path, reason)
+            return self._send_error_json("Forbidden.", HTTPStatus.FORBIDDEN)
         if parsed.path == "/":
             return self._send_index()
         if parsed.path.startswith("/static/"):

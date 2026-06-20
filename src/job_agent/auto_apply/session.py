@@ -284,6 +284,15 @@ class AutoApplySession:
             submitted = _pkg._click_submit(page, ats)
             if submitted:
                 page.wait_for_timeout(3000)
+                # A CAPTCHA / login / anti-bot wall commonly appears *after* the
+                # submit click. In FULL_AUTO (no human watching) re-detect before
+                # recording success — if a wall is now present, or detection
+                # failed (fail-closed), hand off to the manual queue rather than
+                # falsely marking the job submitted.
+                if self.mode == ApplyMode.FULL_AUTO:
+                    wall_after, reason_after = _detect_human_wall(page)
+                    if wall_after:
+                        return self._queue_needs_manual(candidate, summary, reason_after)
                 self._mark_submitted(candidate)
                 return ApplyResult(job.id, packet.id, "submitted", f"Applied to {label}.")
             else:
@@ -374,21 +383,47 @@ class AutoApplySession:
         job = candidate.job
         packet = candidate.packet
         label = f"{job.title} @ {job.company}"
+        persisted = True
+        persist_error = ""
         try:
             self._mark_needs_manual(candidate, reason)
-        except Exception as exc:  # persistence must not abort the run
-            logger.warning("Could not mark %s needs_manual: %s", label, exc)
+        except Exception as exc:  # persistence must not abort the run...
+            # ...but it must not be reported as a clean hand-off either. The job
+            # would otherwise vanish: not submitted, and not in the manual queue.
+            # Keep going (never block) while surfacing the failure loudly.
+            persisted = False
+            persist_error = str(exc)
+            logger.error("Could not persist needs_manual for %s: %s", label, exc, exc_info=True)
+        if persisted:
+            self._emit(ApplyEvent(
+                "needs_manual",
+                job_id=job.id,
+                packet_id=packet.id,
+                message=f"{label} needs manual apply ({reason}). Draft saved; continuing.",
+                summary=summary,
+                data={"reason": reason},
+            ))
+            return ApplyResult(
+                job.id, packet.id, "needs_manual",
+                f"{label}: {reason} — draft queued for manual apply.",
+            )
+        # Persistence failed: emit an error event and return an error status so
+        # the dashboard shows the job needs attention rather than silently
+        # dropping it.
         self._emit(ApplyEvent(
-            "needs_manual",
+            "error",
             job_id=job.id,
             packet_id=packet.id,
-            message=f"{label} needs manual apply ({reason}). Draft saved; continuing.",
+            message=(
+                f"{label} hit a wall ({reason}) but the manual-queue write FAILED "
+                f"({persist_error}). Apply manually — it is NOT queued."
+            ),
             summary=summary,
-            data={"reason": reason},
+            data={"reason": reason, "persist_error": persist_error},
         ))
         return ApplyResult(
-            job.id, packet.id, "needs_manual",
-            f"{label}: {reason} — draft queued for manual apply.",
+            job.id, packet.id, "error",
+            f"{label}: {reason} — manual-queue write failed ({persist_error}). Not queued.",
         )
 
 

@@ -19,10 +19,13 @@ def _strip_html(html: str) -> str:
     return strip_html(html or "", separator="\n")
 
 
-def _ingest_rss_fallback(feed_url: str, limit: Optional[int] = None) -> list[JobListing]:
-    resp = safe_get(feed_url, timeout=20)
-    resp.raise_for_status()
-    root = ET.fromstring(resp.content)
+def _parse_rss_xml(content: bytes | str, limit: Optional[int] = None) -> list[JobListing]:
+    """Parse already-fetched feed bytes with the stdlib XML parser.
+
+    Takes pre-fetched content (never a URL) so it can never trigger a network
+    fetch of its own — the SSRF guard lives entirely in :func:`safe_get`.
+    """
+    root = ET.fromstring(content)
     items = root.findall(".//item") or root.findall(".//{http://www.w3.org/2005/Atom}entry")
     jobs: list[JobListing] = []
     for item in items[:limit] if limit else items:
@@ -49,11 +52,27 @@ def _ingest_rss_fallback(feed_url: str, limit: Optional[int] = None) -> list[Job
     return jobs
 
 
+def _ingest_rss_fallback(feed_url: str, limit: Optional[int] = None) -> list[JobListing]:
+    resp = safe_get(feed_url, timeout=20)
+    resp.raise_for_status()
+    return _parse_rss_xml(resp.content, limit=limit)
+
+
 def ingest_rss(feed_url: str, limit: Optional[int] = None) -> list[JobListing]:
-    feed = feedparser.parse(feed_url)
+    # SSRF guard: fetch the feed ourselves through safe_get (scheme allowlist,
+    # private-IP block, per-hop redirect revalidation) and hand feedparser the
+    # *bytes* — never the URL, which feedparser would otherwise fetch itself,
+    # bypassing the guard entirely.
+    try:
+        resp = safe_get(feed_url, timeout=20)
+        resp.raise_for_status()
+        body = resp.content
+    except Exception:
+        return []
+    feed = feedparser.parse(body)
     if not getattr(feed, "entries", None):
         try:
-            return _ingest_rss_fallback(feed_url, limit=limit)
+            return _parse_rss_xml(body, limit=limit)
         except Exception:
             return []
     jobs: list[JobListing] = []

@@ -20,6 +20,8 @@ from job_agent.utils.net import UnsafeUrlError, safe_get, validate_public_http_u
         "http://192.168.1.1/",
         "http://[::1]/",
         "http://0.0.0.0/",
+        "http://[::ffff:127.0.0.1]/",  # IPv4-mapped IPv6 loopback
+        "http://[::ffff:10.0.0.1]/",   # IPv4-mapped IPv6 private
     ],
 )
 def test_unsafe_urls_are_rejected(url: str) -> None:
@@ -69,3 +71,87 @@ def test_safe_get_returns_final_response(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr("requests.get", lambda *a, **k: ok)
     resp = safe_get("https://example.com/jobs")
     assert resp.status_code == 200
+
+
+def test_pin_host_forces_resolution_and_restores(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``_pin_host`` makes the connect use the vetted IP (no rebinding re-resolve)
+    via a thread-local pin, leaving resolution untouched afterwards."""
+    import job_agent.utils.net as net
+
+    # Underlying resolver echoes the requested host back as its "address"; the
+    # installed shim must be the active resolver for the pin to take effect.
+    monkeypatch.setattr(net, "_real_getaddrinfo", lambda h, *a, **k: [(2, 1, 6, "", (h, 0))])
+    monkeypatch.setattr(net.socket, "getaddrinfo", net._pinned_getaddrinfo)
+
+    with net._pin_host("evil.example.com", "93.184.216.34"):
+        pinned = net.socket.getaddrinfo("evil.example.com", 80)[0][4][0]
+        untouched = net.socket.getaddrinfo("other.example.com", 80)[0][4][0]
+        assert pinned == "93.184.216.34"      # forced to the vetted IP
+        assert untouched == "other.example.com"  # other hosts unaffected
+
+    # Pin cleared after the context exits.
+    assert net.socket.getaddrinfo("evil.example.com", 80)[0][4][0] == "evil.example.com"
+
+
+def test_pin_host_is_thread_local(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Concurrent pins on different threads must not clobber each other — one
+    thread pinning ``host`` must not leak into another thread's resolution."""
+    import threading
+
+    import job_agent.utils.net as net
+
+    monkeypatch.setattr(net, "_real_getaddrinfo", lambda h, *a, **k: [(2, 1, 6, "", (h, 0))])
+    monkeypatch.setattr(net.socket, "getaddrinfo", net._pinned_getaddrinfo)
+
+    seen: dict[str, str] = {}
+    barrier = threading.Barrier(2)
+
+    def worker(name: str, ip: str) -> None:
+        with net._pin_host("shared.example.com", ip):
+            barrier.wait()  # both threads hold a pin at the same time
+            seen[name] = net.socket.getaddrinfo("shared.example.com", 80)[0][4][0]
+
+    threads = [
+        threading.Thread(target=worker, args=("a", "1.1.1.1")),
+        threading.Thread(target=worker, args=("b", "2.2.2.2")),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert seen == {"a": "1.1.1.1", "b": "2.2.2.2"}  # no cross-thread bleed
+
+
+def test_safe_get_fallback_refuses_unrevalidated_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A client that cannot honour allow_redirects must not be allowed to hand
+    back a redirect we never revalidated."""
+    monkeypatch.setattr(
+        "job_agent.utils.net.socket.getaddrinfo",
+        lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 0))],
+    )
+
+    def strict_get(url: str, headers=None, timeout=None) -> _Resp:  # no allow_redirects kwarg
+        return _Resp(302, {"Location": "http://169.254.169.254/"})
+
+    monkeypatch.setattr("requests.get", strict_get)
+    with pytest.raises(UnsafeUrlError):
+        safe_get("https://example.com/jobs")
+
+
+def test_safe_get_passes_allow_redirects_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    """safe_get must follow redirects manually (allow_redirects=False) so every
+    hop is re-validated — never delegate redirect following to the client."""
+    monkeypatch.setattr(
+        "job_agent.utils.net.socket.getaddrinfo",
+        lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 0))],
+    )
+    seen: dict = {}
+
+    def fake_get(url: str, **kwargs: object) -> _Resp:
+        seen.update(kwargs)
+        return _Resp(200, {}, content=b"ok")
+
+    monkeypatch.setattr("requests.get", fake_get)
+    safe_get("https://example.com/jobs")
+    assert seen.get("allow_redirects") is False

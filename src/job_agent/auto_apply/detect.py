@@ -59,7 +59,11 @@ def _detect_human_wall(page: Any) -> tuple[bool, str]:
     try:
         html = (page.content() or "").lower()
     except Exception:  # pragma: no cover - page may be mid-navigation
-        return False, ""
+        # Fail CLOSED: if we cannot inspect the page we must assume a wall might
+        # be present and hand off, never proceed to a blind submit. The hard
+        # constraint is "detect and hand off", so an undetectable page is treated
+        # as a wall rather than as clear.
+        return True, "wall detection unavailable"
     frame_urls = ""
     try:
         frame_urls = " ".join((getattr(f, "url", "") or "") for f in page.frames).lower()

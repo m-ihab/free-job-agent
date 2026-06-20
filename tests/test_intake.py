@@ -1,4 +1,5 @@
 """Tests for intake modules."""
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -79,7 +80,11 @@ def test_ingest_rss_mock():
     del entry.content
     mock_feed.entries = [entry]
 
-    with patch("job_agent.intake.rss.feedparser.parse", return_value=mock_feed):
+    # ingest_rss now fetches via safe_get (SSRF guard) and hands feedparser the
+    # bytes, never the URL — so safe_get must be stubbed alongside feedparser.
+    fake_resp = SimpleNamespace(content=b"<rss/>", raise_for_status=lambda: None)
+    with patch("job_agent.intake.rss.safe_get", return_value=fake_resp), \
+         patch("job_agent.intake.rss.feedparser.parse", return_value=mock_feed):
         jobs = ingest_rss("https://example.com/feed.rss")
 
     assert len(jobs) == 1
@@ -100,7 +105,30 @@ def test_ingest_rss_limit():
         entries.append(e)
     mock_feed.entries = entries
 
-    with patch("job_agent.intake.rss.feedparser.parse", return_value=mock_feed):
+    fake_resp = SimpleNamespace(content=b"<rss/>", raise_for_status=lambda: None)
+    with patch("job_agent.intake.rss.safe_get", return_value=fake_resp), \
+         patch("job_agent.intake.rss.feedparser.parse", return_value=mock_feed):
         jobs = ingest_rss("https://example.com/feed.rss", limit=2)
 
     assert len(jobs) == 2
+
+
+def test_ingest_rss_uses_safe_get_not_feedparser_fetch():
+    """SSRF: the feed must be fetched via safe_get and feedparser handed the
+    bytes — never the URL (feedparser would otherwise fetch it unguarded)."""
+    from job_agent.utils.net import UnsafeUrlError
+
+    feedparser_calls = []
+
+    def spy_parse(arg):
+        feedparser_calls.append(arg)
+        return SimpleNamespace(entries=[])
+
+    # safe_get rejects a metadata-IP feed; ingest_rss swallows and returns [].
+    with patch("job_agent.intake.rss.safe_get",
+               side_effect=UnsafeUrlError("blocked")), \
+         patch("job_agent.intake.rss.feedparser.parse", side_effect=spy_parse):
+        jobs = ingest_rss("http://169.254.169.254/feed.rss")
+
+    assert jobs == []
+    assert feedparser_calls == []  # feedparser never reached, never given the URL

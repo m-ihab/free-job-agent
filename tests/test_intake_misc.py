@@ -82,7 +82,12 @@ def test_rss_feedparser_content_branch(monkeypatch):
             "link": "https://example.com/job/99",
         }.get(k, default),
     )
-    monkeypatch.setattr(rss.feedparser, "parse", lambda url: SimpleNamespace(entries=[entry]))
+    monkeypatch.setattr(rss.feedparser, "parse", lambda body: SimpleNamespace(entries=[entry]))
+    # ingest_rss fetches via safe_get (SSRF guard) and passes feedparser the bytes.
+    monkeypatch.setattr(
+        rss, "safe_get",
+        lambda *a, **k: SimpleNamespace(content=b"<rss/>", raise_for_status=lambda: None),
+    )
     jobs = rss.ingest_rss("https://example.com/feed.xml")
     assert len(jobs) == 1
     assert "Full description body." in jobs[0].raw_text
