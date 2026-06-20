@@ -150,7 +150,10 @@ def fetch(search: FreeApiSearch) -> list[JobListing]:
             posted_date=publication.get("creation"),
             deadline=publication.get("expiration"),
         ))
-    strict = _post_filter(jobs, search, apply_query_filter=True)
-    if strict:
-        return strict
-    return _post_filter(jobs, search, apply_query_filter=False)
+    # Always keep the query filter on. The previous "recall fallback" re-ran
+    # _post_filter with apply_query_filter=False whenever the strict pass was
+    # empty, which leaked off-topic apprenticeships (e.g. "Informaticien",
+    # "Master SI/Finance Business") into a "data scientist" search. _contains_query
+    # already expands FR/EN synonyms, so genuine data alternance/stage offers
+    # still pass; returning nothing is better than returning irrelevant rows.
+    return _post_filter(jobs, search, apply_query_filter=True)

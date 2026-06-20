@@ -114,10 +114,14 @@ def _resolve_github_handle(config: AppConfig, payload: dict) -> str:
 
 def _list_jobs(config: AppConfig, status: str = "") -> list[dict]:
     """Fetch all jobs + their enrichments / AI cache / latest packet in 4 queries
-    instead of N*3 — significantly faster on databases with 50+ jobs."""
+    instead of N*3 — significantly faster on databases with 50+ jobs.
+
+    No row cap: the dashboard shows the full tracked set (the badge/metrics count
+    these), not just the most recent 100.
+    """
     tracker = _tracker(config)
     status_filter = JobStatus(status) if status else None
-    jobs = tracker.list_jobs(status=status_filter)
+    jobs = tracker.list_jobs(status=status_filter, limit=None)
     if not jobs:
         return []
     job_ids = [job.id for job in jobs]

@@ -111,6 +111,9 @@ HERO_LAYOUTS = {
 
 OPTIONAL_SECTIONS = ("testimonials", "open_source", "speaking", "awards", "blog")
 
+# Middle sections the user can reorder (hero is always first, contact always last).
+REORDERABLE_SECTIONS = ("skills", "projects", "experience", "education")
+
 
 @dataclass
 class PortfolioConfig:
@@ -119,6 +122,7 @@ class PortfolioConfig:
     layout: str = "split"
     custom_accent: str = ""
     sections: dict[str, bool] = None  # type: ignore[assignment]
+    section_order: list[str] = None  # type: ignore[assignment]
     tagline: str = ""
     site_url: str = ""
     site_title_suffix: str = "Portfolio"
@@ -138,6 +142,16 @@ class PortfolioConfig:
         if self.custom_accent and not re.fullmatch(r"#[0-9a-fA-F]{6}", self.custom_accent):
             self.custom_accent = ""
         self.sections = sections
+        # Reorderable middle sections (hero stays first, contact last). Keep only
+        # valid keys, de-duplicate, then append any missing in their default order.
+        seen: list[str] = []
+        for key in (self.section_order or []):
+            if key in REORDERABLE_SECTIONS and key not in seen:
+                seen.append(key)
+        for key in REORDERABLE_SECTIONS:
+            if key not in seen:
+                seen.append(key)
+        self.section_order = seen
         return self
 
 
@@ -147,17 +161,33 @@ def _portfolio_dir(config: AppConfig) -> Path:
     return base
 
 
+def _nonempty(path: Path) -> bool:
+    """True only if ``path`` exists and is not a 0-byte file."""
+    try:
+        return path.is_file() and path.stat().st_size > 0
+    except OSError:
+        return False
+
+
 def _photo_asset(config: AppConfig) -> str:
+    """Copy a usable portrait into the portfolio dir, returning its filename.
+
+    Validates the source is non-empty before copying (a 0-byte ``me.jpg`` would
+    otherwise render as a broken image), and falls back to a non-empty ``.bak``
+    sibling when the primary asset is empty.
+    """
     profiles = Path(config.profiles_dir or "")
     for name in ("me.jpg", "me.jpeg", "me.png"):
-        source = profiles / name
-        if source.exists():
+        # Prefer the live asset; fall back to its .bak if the live one is empty.
+        for candidate in (profiles / name, profiles / f"{name}.bak"):
+            if not _nonempty(candidate):
+                continue
             target = _portfolio_dir(config) / name
             try:
-                shutil.copyfile(source, target)
+                shutil.copyfile(candidate, target)
                 return name
             except Exception:
-                return ""
+                break  # try the next image name
     return ""
 
 
@@ -201,15 +231,10 @@ def _render_css(cfg: PortfolioConfig) -> str:
   --shadow: 0 24px 60px rgba(0,0,0,0.12);
 }}
 """
+    # The chosen theme palette is authoritative; no automatic
+    # ``prefers-color-scheme: dark`` override (it would flatten every theme to one
+    # palette in OS dark mode). Dark mode is opt-in via ``html[data-theme="dark"]``.
     dark_block = """
-@media (prefers-color-scheme: dark) {
-  html:not([data-theme="forced-light"]) {
-    --bg: #07111f;
-    --ink: #e5edf8;
-    --muted: #9fb2ca;
-    --surface: #0d1b2d;
-  }
-}
 html[data-theme="dark"] {
   --bg: #07111f;
   --ink: #e5edf8;
@@ -378,6 +403,17 @@ def _render_html(config: AppConfig, cfg: PortfolioConfig) -> str:
     experience_html = "".join(job_item(i, j) for i, j in enumerate(experience))
     education_html = "".join(education_item(i, e) for i, e in enumerate(education))
 
+    # Reorderable middle sections, keyed for cfg.section_order placement.
+    projects_body = projects_html or '<p class="muted">No projects yet. Add one in profiles/master_cv.json.</p>'
+    experience_body = experience_html or '<p class="muted">No experience yet.</p>'
+    education_body = education_html or '<p class="muted">No education yet.</p>'
+    middle_sections = {
+        "skills": f'<section class="section" id="skills"><div class="wrap"><h2 data-reveal>Core stack</h2><div class="chips" data-reveal>{skills_html}</div></div></section>',
+        "projects": f'<section class="section" id="projects"><div class="wrap"><h2 data-reveal>Selected projects</h2><div class="grid">{projects_body}</div></div></section>',
+        "experience": f'<section class="section" id="experience"><div class="wrap"><h2 data-reveal>Experience</h2><div class="timeline">{experience_body}</div></div></section>',
+        "education": f'<section class="section" id="education"><div class="wrap"><h2 data-reveal>Education</h2><div class="timeline">{education_body}</div></div></section>',
+    }
+
     # Optional sections — only render when toggled on.
     sections = cfg.sections or {}
     optional_blocks: list[str] = []
@@ -439,10 +475,7 @@ def _render_html(config: AppConfig, cfg: PortfolioConfig) -> str:
   </div></header>
   <main>
     <section class="hero" id="about"><div class="wrap hero-grid {cfg.layout}">{hero_inner}</div></section>
-    <section class="section" id="skills"><div class="wrap"><h2 data-reveal>Core stack</h2><div class="chips" data-reveal>{skills_html}</div></div></section>
-    <section class="section" id="projects"><div class="wrap"><h2 data-reveal>Selected projects</h2><div class="grid">{projects_html or '<p class="muted">No projects yet. Add one in profiles/master_cv.json.</p>'}</div></div></section>
-    <section class="section" id="experience"><div class="wrap"><h2 data-reveal>Experience</h2><div class="timeline">{experience_html or '<p class="muted">No experience yet.</p>'}</div></div></section>
-    <section class="section" id="education"><div class="wrap"><h2 data-reveal>Education</h2><div class="timeline">{education_html or '<p class="muted">No education yet.</p>'}</div></div></section>
+    {''.join(middle_sections[key] for key in cfg.section_order)}
     {''.join(optional_blocks)}
     <section class="section" id="contact"><div class="wrap"><h2 data-reveal>Contact</h2>
       <dl class="kv">

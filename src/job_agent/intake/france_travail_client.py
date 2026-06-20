@@ -12,6 +12,28 @@ from job_agent.intake.france_travail_auth import france_travail_token
 from job_agent.intake.france_travail_endpoints import EndpointSpec, load_endpoint_base_url, load_endpoint_registry
 
 
+_SENSITIVE_PARAM_HINTS = ("token", "secret", "password", "authorization", "client_secret", "apikey", "api_key")
+
+
+def _sanitize_params(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        k: ("***redacted***" if any(h in k.lower() for h in _SENSITIVE_PARAM_HINTS) else v)
+        for k, v in params.items()
+    }
+
+
+class FranceTravailHTTPError(requests.HTTPError):
+    """HTTPError that carries the sanitized request params + response body.
+
+    Subclasses ``requests.HTTPError`` so existing ``except requests.HTTPError``
+    handlers keep working, while ``str(exc)`` now explains the 400.
+    """
+
+    def __init__(self, message: str, *, response: Any = None, params: dict[str, Any] | None = None) -> None:
+        super().__init__(message, response=response)
+        self.sanitized_params = _sanitize_params(params or {})
+
+
 @dataclass
 class ClientConfig:
     timeout: int = 20
@@ -71,7 +93,19 @@ class FranceTravailClient:
             response = requests.post(url, params=payload_params, json=json_body, headers=headers, timeout=self.config.timeout)
         else:
             response = requests.get(url, params=payload_params, headers=headers, timeout=self.config.timeout)
-        response.raise_for_status()
+        if response.status_code >= 400:
+            body = ""
+            try:
+                body = (response.text or "")[:600]
+            except Exception:
+                body = ""
+            raise FranceTravailHTTPError(
+                f"France Travail '{key}' returned HTTP {response.status_code}.\n"
+                f"Sanitized params: {_sanitize_params(cache_params)}\n"
+                f"Response body: {body or '(empty)'}",
+                response=response,
+                params=cache_params,
+            )
         payload = response.json()
         if self.config.use_cache:
             write_cached_json(url, cache_params, payload)

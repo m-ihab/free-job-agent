@@ -27,6 +27,11 @@ from job_agent.cv_studio_core import (
     _main_tex_path,
     _studio_dir,
     _write_draft,
+    is_valid_latex_cv,
+    list_main_versions,
+    restore_main_version,
+    snapshot_main_tex,
+    validate_promote,
 )
 from job_agent.renderer.latex_render import (
     LatexCompileError,
@@ -113,14 +118,27 @@ def reset_studio_draft(config: AppConfig) -> dict[str, Any]:
 
 
 def promote_draft_to_main(config: AppConfig) -> dict[str, Any]:
-    """Copy the draft over the user's ``profiles/main.tex`` (with backup)."""
+    """Copy the draft over the user's ``profiles/main.tex`` — validated.
+
+    Hard guardrail: the draft must be a complete LaTeX CV document and must not
+    be a suspicious shrink over an existing valid ``main.tex``. This is what
+    prevents a placeholder/JSON/truncated draft from ever clobbering the real
+    CV again (see ``validate_promote``). Every promote also snapshots the prior
+    ``main.tex`` into ``profiles/.history`` for one-click restore.
+    """
     draft = _draft_path(config)
     if not draft.exists():
         return {"ok": False, "reason": "no_draft"}
     if not config.profiles_dir:
         return {"ok": False, "reason": "no_profiles_dir"}
     main_path = Path(config.profiles_dir) / "main.tex"
+    draft_text = draft.read_text(encoding="utf-8")
+    ok, reason = validate_promote(draft_text, main_path if main_path.exists() else None)
+    if not ok:
+        return {"ok": False, "reason": reason, "log": _PROMOTE_REASONS.get(reason, reason)}
     if main_path.exists():
+        # Versioned snapshot (reversible) + keep the legacy .bak for compatibility.
+        snapshot_main_tex(config)
         backup = main_path.with_suffix(".bak")
         try:
             shutil.copyfile(main_path, backup)
@@ -128,6 +146,21 @@ def promote_draft_to_main(config: AppConfig) -> dict[str, Any]:
             pass
     shutil.copyfile(draft, main_path)
     return {"ok": True, "main_path": str(main_path)}
+
+
+# User-readable explanations for promote rejections.
+_PROMOTE_REASONS = {
+    "not_latex_document": (
+        "Refused: the draft is not a complete LaTeX CV (missing \\documentclass "
+        "or \\begin{document}, or too short). Save-as-main only accepts a full "
+        "CV document, never JSON/asset text or a placeholder."
+    ),
+    "suspicious_shrink": (
+        "Refused: the draft is dramatically smaller than your current main.tex, "
+        "which usually means a truncated or placeholder draft. Open your full CV "
+        "in the editor before promoting, or restore a version from history."
+    ),
+}
 
 
 # -----------------------------------------------------------------------------
@@ -140,11 +173,11 @@ def compile_preview(config: AppConfig, text: str | None = None) -> dict[str, Any
     studio = _studio_dir(config)
     tex_path = studio / "preview.tex"
     if text is not None:
-        if r"\begin{document}" not in text:
+        if not is_valid_latex_cv(text):
             return {
                 "ok": False,
                 "reason": "not_latex_document",
-                "log": "Compile Preview only accepts the LaTeX CV draft. Open JSON/assets in the asset editor, then keep main.tex in the main CV editor.",
+                "log": "Compile Preview only accepts a complete LaTeX CV draft (needs \\documentclass and \\begin{document}). Open JSON/assets in the asset editor, then keep main.tex in the main CV editor.",
             }
         tex_path.write_text(text, encoding="utf-8")
     elif _draft_path(config).exists():
@@ -406,6 +439,8 @@ __all__ = [
     "save_studio_draft",
     "reset_studio_draft",
     "promote_draft_to_main",
+    "list_main_versions",
+    "restore_main_version",
     "compile_preview",
     "suggest_edits",
     "reorder_sections",

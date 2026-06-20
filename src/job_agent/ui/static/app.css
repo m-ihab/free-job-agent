@@ -1,28 +1,30 @@
 :root {
   color-scheme: light dark;
-  --ink: #0b1220;
-  --ink-muted: #1c2438;
-  --muted: #5a6478;
-  --line: #d8dee9;
-  --line-strong: #b6bfd0;
+  /* Light theme = Linear's inverse canvas: white surfaces, near-black ink,
+     a single lavender accent. Restrained, high-contrast, no gradients. */
+  --ink: #08090a;
+  --ink-muted: #3c4149;
+  --muted: #6b7178;
+  --line: #e6e6e8;
+  --line-strong: #d3d4d7;
   --surface: #ffffff;
-  --surface-2: #f5f7fb;
-  --surface-3: #ecf0f7;
-  --surface-4: #dde5f3;
-  --accent: #0b8b7f;
-  --accent-hover: #0a6f66;
-  --accent-soft: rgba(11, 139, 127, 0.14);
-  --accent-2: #b77a10;
-  --accent-3: #1c3f72;
-  --accent-3-soft: rgba(28, 63, 114, 0.12);
-  --warn: #b05e00;
-  --bad: #c0392b;
-  --good: #1f7a53;
-  --bg-grad-1: #eef3fa;
-  --bg-grad-2: #e9f0fa;
-  --bg-grad-3: #f7fafd;
-  --shadow: 0 18px 38px rgba(15, 21, 39, 0.10);
-  --shadow-soft: 0 8px 22px rgba(15, 21, 39, 0.08);
+  --surface-2: #f7f7f8;
+  --surface-3: #f0f0f1;
+  --surface-4: #e8e8ea;
+  --accent: #5e6ad2;
+  --accent-hover: #4f5ac0;
+  --accent-soft: rgba(94, 106, 210, 0.12);
+  --accent-2: #5e6ad2;
+  --accent-3: #5e6ad2;
+  --accent-3-soft: rgba(94, 106, 210, 0.12);
+  --warn: #b25e00;
+  --bad: #d4373d;
+  --good: #1a8f3c;
+  --bg-grad-1: #fbfbfc;
+  --bg-grad-2: #fbfbfc;
+  --bg-grad-3: #ffffff;
+  --shadow: 0 1px 2px rgba(8, 9, 10, 0.06);
+  --shadow-soft: 0 1px 2px rgba(8, 9, 10, 0.05);
   --shadow-ring: 0 0 0 3px var(--accent-soft);
   --font-body: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-display: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
@@ -30,32 +32,54 @@
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 16px;
+  --rail-w: 248px;
+
+  /* Compatibility aliases for the later CV-Studio / Auto-Apply UI, which was
+     authored against a `--color-*` naming scheme. Aliasing them to the real
+     design tokens (instead of leaving them undefined to fall back to hardcoded
+     light hexes) is what makes those panels theme-correct in dark mode. */
+  --color-primary: var(--accent);
+  --color-bg: var(--surface);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface-2);
+  --color-border: var(--line);
+  --color-muted: var(--muted);
+  --color-text: var(--ink);
+
+  /* Depth comes from the surface ladder + neutral hairlines, not shadows. */
+  --elev-1: none;
+  --elev-2: 0 1px 2px rgba(8, 9, 10, 0.06);
+  --hairline: var(--line);
 }
 
 html[data-theme="dark"] {
   color-scheme: dark;
-  --ink: #e9eef7;
-  --ink-muted: #c8d1e1;
-  --muted: #8a93a8;
-  --line: #232a3a;
-  --line-strong: #344056;
-  --surface: #131927;
-  --surface-2: #161d2c;
-  --surface-3: #1c2436;
-  --surface-4: #25304a;
-  --accent: #34d6c4;
-  --accent-hover: #58e1d2;
-  --accent-soft: rgba(52, 214, 196, 0.18);
-  --accent-3: #6aa3ff;
-  --accent-3-soft: rgba(106, 163, 255, 0.18);
-  --warn: #f4b860;
-  --bad: #ff8a80;
-  --good: #76e3b0;
-  --bg-grad-1: #0c111c;
-  --bg-grad-2: #0e1424;
-  --bg-grad-3: #111a2e;
-  --shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
-  --shadow-soft: 0 10px 22px rgba(0, 0, 0, 0.35);
+  /* Dark theme = Linear's near-black canvas with a four-step surface ladder,
+     neutral hairlines, and the scarce lavender accent. No gradients/glow. */
+  --ink: #f7f8f8;
+  --ink-muted: #d0d6e0;
+  --muted: #8a8f98;
+  --line: #23252a;
+  --line-strong: #34343a;
+  --surface: #0f1011;
+  --surface-2: #141516;
+  --surface-3: #18191a;
+  --surface-4: #191a1b;
+  --accent: #5e6ad2;
+  --accent-hover: #828fff;
+  --accent-soft: rgba(94, 106, 210, 0.18);
+  --accent-3: #828fff;
+  --accent-3-soft: rgba(94, 106, 210, 0.16);
+  --warn: #d9a04a;
+  --bad: #e5484d;
+  --good: #27a644;
+  --bg-grad-1: #010102;
+  --bg-grad-2: #010102;
+  --bg-grad-3: #010102;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --elev-1: none;
+  --elev-2: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 }
 
 * {
@@ -66,11 +90,17 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background:
-    radial-gradient(1200px 600px at 80% -10%, var(--accent-soft) 0%, transparent 60%),
-    radial-gradient(900px 500px at -5% 10%, var(--accent-3-soft) 0%, transparent 60%),
-    linear-gradient(180deg, var(--bg-grad-1) 0%, var(--bg-grad-2) 55%, var(--bg-grad-3) 100%);
-  background-attachment: fixed;
+  /* App shell: full-height sidebar rail on the left, slim top bar + content
+     on the right. Overlays (.toast/.modal*) are position:fixed so they do not
+     participate in this grid. */
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "rail header"
+    "rail main";
+  /* Flat canvas — depth comes from the surface ladder, not a gradient. */
+  background: var(--bg-grad-1);
   color: var(--ink);
   font-family: var(--font-body);
   font-size: 15px;
@@ -146,12 +176,17 @@ button.primary,
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 button.primary:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+}
+
+button:active,
+.button-link:active {
+  transform: translateY(1px) scale(0.97);
 }
 
 button.primary-soft {
@@ -200,6 +235,7 @@ h1 {
   font-family: var(--font-display);
   letter-spacing: -0.02em;
   font-weight: 800;
+  text-wrap: balance;
 }
 
 h2 {
@@ -208,6 +244,7 @@ h2 {
   font-family: var(--font-display);
   letter-spacing: -0.01em;
   font-weight: 700;
+  text-wrap: balance;
 }
 
 h3 {
@@ -230,24 +267,30 @@ h4 {
 }
 
 .app-header {
+  grid-area: header;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.15rem clamp(1rem, 3vw, 2rem);
-  background: var(--surface);
+  padding: 0.85rem clamp(1rem, 3vw, 2rem);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
   border-bottom: 1px solid var(--line);
-  box-shadow: var(--shadow-soft);
   position: sticky;
   top: 0;
   z-index: 50;
-  backdrop-filter: saturate(140%) blur(8px);
+  backdrop-filter: saturate(140%) blur(10px);
+}
+
+/* In the shell, the header is a slim bar — compress the brand block. */
+.app-header .hero-sub {
+  display: none;
 }
 
 .app-header h1 {
   display: flex;
   align-items: center;
   gap: 0.55rem;
+  font-size: clamp(1.05rem, 1.4vw, 1.3rem);
 }
 
 .app-header h1::before {
@@ -357,31 +400,92 @@ h4 {
   color: var(--muted);
 }
 
+/* Left sidebar rail: full-height vertical navigation (Linear/Vercel pattern). */
 .tabs {
+  grid-area: rail;
   display: flex;
-  gap: 0.35rem;
-  padding: 0.85rem clamp(1rem, 3vw, 2rem) 0;
-  background: transparent;
-  overflow-x: auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+  padding: 1rem 0.75rem;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  scrollbar-width: thin;
 }
 
+/* Vertical nav items with a left active-indicator bar. */
 .tab {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  background: var(--surface-3);
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+  justify-content: flex-start;
+  padding: 0.6rem 0.8rem;
   white-space: nowrap;
+  transition-property: color, background-color, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+.tab:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+  transform: none;
+  box-shadow: none;
 }
 
 .tab.active {
-  background: var(--surface);
-  border-color: var(--line);
-  border-bottom-color: var(--surface);
+  background: var(--accent-soft);
+  border-color: transparent;
   color: var(--accent);
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: none;
+}
+
+.tab.active::before {
+  content: "";
+  position: absolute;
+  left: -0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 1.1rem;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
 }
 
 main {
+  grid-area: main;
+  min-width: 0;
   padding: 0 clamp(1rem, 3vw, 2rem) 2rem;
+}
+
+/* Collapse the shell to a stacked layout with a horizontal nav on narrow
+   screens, restoring the scrollable top strip. */
+@media (max-width: 900px) {
+  body {
+    display: block;
+  }
+  .tabs {
+    flex-direction: row;
+    height: auto;
+    padding: 0.75rem clamp(1rem, 3vw, 2rem);
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+  }
+  .tab {
+    white-space: nowrap;
+  }
+  .tab.active::before {
+    display: none;
+  }
 }
 
 .tab-panel {
@@ -408,6 +512,12 @@ main {
 .section-header p {
   margin-bottom: 0;
   color: var(--muted);
+}
+
+/* Editorial accent ledge for section hierarchy. */
+.section-header > div:first-child {
+  border-left: 3px solid var(--accent);
+  padding-left: 0.7rem;
 }
 
 .control-grid {
@@ -446,10 +556,16 @@ textarea {
   min-height: 38px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--ink);
   padding: 0.55rem 0.7rem;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--line-strong);
 }
 
 textarea {
@@ -486,22 +602,15 @@ textarea {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0.85rem 0.95rem;
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--elev-1);
   animation: rise 0.4s ease;
   position: relative;
   overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.22s ease, border-color 0.18s ease;
 }
 
-.metric::after {
-  content: "";
-  position: absolute;
-  inset: -40% -40% auto auto;
-  width: 110px;
-  height: 110px;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  filter: blur(20px);
-  z-index: 0;
+.metric:hover {
+  border-color: var(--line-strong);
 }
 
 .metric strong,
@@ -519,6 +628,7 @@ textarea {
   font-weight: 800;
   line-height: 1.15;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 
 .metric.metric-long strong {
@@ -539,7 +649,13 @@ textarea {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 1rem 1.1rem;
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--elev-1);
+  transition: transform 0.18s ease, box-shadow 0.22s ease, border-color 0.18s ease;
+}
+
+.panel:hover {
+  box-shadow: var(--elev-2);
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
 }
 
 .panel + .panel {
@@ -620,6 +736,14 @@ html[data-theme="dark"] .detail-block {
 
 .table-wrap {
   overflow-x: auto;
+}
+.jobs-count {
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+.jobs-count strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .table-wrap table {
@@ -1141,6 +1265,104 @@ html[data-theme="dark"] .chat-bubble.thinking {
   align-items: stretch;
 }
 
+.portfolio-order-wrap {
+  margin: 0.5rem 0;
+}
+
+.section-order {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 360px;
+}
+
+.section-order-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 0.85rem;
+}
+
+.order-actions {
+  display: inline-flex;
+  gap: 0.2rem;
+}
+
+.order-actions button {
+  min-height: 28px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.zoom-controls {
+  display: inline-flex;
+  gap: 0.2rem;
+  margin-left: auto;
+}
+
+.zoom-controls button {
+  min-height: 30px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  border-radius: var(--radius-sm);
+}
+
+.zoom-controls button.active {
+  background: var(--accent-soft);
+  border-color: var(--hairline);
+  color: var(--accent);
+}
+
+.studio-versions {
+  margin-bottom: 1rem;
+}
+
+.studio-versions-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+.version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.version-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.version-row .version-name {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.version-row .version-size {
+  margin-left: auto;
+  font-size: 0.78rem;
+}
+
 .studio-editor,
 .studio-preview {
   display: flex;
@@ -1176,22 +1398,57 @@ html[data-theme="dark"] .chat-bubble.thinking {
   margin-top: 0.5rem;
 }
 
-.studio-editor textarea#studioTextarea {
+/* Code editor: gutter + textarea share one mono metric so line numbers align. */
+.editor-wrap {
   flex: 1;
-  width: 100%;
+  display: flex;
   min-height: min(78vh, 860px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.editor-gutter {
+  flex: 0 0 auto;
+  padding: 0.85rem 0.5rem 0.85rem 0.75rem;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
-  color: #dbeafe;
-  background:
-    linear-gradient(90deg, rgba(59, 130, 246, 0.12) 0 3px, transparent 3px),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.94));
-  border-color: rgba(96, 165, 250, 0.35);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03), 0 18px 50px rgba(15,23,42,0.10);
-  border-radius: var(--radius-sm);
+  text-align: right;
+  color: var(--muted);
+  background: var(--surface-3);
+  border-right: 1px solid var(--line);
+  white-space: pre;
+  overflow: hidden;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-editor textarea#studioTextarea {
+  flex: 1;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
   padding: 0.85rem 0.95rem;
   tab-size: 2;
+  resize: none;
+}
+
+.studio-editor textarea#studioTextarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.editor-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-ring);
 }
 
 .studio-preview iframe {
@@ -1774,9 +2031,63 @@ html[data-theme="dark"] .coach-list li {
   font-weight: 600;
   padding: 0.1rem 0.45rem;
   border-radius: 999px;
-  background: rgba(234, 88, 12, 0.12);
-  color: #ea580c;
-  border: 1px solid rgba(234, 88, 12, 0.3);
+  background: rgba(234, 88, 12, 0.14);
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
   margin-left: 0.4rem;
   vertical-align: middle;
+}
+
+/* Form controls adopt the brand accent (checkboxes/radios/range). */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+progress {
+  accent-color: var(--accent);
+}
+
+/* Subtle neutral inset outline so images don't blur into the surface. */
+img {
+  outline: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  outline-offset: -1px;
+}
+
+/* Themed scrollbars, selection, and reduced-motion respect. */
+html {
+  scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+  background-clip: padding-box;
+}
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+/* Respect reduced-motion: drop entrance animation + lifts. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .panel:hover,
+  .metric:hover,
+  button:hover,
+  button:active {
+    transform: none;
+  }
 }

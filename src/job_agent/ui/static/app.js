@@ -572,7 +572,7 @@ function renderJobs() {
           <td><input type="checkbox" data-select-job="${escapeHtml(job.id)}" ${checked} /></td>
           <td><strong>${escapeHtml(job.title)}</strong>${langWarn}<br>${companyLine(job)}${summary}${tags}</td>
           <td>${escapeHtml(job.location || "")}${job.remote ? ` ${renderBadge("Remote", "good")}` : ""}</td>
-          <td>${escapeHtml(job.status)}</td>
+          <td>${statusBadge(job.status)}</td>
           <td>${scorePill(job.fit_score)}${aiBadge ? `<br>${aiBadge}` : ""}</td>
           <td>${escapeHtml((job.tech_stack || []).slice(0, 5).join(", "))}</td>
           <td>${escapeHtml(enrichLabel)}</td>
@@ -581,11 +581,30 @@ function renderJobs() {
       },
     )
     .join("");
-  $("jobsTableWrap").innerHTML = `<table>
+  const countLine = `<div class="jobs-count muted">Showing <strong>${jobs.length}</strong> of <strong>${state.jobs.length}</strong> tracked jobs</div>`;
+  $("jobsTableWrap").innerHTML = countLine + `<table>
     <thead><tr><th></th><th>Job</th><th>Location</th><th>Status</th><th>Score</th><th>Signals</th><th>Enrich</th><th>Actions</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
   refreshSelectionUi();
+}
+
+// Map a job status to a small tone-coded pill.
+const _STATUS_TONE = {
+  REJECTED: "bad",
+  NEEDS_MANUAL: "warn",
+  APPLIED: "good",
+  SUBMITTED: "good",
+  INTERVIEW: "good",
+  OFFERED: "good",
+  ACCEPTED: "good",
+};
+
+function statusBadge(status) {
+  const key = String(status || "").toUpperCase();
+  const tone = _STATUS_TONE[key] || "";
+  const label = key.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  return renderBadge(label || "—", tone);
 }
 
 function refreshSelectionUi() {
@@ -1294,6 +1313,7 @@ function activateTab(name) {
   if (name === "autopilot") {
     loadAutopilot();
     loadAiSetup();
+    loadAiTrace();
     loadNeedsManual();
   }
   if (name === "studio") {
@@ -1319,9 +1339,25 @@ async function loadStudio() {
     if (status) {
       status.textContent = data.origin === "draft" ? "Editing draft (unsaved promotion to main.tex)" : "Loaded main.tex";
     }
+    studioSyncGutter();
   } catch (error) {
     setNotice("studioNotice", error.message, true);
   }
+}
+
+function studioSyncGutter() {
+  const textarea = document.getElementById("studioTextarea");
+  const gutter = document.getElementById("studioGutter");
+  if (!textarea || !gutter) return;
+  const lines = (textarea.value.match(/\n/g) || []).length + 1;
+  const current = gutter.childElementCount ? gutter.dataset.lines : "";
+  if (String(lines) !== current) {
+    let out = "";
+    for (let i = 1; i <= lines; i++) out += i + "\n";
+    gutter.textContent = out;
+    gutter.dataset.lines = String(lines);
+  }
+  gutter.scrollTop = textarea.scrollTop;
 }
 
 function renderStudioSections(titles, display) {
@@ -1397,6 +1433,21 @@ async function studioSwapEduExp() {
   }
 }
 
+let studioZoom = "page-width";
+
+function studioRefreshPreview() {
+  const iframe = document.getElementById("studioPreview");
+  if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}#zoom=${studioZoom}`;
+}
+
+function studioSetZoom(zoom) {
+  studioZoom = zoom;
+  document.querySelectorAll('.zoom-controls button[data-zoom]').forEach((b) => {
+    b.classList.toggle("active", b.dataset.zoom === zoom);
+  });
+  studioRefreshPreview();
+}
+
 async function studioCompile() {
   const button = document.getElementById("studioCompileBtn");
   const textarea = document.getElementById("studioTextarea");
@@ -1418,8 +1469,7 @@ async function studioCompile() {
       }
       return;
     }
-    const iframe = document.getElementById("studioPreview");
-    if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}`;
+    studioRefreshPreview();
     toast("Preview rebuilt.");
   } catch (error) {
     setNotice("studioNotice", error.message, true);
@@ -1453,12 +1503,63 @@ async function studioReset() {
 }
 
 async function studioPromote() {
-  if (!window.confirm("Overwrite profiles/main.tex with the current draft? A .bak backup will be kept.")) return;
+  if (!window.confirm("Overwrite profiles/main.tex with the current draft? A snapshot of the current version is kept.")) return;
   const result = await api("/api/cv-studio/promote", {});
   if (result.ok) {
-    toast("Promoted draft to main.tex.");
+    toast("Saved draft to main.tex.");
+    if (!document.getElementById("studioVersions").classList.contains("hidden")) {
+      studioLoadVersions();
+    }
   } else {
-    setNotice("studioNotice", `Could not promote: ${result.reason}`, true);
+    setNotice("studioNotice", result.log || `Could not save: ${result.reason}`, true);
+  }
+}
+
+async function studioToggleVersions() {
+  const panel = document.getElementById("studioVersions");
+  if (!panel) return;
+  const willShow = panel.classList.contains("hidden");
+  panel.classList.toggle("hidden");
+  if (willShow) await studioLoadVersions();
+}
+
+async function studioLoadVersions() {
+  const list = document.getElementById("studioVersionList");
+  if (!list) return;
+  list.innerHTML = "<li class='muted'>Loading…</li>";
+  try {
+    const result = await api("/api/cv-studio/versions", {});
+    const versions = (result && result.versions) || [];
+    if (!versions.length) {
+      list.innerHTML = "<li class='muted'>No saved versions yet.</li>";
+      return;
+    }
+    list.innerHTML = versions.map((v) => {
+      const kb = Math.max(1, Math.round((v.size || 0) / 1024));
+      const label = String(v.name).replace(/^main\.|\.tex$/g, "");
+      return `<li class="version-row">
+        <span class="version-name">${escapeHtml(label)}</span>
+        <span class="version-size muted">${kb} KB</span>
+        <button data-restore="${escapeHtml(v.name)}">Restore</button>
+      </li>`;
+    }).join("");
+    list.querySelectorAll("button[data-restore]").forEach((btn) => {
+      btn.addEventListener("click", () => studioRestoreVersion(btn.dataset.restore));
+    });
+  } catch (error) {
+    list.innerHTML = `<li class="muted">${escapeHtml(error.message)}</li>`;
+  }
+}
+
+async function studioRestoreVersion(name) {
+  if (!window.confirm(`Restore main.tex from ${name}? The current version is snapshotted first.`)) return;
+  const result = await api("/api/cv-studio/restore-version", { name });
+  if (result.ok) {
+    toast("Restored main.tex from history.");
+    await loadStudio();
+    await studioLoadVersions();
+  } else {
+    setNotice("studioNotice", `Could not restore: ${result.reason}`, true);
   }
 }
 
@@ -1937,8 +2038,45 @@ function renderPortfolioOptions(data) {
   const animations = document.getElementById("portfolioAnimations");
   if (animations) animations.checked = cfg.enable_animations !== false;
   renderPortfolioSections(data, cfg);
+  renderPortfolioOrder(cfg);
   const path = document.getElementById("portfolioPath");
   if (path) path.textContent = data.path ? `Local folder: ${data.path}` : "";
+}
+
+const PORTFOLIO_SECTION_LABELS = {
+  skills: "Core stack",
+  projects: "Projects",
+  experience: "Experience",
+  education: "Education",
+};
+
+function renderPortfolioOrder(cfg) {
+  const list = document.getElementById("portfolioOrder");
+  if (!list) return;
+  const defaults = ["skills", "projects", "experience", "education"];
+  let order = Array.isArray(cfg.section_order) && cfg.section_order.length ? cfg.section_order.slice() : defaults.slice();
+  order = order.filter((k) => defaults.includes(k));
+  defaults.forEach((k) => { if (!order.includes(k)) order.push(k); });
+  state.portfolioOrder = order;
+  list.innerHTML = order.map((key, idx) => `
+    <li class="section-order-row" data-key="${escapeHtml(key)}">
+      <span>${escapeHtml(PORTFOLIO_SECTION_LABELS[key] || key)}</span>
+      <span class="order-actions">
+        <button type="button" data-move="up" ${idx === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
+        <button type="button" data-move="down" ${idx === order.length - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
+      </span>
+    </li>`).join("");
+  list.querySelectorAll("button[data-move]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = btn.closest("[data-key]");
+      const key = row.dataset.key;
+      const i = state.portfolioOrder.indexOf(key);
+      const j = btn.dataset.move === "up" ? i - 1 : i + 1;
+      if (j < 0 || j >= state.portfolioOrder.length) return;
+      [state.portfolioOrder[i], state.portfolioOrder[j]] = [state.portfolioOrder[j], state.portfolioOrder[i]];
+      renderPortfolioOrder({ section_order: state.portfolioOrder });
+    });
+  });
 }
 
 function renderPortfolioSections(data, cfg) {
@@ -1974,6 +2112,7 @@ function portfolioPayload() {
     tagline: document.getElementById("portfolioTagline")?.value || "",
     site_url: document.getElementById("portfolioSiteUrl")?.value || "",
     sections: readPortfolioSections(),
+    section_order: Array.isArray(state.portfolioOrder) ? state.portfolioOrder : null,
     enable_dark_toggle: document.getElementById("portfolioDarkToggle")?.checked !== false,
     enable_animations: document.getElementById("portfolioAnimations")?.checked !== false,
   };
@@ -2493,6 +2632,33 @@ async function loadAiSetup() {
   }
 }
 
+const AI_TIER_LABELS = { L1: "Sentry (L1)", L2: "Worker (L2)", L3: "Architect (L3)" };
+
+async function loadAiTrace() {
+  const tiers = document.getElementById("aiTraceTiers");
+  const recent = document.getElementById("aiTraceRecent");
+  if (!tiers || !recent) return;
+  try {
+    const data = await api("/api/ai-trace");
+    const byTier = (data && data.tiers) || {};
+    const order = ["L1", "L2", "L3"];
+    const tileHtml = order
+      .filter((t) => byTier[t])
+      .map((t) => metric(AI_TIER_LABELS[t], `${byTier[t].count}`,
+        `${Math.round(byTier[t].success_rate * 100)}% ok · ${byTier[t].avg_ms} ms avg`))
+      .join("");
+    tiers.innerHTML = tileHtml || `<div class="muted">No AI tasks recorded yet — run an AI action to populate this.</div>`;
+    const rows = (data && data.recent) || [];
+    recent.innerHTML = rows.slice(0, 8).map((r) => `<li class="version-row">
+      <span class="version-name">${escapeHtml((r.tier || "?") + " · " + (r.task || "task"))}</span>
+      <span class="muted">${escapeHtml((r.model || "").replace(":latest", ""))}</span>
+      <span class="version-size ${r.ok ? "" : "muted"}">${r.ok ? "ok" : "fail"} · ${r.elapsed_ms || 0} ms</span>
+    </li>`).join("");
+  } catch (error) {
+    tiers.innerHTML = `<div class="muted">${escapeHtml(error.message)}</div>`;
+  }
+}
+
 function renderAiSetup() {
   const info = state.aiInstall || {};
   const status = state.aiStatus || {};
@@ -2872,6 +3038,8 @@ function bindEvents() {
   if (pullBtn) pullBtn.addEventListener("click", pullFastModel);
   const refreshAiBtn = document.getElementById("refreshAiSetupBtn");
   if (refreshAiBtn) refreshAiBtn.addEventListener("click", () => { loadAiSetup(); loadAiStatus(); });
+  const aiTraceRefreshBtn = document.getElementById("aiTraceRefreshBtn");
+  if (aiTraceRefreshBtn) aiTraceRefreshBtn.addEventListener("click", loadAiTrace);
   $("enrichGithubBtn").addEventListener("click", enrichGithub);
   $("enrichLinkedinBtn").addEventListener("click", openLinkedinModal);
   $("linkedinSubmitBtn").addEventListener("click", submitLinkedinSkills);
@@ -2916,6 +3084,11 @@ function bindEvents() {
     if (ta) delete ta.dataset.dirty;
     await loadStudio();
   });
+  const studioVersionsBtn = document.getElementById("studioVersionsBtn");
+  if (studioVersionsBtn) studioVersionsBtn.addEventListener("click", studioToggleVersions);
+  document.querySelectorAll('.zoom-controls button[data-zoom]').forEach((b) => {
+    b.addEventListener("click", () => studioSetZoom(b.dataset.zoom));
+  });
   const studioReorderApplyBtn = document.getElementById("studioReorderApplyBtn");
   if (studioReorderApplyBtn) studioReorderApplyBtn.addEventListener("click", studioApplyReorder);
   const studioSwapBtn = document.getElementById("studioSwapEduExpBtn");
@@ -2923,7 +3096,10 @@ function bindEvents() {
   const studioLangSel = document.getElementById("studioLanguage");
   if (studioLangSel) studioLangSel.addEventListener("change", (event) => studioSetLanguage(event.target.value));
   const studioTextarea = document.getElementById("studioTextarea");
-  if (studioTextarea) studioTextarea.addEventListener("input", () => { studioTextarea.dataset.dirty = "1"; });
+  if (studioTextarea) {
+    studioTextarea.addEventListener("input", () => { studioTextarea.dataset.dirty = "1"; studioSyncGutter(); });
+    studioTextarea.addEventListener("scroll", studioSyncGutter);
+  }
 
   // Studio v2 hooks
   const studioAssetReloadBtn = document.getElementById("studioAssetReloadBtn");

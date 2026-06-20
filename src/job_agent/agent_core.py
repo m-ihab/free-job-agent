@@ -107,3 +107,58 @@ def record_trace(route: AgentRoute, *, ok: bool, elapsed_ms: int, error: str = "
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
     except Exception:
         return
+
+
+def read_traces(limit: int = 50) -> list[dict]:
+    """Return the most recent AI traces (newest first). Prompt-free + safe."""
+    path = trace_path()
+    if not path.exists():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out: list[dict] = []
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except (ValueError, TypeError):
+            continue
+        if len(out) >= max(1, limit):
+            break
+    return out
+
+
+def trace_summary(limit: int = 200) -> dict:
+    """Aggregate recent traces for the AI trace panel: per-tier counts,
+    average latency, and success rate. Powers the UI without exposing prompts.
+    """
+    traces = read_traces(limit)
+    by_tier: dict[str, dict[str, float]] = {}
+    ok_count = 0
+    for t in traces:
+        tier = str(t.get("tier") or "?")
+        bucket = by_tier.setdefault(tier, {"count": 0, "ok": 0, "total_ms": 0})
+        bucket["count"] += 1
+        bucket["total_ms"] += int(t.get("elapsed_ms") or 0)
+        if t.get("ok"):
+            bucket["ok"] += 1
+            ok_count += 1
+    tiers = {
+        tier: {
+            "count": int(b["count"]),
+            "success_rate": round(b["ok"] / b["count"], 3) if b["count"] else 0.0,
+            "avg_ms": int(b["total_ms"] / b["count"]) if b["count"] else 0,
+        }
+        for tier, b in sorted(by_tier.items())
+    }
+    total = len(traces)
+    return {
+        "total": total,
+        "success_rate": round(ok_count / total, 3) if total else 0.0,
+        "tiers": tiers,
+        "recent": traces[:20],
+    }

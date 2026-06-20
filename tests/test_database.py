@@ -109,3 +109,15 @@ def test_log_event_and_get_events(tmp_db, sample_job):
     assert len(events) == 1
     assert events[0]["event_type"] == "TEST_EVENT"
     assert events[0]["event_data"]["key"] == "value"
+
+
+def test_list_jobs_default_caps_at_100(tmp_db):
+    for i in range(105):
+        tmp_db.save_job(JobListing(title=f"Data Scientist {i}", company="Acme", source="paste"))
+    assert len(tmp_db.list_jobs()) == 100
+
+
+def test_list_jobs_uncapped_returns_all(tmp_db):
+    for i in range(105):
+        tmp_db.save_job(JobListing(title=f"Data Scientist {i}", company="Acme", source="paste"))
+    assert len(tmp_db.list_jobs(limit=None)) == 105

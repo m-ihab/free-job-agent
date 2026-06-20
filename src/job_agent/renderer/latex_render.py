@@ -440,6 +440,31 @@ def _latex_subprocess_env() -> dict[str, str]:
     return env
 
 
+# LaTeX/latexmk intermediate suffixes that must not survive between compiles of
+# the same jobname. ``.pdf`` is the output; ``.log`` is optionally kept for the
+# user-facing error log.
+_LATEX_INTERMEDIATE_SUFFIXES = (
+    ".aux", ".out", ".fdb_latexmk", ".fls", ".synctex.gz",
+    ".toc", ".lof", ".lot", ".bbl", ".blg", ".nav", ".snm", ".vrb", ".xdv",
+)
+
+
+def _clean_latex_intermediates(workdir: Path, stem: str, *, keep_log: bool = False) -> None:
+    """Delete stale intermediates for ``stem`` (e.g. ``preview.aux``) in ``workdir``.
+
+    Run before each compile so latexmk never reuses a previous run's state, and
+    after a successful compile to keep the studio dir tidy.
+    """
+    suffixes = list(_LATEX_INTERMEDIATE_SUFFIXES)
+    if not keep_log:
+        suffixes.append(".log")
+    for suffix in suffixes:
+        try:
+            (workdir / f"{stem}{suffix}").unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 def compile_latex_to_pdf(tex_path: Path | str, output_pdf: Path | str) -> Path:
     """Compile a LaTeX file to PDF using a local compiler."""
     tex_path = Path(tex_path)
@@ -463,6 +488,12 @@ def compile_latex_to_pdf(tex_path: Path | str, output_pdf: Path | str) -> Path:
             )
     except OSError as exc:  # pragma: no cover - unreadable tex is handled downstream
         logger.warning("Could not pre-scan %s for missing images: %s", tex_path, exc)
+
+    # Clear stale intermediates for THIS jobname before compiling. latexmk keys
+    # its "nothing to do" decision on .fdb_latexmk/.aux; a leftover set from a
+    # previous failed run (e.g. preview.*) makes it skip the rebuild or surface
+    # a stale error. We always start each compile from a clean slate.
+    _clean_latex_intermediates(workdir, tex_path.stem)
 
     if Path(compiler).name.lower().startswith("latexmk"):
         command = [compiler, "-pdf", "-interaction=nonstopmode", "-halt-on-error", tex_path.name]
@@ -498,10 +529,6 @@ def compile_latex_to_pdf(tex_path: Path | str, output_pdf: Path | str) -> Path:
     if built_pdf.resolve() != output_pdf.resolve():
         output_pdf.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(built_pdf, output_pdf)
-    # Clean up latexmk's intermediate files. We keep cv.log for debugging.
-    for stale in ("cv.aux", "cv.out", "cv.fdb_latexmk", "cv.fls"):
-        try:
-            (workdir / stale).unlink(missing_ok=True)
-        except Exception:
-            pass
+    # Clean up intermediates for this jobname (keep .log for debugging).
+    _clean_latex_intermediates(workdir, tex_path.stem, keep_log=True)
     return output_pdf

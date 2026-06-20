@@ -118,14 +118,31 @@ def test_promote_draft_returns_no_draft_when_missing(tmp_path):
 def test_promote_draft_copies_to_main_with_backup(tmp_path):
     config = _make_config(tmp_path)
     main_path = Path(config.profiles_dir) / "main.tex"
-    main_path.write_text("OLD main", encoding="utf-8")
-    _draft_path(config).write_text("NEW draft", encoding="utf-8")
+    old_main = _DOC + "\n% old edition padding padding padding padding\n"
+    new_draft = _DOC + "\n% new edition padding padding padding padding\n"
+    main_path.write_text(old_main, encoding="utf-8")
+    _draft_path(config).write_text(new_draft, encoding="utf-8")
 
     result = promote_draft_to_main(config)
 
     assert result["ok"] is True
-    assert main_path.read_text(encoding="utf-8") == "NEW draft"
-    assert main_path.with_suffix(".bak").read_text(encoding="utf-8") == "OLD main"
+    assert main_path.read_text(encoding="utf-8") == new_draft
+    # The legacy .bak still holds the previous main for compatibility.
+    assert main_path.with_suffix(".bak").read_text(encoding="utf-8") == old_main
+
+
+def test_promote_rejects_non_latex_draft_protecting_main(tmp_path):
+    # Locks in the data-loss fix: a placeholder draft cannot clobber main.tex.
+    config = _make_config(tmp_path)
+    main_path = Path(config.profiles_dir) / "main.tex"
+    main_path.write_text(_DOC, encoding="utf-8")
+    _draft_path(config).write_text("NEW draft", encoding="utf-8")
+
+    result = promote_draft_to_main(config)
+
+    assert result["ok"] is False
+    assert result["reason"] == "not_latex_document"
+    assert main_path.read_text(encoding="utf-8") == _DOC
 
 
 # --- single_page_guard ----------------------------------------------------
