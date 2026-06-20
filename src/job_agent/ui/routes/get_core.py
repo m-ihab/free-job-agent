@@ -143,6 +143,13 @@ def get_ai_status(h) -> None:
     h._send_json(ollama_status(PolishOptions.from_env()))
 
 
+def get_ai_trace(h) -> None:
+    """Recent local-AI routing telemetry (per-tier latency / success rate) for
+    the AI trace panel. Prompt-free by construction."""
+    from job_agent.agent_core import trace_summary
+    h._send_json(trace_summary())
+
+
 def get_ollama_install(h) -> None:
     h._send_json(ollama_install_status(PolishOptions.from_env()))
 
