@@ -13,7 +13,17 @@ from __future__ import annotations
 
 import json
 
-from playwright.sync_api import Page, expect
+import pytest
+
+try:
+    from playwright.sync_api import Page, expect
+except ImportError:
+    from typing import Any
+
+    Page = Any  # type: ignore[assignment]
+    expect = None  # type: ignore[assignment]
+
+pytestmark = pytest.mark.skipif(expect is None, reason="playwright is not installed")
 
 
 def _post_json(page: Page, live_server_url: str, path: str, payload: dict):
