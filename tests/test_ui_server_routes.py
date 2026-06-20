@@ -183,3 +183,24 @@ def test_post_add_url_rejects_file_scheme(server):
     status, payload = _post(port, token, "/api/add-url", {"url": "file:///etc/passwd"})
     assert status == 400
     assert "error" in payload
+
+
+def _get_with_host(port: int, path: str, host: str) -> int:
+    """GET with an explicit (possibly spoofed) Host header; returns status code."""
+    with closing(http.client.HTTPConnection("127.0.0.1", port, timeout=5)) as conn:
+        conn.putrequest("GET", path, skip_host=True)
+        conn.putheader("Host", host)
+        conn.endheaders()
+        return conn.getresponse().status
+
+
+def test_get_rejects_spoofed_host(server):
+    """DNS-rebinding defence: a GET whose Host is not in the loopback allowlist
+    is refused, so a cross-origin page cannot read /api data via 127.0.0.1."""
+    port, _, _ = server
+    assert _get_with_host(port, "/api/jobs", "evil.attacker.example") == 403
+
+
+def test_get_allows_loopback_host(server):
+    port, _, _ = server
+    assert _get_with_host(port, "/api/jobs", f"127.0.0.1:{port}") == 200

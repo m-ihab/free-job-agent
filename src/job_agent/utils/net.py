@@ -7,12 +7,16 @@ internal services, cloud metadata (169.254.169.254), or — via the vendored
 
 ``validate_public_http_url`` enforces an http(s) scheme and blocks hosts that
 resolve to private/loopback/link-local/reserved ranges. ``safe_get`` additionally
-re-validates every redirect hop and caps the response size.
+re-validates every redirect hop, pins the connection to the vetted IP (closing
+the validate→connect DNS-rebinding window) and caps the response size.
 """
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import socket
+import threading
+from collections.abc import Iterator
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -20,12 +24,38 @@ ALLOWED_SCHEMES = frozenset({"http", "https"})
 _REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 DEFAULT_MAX_BYTES = 8_000_000
 
+# ── Thread-safe connect-time pinning ──────────────────────────────────────────
+# We resolve+validate a host, then must make the actual socket connect to that
+# *same* vetted IP (else a DNS-rebinding host could flip to a private address
+# between validate and connect). Rather than swapping ``socket.getaddrinfo``
+# process-wide per call (which races across the dashboard's worker threads), we
+# install a single resolver shim once and drive it from THREAD-LOCAL pins, so
+# concurrent fetches never clobber each other's pin.
+_real_getaddrinfo = socket.getaddrinfo
+_pins = threading.local()
+
+
+def _pinned_getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
+    pins: dict[str, str] = getattr(_pins, "map", None) or {}
+    target = pins.get(host, host)
+    return _real_getaddrinfo(target, *args, **kwargs)
+
+
+# Install once (idempotent across re-imports).
+if socket.getaddrinfo is not _pinned_getaddrinfo:  # pragma: no branch
+    socket.getaddrinfo = _pinned_getaddrinfo  # type: ignore[assignment]
+
 
 class UnsafeUrlError(ValueError):
     """Raised when a URL is unsafe to fetch (bad scheme or non-public host)."""
 
 
 def _blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    # An IPv4-mapped IPv6 address (``::ffff:127.0.0.1``) does NOT report
+    # is_private/is_loopback on the IPv6 object, so unwrap it to its IPv4 form
+    # before classifying — otherwise it slips past the block list.
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
     return (
         ip.is_private
         or ip.is_loopback
@@ -57,9 +87,13 @@ def _resolve(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
     return out
 
 
-def validate_public_http_url(url: str) -> str:
-    """Return ``url`` unchanged if it is an http(s) URL whose host resolves only
-    to public addresses; otherwise raise :class:`UnsafeUrlError`."""
+def _validate(url: str) -> tuple[str, ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """Validate scheme + host and return ``(host, vetted_ip)``.
+
+    The returned IP is one we have confirmed public; pinning the connection to
+    it (see :func:`_pin_host`) closes the DNS-rebinding window between validation
+    and connect.
+    """
     parsed = urlparse(url)
     scheme = (parsed.scheme or "").lower()
     if scheme not in ALLOWED_SCHEMES:
@@ -67,10 +101,40 @@ def validate_public_http_url(url: str) -> str:
     host = parsed.hostname
     if not host:
         raise UnsafeUrlError("URL has no host.")
-    for ip in _resolve(host):
+    ips = _resolve(host)
+    for ip in ips:
         if _blocked(ip):
             raise UnsafeUrlError(f"URL host '{host}' resolves to a non-public address ({ip}).")
+    return host, ips[0]
+
+
+def validate_public_http_url(url: str) -> str:
+    """Return ``url`` unchanged if it is an http(s) URL whose host resolves only
+    to public addresses; otherwise raise :class:`UnsafeUrlError`."""
+    _validate(url)
     return url
+
+
+@contextlib.contextmanager
+def _pin_host(host: str, ip: str) -> Iterator[None]:
+    """Pin ``host`` to the already-vetted ``ip`` for the duration of a single
+    fetch on THIS thread, so the socket connects to the address we validated
+    rather than re-resolving (which a rebinding attacker could flip to a private
+    IP). State is thread-local, so concurrent fetches don't interfere."""
+    pins: dict[str, str] | None = getattr(_pins, "map", None)
+    if pins is None:
+        pins = {}
+        _pins.map = pins
+    had = host in pins
+    previous = pins.get(host)
+    pins[host] = ip
+    try:
+        yield
+    finally:
+        if had:
+            pins[host] = previous  # type: ignore[assignment]
+        else:
+            pins.pop(host, None)
 
 
 def _enforce_size(resp: Any, max_bytes: int) -> None:
@@ -91,18 +155,30 @@ def safe_get(
     follows redirects manually so each hop is re-checked, and caps body size."""
     import requests  # real package when installed, else job_agent vendored shim
 
-    validate_public_http_url(url)
     current = url
     hops = 0
     while True:
+        host, ip = _validate(current)
         try:
-            # allow_redirects exists on the real requests; the vendored shim
-            # lacks it and raises TypeError, handled below.
-            resp = requests.get(current, headers=headers, timeout=timeout, allow_redirects=False)  # type: ignore[call-arg]
+            # Both the real requests and the vendored shim honour
+            # ``allow_redirects=False``; we follow redirects manually so each hop
+            # is re-validated. ``_pin_host`` makes the connect use the IP we just
+            # vetted, closing the validate→connect rebinding window.
+            with _pin_host(host, str(ip)):
+                resp = requests.get(
+                    current, headers=headers, timeout=timeout, allow_redirects=False
+                )  # type: ignore[call-arg]
         except TypeError:
-            # Vendored shim lacks ``allow_redirects``; it follows internally but
-            # independently refuses non-http(s) schemes, so file:// stays blocked.
-            resp = requests.get(current, headers=headers, timeout=timeout)
+            # Last-resort path for a non-conforming client that lacks
+            # ``allow_redirects`` (real requests + the vendored shim both support
+            # it, so this only fires for odd test doubles). We cannot drive the
+            # manual per-hop revalidation here, so we refuse to hand back a
+            # redirect rather than risk an unvalidated auto-follow.
+            with _pin_host(host, str(ip)):
+                resp = requests.get(current, headers=headers, timeout=timeout)
+            if (getattr(resp, "status_code", 0) in _REDIRECT_CODES
+                    and (getattr(resp, "headers", {}) or {}).get("Location")):
+                raise UnsafeUrlError("Redirect cannot be revalidated on this client.")
             _enforce_size(resp, max_bytes)
             return resp
         location = (getattr(resp, "headers", {}) or {}).get("Location")
@@ -111,7 +187,6 @@ def safe_get(
             if hops > max_redirects:
                 raise UnsafeUrlError("Too many redirects.")
             current = urljoin(current, location)
-            validate_public_http_url(current)
             continue
         _enforce_size(resp, max_bytes)
         return resp

@@ -90,3 +90,51 @@ def test_full_auto_unfillable_with_wall_is_queued_not_errored(monkeypatch):
     page = FakePage("<html>Please log in to continue</html>")
     result = sess._apply_one(page, _candidate(), 1, 1)
     assert result.status == "needs_manual"
+
+
+def test_full_auto_post_submit_wall_hands_off(monkeypatch):
+    """A wall that appears *after* the submit click must trigger a hand-off, not
+    a false 'submitted' record (finding 4)."""
+    sess = _session(monkeypatch)
+
+    def submit(page, ats):
+        page._content = "<html><div class='g-recaptcha'></div></html>"  # wall after submit
+        return True
+
+    monkeypatch.setattr(aa, "_click_submit", submit)
+    page = FakePage("<html><form>apply</form></html>")  # clean before submit
+    result = sess._apply_one(page, _candidate(), 1, 1)
+    assert result.status == "needs_manual"
+    assert sess.manual_calls and not sess.submitted_calls  # not falsely submitted
+
+
+def test_full_auto_detection_failure_fails_closed(monkeypatch):
+    """If the page cannot be inspected, FULL_AUTO must hand off (fail closed),
+    never submit blind (finding 6)."""
+    sess = _session(monkeypatch)
+    monkeypatch.setattr(aa, "_click_submit", lambda page, ats: True)
+
+    class Unreadable(FakePage):
+        def content(self):
+            raise RuntimeError("navigation in progress")
+
+    result = sess._apply_one(Unreadable(""), _candidate(), 1, 1)
+    assert result.status == "needs_manual"
+    assert not sess.submitted_calls
+
+
+def test_full_auto_queue_persistence_failure_surfaces_error(monkeypatch):
+    """If persisting the NEEDS_MANUAL hand-off fails, the result must be an error
+    (not a clean 'needs_manual'), so the job is not silently dropped (finding 7)."""
+    sess = _session(monkeypatch)
+
+    def boom(candidate, reason):
+        raise RuntimeError("db write failed")
+
+    monkeypatch.setattr(sess, "_mark_needs_manual", boom)
+    monkeypatch.setattr(aa, "_click_submit", lambda page, ats: True)
+    page = FakePage("<html><div class='g-recaptcha'></div></html>")  # wall pre-submit
+    result = sess._apply_one(page, _candidate(), 1, 1)
+    assert result.status == "error"
+    assert "not queued" in result.message.lower()
+    assert not sess.submitted_calls

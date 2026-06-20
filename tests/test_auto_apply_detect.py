@@ -77,8 +77,11 @@ def test_detect_human_wall_clean_form_returns_false():
 
 
 def test_detect_human_wall_handles_content_exception():
-    # A page raising during .content() must be treated as "no wall", not crash.
-    assert _detect_human_wall(_FakePage(raise_content=True)) == (False, "")
+    # A page we cannot inspect must fail CLOSED — treat as a wall and hand off,
+    # never proceed to a blind submit.
+    is_wall, reason = _detect_human_wall(_FakePage(raise_content=True))
+    assert is_wall is True
+    assert reason == "wall detection unavailable"
 
 
 def test_detect_human_wall_handles_missing_frames():

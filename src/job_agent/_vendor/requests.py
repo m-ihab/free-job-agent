@@ -76,6 +76,18 @@ def _coerce_headers(headers: dict[str, Any] | None) -> dict[str, str]:
     return {str(k): str(v) for k, v in (headers or {}).items()}
 
 
+class _NoRedirectHandler(request.HTTPRedirectHandler):
+    """Suppress urllib's automatic redirect following.
+
+    Returning ``None`` from ``redirect_request`` makes urllib surface the 3xx
+    response (via ``HTTPError``) instead of silently following it — so the SSRF
+    guard in ``safe_get`` can re-validate each ``Location`` before the next hop.
+    """
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> Any:
+        return None
+
+
 def _request(
     method: str,
     url: str,
@@ -84,6 +96,7 @@ def _request(
     data: dict[str, Any] | bytes | str | None = None,
     headers: dict[str, Any] | None = None,
     timeout: int | float | None = None,
+    allow_redirects: bool = True,
 ) -> Response:
     final_url = _build_url(url, params)
     scheme = parse.urlsplit(final_url).scheme.lower()
@@ -102,8 +115,13 @@ def _request(
         payload = data
 
     req = request.Request(final_url, data=payload, headers=req_headers, method=method.upper())
+    opener = request.urlopen
+    if not allow_redirects:
+        # Build a one-off opener that refuses to auto-follow redirects.
+        built = request.build_opener(_NoRedirectHandler())
+        opener = built.open
     try:
-        with request.urlopen(req, timeout=timeout or 20) as resp:
+        with opener(req, timeout=timeout or 20) as resp:
             raw = resp.read()
             resp_headers = {k: v for k, v in resp.headers.items()}
             return Response(final_url, int(getattr(resp, "status", 200)), resp_headers, raw)
@@ -123,8 +141,12 @@ def get(
     params: dict[str, Any] | None = None,
     headers: dict[str, Any] | None = None,
     timeout: int | float | None = None,
+    allow_redirects: bool = True,
 ) -> Response:
-    return _request("GET", url, params=params, headers=headers, timeout=timeout)
+    return _request(
+        "GET", url, params=params, headers=headers, timeout=timeout,
+        allow_redirects=allow_redirects,
+    )
 
 
 def post(
