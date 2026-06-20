@@ -521,7 +521,10 @@ data engineer</textarea>
               </label>
               <span class="muted" id="studioStatus"></span>
             </div>
-            <textarea id="studioTextarea" spellcheck="false" wrap="off"></textarea>
+            <div class="editor-wrap">
+              <div class="editor-gutter" id="studioGutter" aria-hidden="true">1</div>
+              <textarea id="studioTextarea" spellcheck="false" wrap="off"></textarea>
+            </div>
             <div class="notice hidden" id="studioNotice"></div>
           </section>
           <section class="panel studio-preview">
@@ -700,6 +703,10 @@ data engineer</textarea>
         </div>
         <div class="portfolio-command" id="portfolioSections">
           <span class="muted">Optional sections:</span>
+        </div>
+        <div class="portfolio-order-wrap">
+          <span class="muted">Section order:</span>
+          <ul class="section-order" id="portfolioOrder"></ul>
         </div>
         <div class="portfolio-command">
           <button id="portfolioSuggestBtn">AI design ideas</button>

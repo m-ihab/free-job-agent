@@ -1339,9 +1339,25 @@ async function loadStudio() {
     if (status) {
       status.textContent = data.origin === "draft" ? "Editing draft (unsaved promotion to main.tex)" : "Loaded main.tex";
     }
+    studioSyncGutter();
   } catch (error) {
     setNotice("studioNotice", error.message, true);
   }
+}
+
+function studioSyncGutter() {
+  const textarea = document.getElementById("studioTextarea");
+  const gutter = document.getElementById("studioGutter");
+  if (!textarea || !gutter) return;
+  const lines = (textarea.value.match(/\n/g) || []).length + 1;
+  const current = gutter.childElementCount ? gutter.dataset.lines : "";
+  if (String(lines) !== current) {
+    let out = "";
+    for (let i = 1; i <= lines; i++) out += i + "\n";
+    gutter.textContent = out;
+    gutter.dataset.lines = String(lines);
+  }
+  gutter.scrollTop = textarea.scrollTop;
 }
 
 function renderStudioSections(titles, display) {
@@ -2022,8 +2038,45 @@ function renderPortfolioOptions(data) {
   const animations = document.getElementById("portfolioAnimations");
   if (animations) animations.checked = cfg.enable_animations !== false;
   renderPortfolioSections(data, cfg);
+  renderPortfolioOrder(cfg);
   const path = document.getElementById("portfolioPath");
   if (path) path.textContent = data.path ? `Local folder: ${data.path}` : "";
+}
+
+const PORTFOLIO_SECTION_LABELS = {
+  skills: "Core stack",
+  projects: "Projects",
+  experience: "Experience",
+  education: "Education",
+};
+
+function renderPortfolioOrder(cfg) {
+  const list = document.getElementById("portfolioOrder");
+  if (!list) return;
+  const defaults = ["skills", "projects", "experience", "education"];
+  let order = Array.isArray(cfg.section_order) && cfg.section_order.length ? cfg.section_order.slice() : defaults.slice();
+  order = order.filter((k) => defaults.includes(k));
+  defaults.forEach((k) => { if (!order.includes(k)) order.push(k); });
+  state.portfolioOrder = order;
+  list.innerHTML = order.map((key, idx) => `
+    <li class="section-order-row" data-key="${escapeHtml(key)}">
+      <span>${escapeHtml(PORTFOLIO_SECTION_LABELS[key] || key)}</span>
+      <span class="order-actions">
+        <button type="button" data-move="up" ${idx === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
+        <button type="button" data-move="down" ${idx === order.length - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
+      </span>
+    </li>`).join("");
+  list.querySelectorAll("button[data-move]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = btn.closest("[data-key]");
+      const key = row.dataset.key;
+      const i = state.portfolioOrder.indexOf(key);
+      const j = btn.dataset.move === "up" ? i - 1 : i + 1;
+      if (j < 0 || j >= state.portfolioOrder.length) return;
+      [state.portfolioOrder[i], state.portfolioOrder[j]] = [state.portfolioOrder[j], state.portfolioOrder[i]];
+      renderPortfolioOrder({ section_order: state.portfolioOrder });
+    });
+  });
 }
 
 function renderPortfolioSections(data, cfg) {
@@ -2059,6 +2112,7 @@ function portfolioPayload() {
     tagline: document.getElementById("portfolioTagline")?.value || "",
     site_url: document.getElementById("portfolioSiteUrl")?.value || "",
     sections: readPortfolioSections(),
+    section_order: Array.isArray(state.portfolioOrder) ? state.portfolioOrder : null,
     enable_dark_toggle: document.getElementById("portfolioDarkToggle")?.checked !== false,
     enable_animations: document.getElementById("portfolioAnimations")?.checked !== false,
   };
@@ -3042,7 +3096,10 @@ function bindEvents() {
   const studioLangSel = document.getElementById("studioLanguage");
   if (studioLangSel) studioLangSel.addEventListener("change", (event) => studioSetLanguage(event.target.value));
   const studioTextarea = document.getElementById("studioTextarea");
-  if (studioTextarea) studioTextarea.addEventListener("input", () => { studioTextarea.dataset.dirty = "1"; });
+  if (studioTextarea) {
+    studioTextarea.addEventListener("input", () => { studioTextarea.dataset.dirty = "1"; studioSyncGutter(); });
+    studioTextarea.addEventListener("scroll", studioSyncGutter);
+  }
 
   // Studio v2 hooks
   const studioAssetReloadBtn = document.getElementById("studioAssetReloadBtn");
