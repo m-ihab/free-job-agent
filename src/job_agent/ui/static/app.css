@@ -30,6 +30,25 @@
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 16px;
+  --rail-w: 248px;
+
+  /* Compatibility aliases for the later CV-Studio / Auto-Apply UI, which was
+     authored against a `--color-*` naming scheme. Aliasing them to the real
+     design tokens (instead of leaving them undefined to fall back to hardcoded
+     light hexes) is what makes those panels theme-correct in dark mode. */
+  --color-primary: var(--accent);
+  --color-bg: var(--surface);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface-2);
+  --color-border: var(--line);
+  --color-muted: var(--muted);
+  --color-text: var(--ink);
+
+  /* Elevation + atmosphere tokens. */
+  --elev-1: 0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 10px 24px rgba(15, 21, 39, 0.08);
+  --elev-2: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 22px 48px rgba(15, 21, 39, 0.14);
+  --hairline: color-mix(in srgb, var(--accent) 22%, transparent);
+  --grid-line: color-mix(in srgb, var(--ink) 4%, transparent);
 }
 
 html[data-theme="dark"] {
@@ -56,6 +75,9 @@ html[data-theme="dark"] {
   --bg-grad-3: #111a2e;
   --shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
   --shadow-soft: 0 10px 22px rgba(0, 0, 0, 0.35);
+  --elev-1: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 26px rgba(0, 0, 0, 0.5);
+  --elev-2: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 26px 56px rgba(0, 0, 0, 0.62);
+  --grid-line: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
 * {
@@ -66,10 +88,20 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  /* App shell: full-height sidebar rail on the left, slim top bar + content
+     on the right. Overlays (.toast/.modal*) are position:fixed so they do not
+     participate in this grid. */
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "rail header"
+    "rail main";
+  /* Calmer, "easy on the eye" backdrop: a single soft aurora at the top-left
+     of the content, over a quiet vertical wash. */
   background:
-    radial-gradient(1200px 600px at 80% -10%, var(--accent-soft) 0%, transparent 60%),
-    radial-gradient(900px 500px at -5% 10%, var(--accent-3-soft) 0%, transparent 60%),
-    linear-gradient(180deg, var(--bg-grad-1) 0%, var(--bg-grad-2) 55%, var(--bg-grad-3) 100%);
+    radial-gradient(900px 520px at 18% -8%, var(--accent-soft) 0%, transparent 64%),
+    linear-gradient(180deg, var(--bg-grad-1) 0%, var(--bg-grad-3) 60%);
   background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-body);
@@ -144,14 +176,20 @@ button:disabled {
 button.primary,
 .button-link.primary {
   border-color: var(--accent);
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 78%, var(--accent-3)) 100%);
   color: #fff;
   font-weight: 700;
+  box-shadow: 0 8px 20px var(--accent-soft);
 }
 
 button.primary:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+}
+
+button:active,
+.button-link:active {
+  transform: translateY(1px) scale(0.97);
 }
 
 button.primary-soft {
@@ -200,6 +238,7 @@ h1 {
   font-family: var(--font-display);
   letter-spacing: -0.02em;
   font-weight: 800;
+  text-wrap: balance;
 }
 
 h2 {
@@ -208,6 +247,7 @@ h2 {
   font-family: var(--font-display);
   letter-spacing: -0.01em;
   font-weight: 700;
+  text-wrap: balance;
 }
 
 h3 {
@@ -230,24 +270,30 @@ h4 {
 }
 
 .app-header {
+  grid-area: header;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.15rem clamp(1rem, 3vw, 2rem);
-  background: var(--surface);
+  padding: 0.85rem clamp(1rem, 3vw, 2rem);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
   border-bottom: 1px solid var(--line);
-  box-shadow: var(--shadow-soft);
   position: sticky;
   top: 0;
   z-index: 50;
-  backdrop-filter: saturate(140%) blur(8px);
+  backdrop-filter: saturate(140%) blur(10px);
+}
+
+/* In the shell, the header is a slim bar — compress the brand block. */
+.app-header .hero-sub {
+  display: none;
 }
 
 .app-header h1 {
   display: flex;
   align-items: center;
   gap: 0.55rem;
+  font-size: clamp(1.05rem, 1.4vw, 1.3rem);
 }
 
 .app-header h1::before {
@@ -357,31 +403,92 @@ h4 {
   color: var(--muted);
 }
 
+/* Left sidebar rail: full-height vertical navigation (Linear/Vercel pattern). */
 .tabs {
+  grid-area: rail;
   display: flex;
-  gap: 0.35rem;
-  padding: 0.85rem clamp(1rem, 3vw, 2rem) 0;
-  background: transparent;
-  overflow-x: auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+  padding: 1rem 0.75rem;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  scrollbar-width: thin;
 }
 
+/* Vertical nav items with a left active-indicator bar. */
 .tab {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  background: var(--surface-3);
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+  justify-content: flex-start;
+  padding: 0.6rem 0.8rem;
   white-space: nowrap;
+  transition-property: color, background-color, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+.tab:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+  transform: none;
+  box-shadow: none;
 }
 
 .tab.active {
-  background: var(--surface);
-  border-color: var(--line);
-  border-bottom-color: var(--surface);
+  background: var(--accent-soft);
+  border-color: transparent;
   color: var(--accent);
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: none;
+}
+
+.tab.active::before {
+  content: "";
+  position: absolute;
+  left: -0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 1.1rem;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
 }
 
 main {
+  grid-area: main;
+  min-width: 0;
   padding: 0 clamp(1rem, 3vw, 2rem) 2rem;
+}
+
+/* Collapse the shell to a stacked layout with a horizontal nav on narrow
+   screens, restoring the scrollable top strip. */
+@media (max-width: 900px) {
+  body {
+    display: block;
+  }
+  .tabs {
+    flex-direction: row;
+    height: auto;
+    padding: 0.75rem clamp(1rem, 3vw, 2rem);
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+  }
+  .tab {
+    white-space: nowrap;
+  }
+  .tab.active::before {
+    display: none;
+  }
 }
 
 .tab-panel {
@@ -408,6 +515,12 @@ main {
 .section-header p {
   margin-bottom: 0;
   color: var(--muted);
+}
+
+/* Editorial accent ledge for section hierarchy. */
+.section-header > div:first-child {
+  border-left: 3px solid var(--accent);
+  padding-left: 0.7rem;
 }
 
 .control-grid {
@@ -446,10 +559,16 @@ textarea {
   min-height: 38px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--ink);
   padding: 0.55rem 0.7rem;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--line-strong);
 }
 
 textarea {
@@ -486,10 +605,16 @@ textarea {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0.85rem 0.95rem;
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--elev-1);
   animation: rise 0.4s ease;
   position: relative;
   overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.22s ease, border-color 0.18s ease;
+}
+
+.metric:hover {
+  box-shadow: var(--elev-2);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
 }
 
 .metric::after {
@@ -519,6 +644,7 @@ textarea {
   font-weight: 800;
   line-height: 1.15;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 
 .metric.metric-long strong {
@@ -539,7 +665,13 @@ textarea {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 1rem 1.1rem;
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--elev-1);
+  transition: transform 0.18s ease, box-shadow 0.22s ease, border-color 0.18s ease;
+}
+
+.panel:hover {
+  box-shadow: var(--elev-2);
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
 }
 
 .panel + .panel {
@@ -1774,9 +1906,69 @@ html[data-theme="dark"] .coach-list li {
   font-weight: 600;
   padding: 0.1rem 0.45rem;
   border-radius: 999px;
-  background: rgba(234, 88, 12, 0.12);
-  color: #ea580c;
-  border: 1px solid rgba(234, 88, 12, 0.3);
+  background: rgba(234, 88, 12, 0.14);
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
   margin-left: 0.4rem;
   vertical-align: middle;
+}
+
+/* Faint grid texture behind the gradient wash. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(1100px 700px at 70% -5%, #000 0%, transparent 75%);
+}
+
+/* Subtle neutral inset outline so images don't blur into the surface. */
+img {
+  outline: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  outline-offset: -1px;
+}
+
+/* Themed scrollbars, selection, and reduced-motion respect. */
+html {
+  scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+  background-clip: padding-box;
+}
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+/* Respect reduced-motion: drop entrance animation + lifts. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .panel:hover,
+  .metric:hover,
+  button:hover,
+  button:active {
+    transform: none;
+  }
 }
