@@ -3095,6 +3095,19 @@ function bindEvents() {
     }
   });
 
+  const obsidianBtn = document.getElementById("obsidianSyncBtn");
+  if (obsidianBtn) obsidianBtn.addEventListener("click", async () => {
+    setBusy(obsidianBtn, true);
+    try {
+      const result = await api("/api/obsidian-sync", {});
+      toast(`Synced ${result.count} job(s) to Obsidian. Open ${result.vault} and view the graph (start at Dashboard.md).`);
+    } catch (error) {
+      toast(`Obsidian sync failed: ${error.message}`);
+    } finally {
+      setBusy(obsidianBtn, false);
+    }
+  });
+
   const dedupeBtn = document.getElementById("dedupeJobsBtn");
   if (dedupeBtn) dedupeBtn.addEventListener("click", async () => {
     if (!window.confirm("Collapse duplicate jobs using the new fingerprint? Older copies will be deleted; newest copy is kept.")) return;

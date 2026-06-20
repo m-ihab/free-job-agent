@@ -63,6 +63,14 @@ def post_maintenance_clear_broken(h, payload) -> None:
     h._send_json(_clear_broken_sources(h._config()))
 
 
+def post_obsidian_sync(h, payload) -> None:
+    """Export the local job DB into a linked Obsidian vault (graph + dashboard)."""
+    from job_agent.exporters.obsidian import export_obsidian_vault
+
+    vault, count = export_obsidian_vault(h._config())
+    h._send_json({"ok": True, "count": count, "vault": str(vault)})
+
+
 def post_status(h, payload) -> None:
     config = h._config()
     job_id = str(payload.get("job_id") or "")

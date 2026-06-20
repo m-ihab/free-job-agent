@@ -204,3 +204,27 @@ def test_get_rejects_spoofed_host(server):
 def test_get_allows_loopback_host(server):
     port, _, _ = server
     assert _get_with_host(port, "/api/jobs", f"127.0.0.1:{port}") == 200
+
+
+def test_post_obsidian_sync(server, monkeypatch):
+    """The dashboard 'Sync to Obsidian' button hits this route; it runs behind
+    the CSRF/token guard and returns the job count + vault path."""
+    import job_agent.exporters.obsidian as obs
+    # Stub the exporter so the live-server test never writes the real vault.
+    monkeypatch.setattr(obs, "export_obsidian_vault", lambda config, **k: ("/tmp/vault", 5))
+    port, token, _ = server
+    status, payload = _post(port, token, "/api/obsidian-sync", {})
+    assert status == 200
+    assert payload["ok"] is True
+    assert payload["count"] == 5
+    assert payload["vault"] == "/tmp/vault"
+
+
+def test_post_obsidian_sync_requires_token(server):
+    """Without the token it must be rejected (CSRF guard), like other POSTs."""
+    port, _, _ = server
+    with closing(http.client.HTTPConnection("127.0.0.1", port, timeout=5)) as conn:
+        conn.request("POST", "/api/obsidian-sync",
+                     body=b"{}", headers={"Content-Type": "application/json"})
+        status = conn.getresponse().status
+    assert status == 403

@@ -82,6 +82,7 @@ POST_ROUTES: dict[str, Callable[[object, dict], None]] = {
     "/api/maintenance/dedupe": post_autopilot.post_maintenance_dedupe,
     "/api/maintenance/validate-sources": post_autopilot.post_maintenance_validate_sources,
     "/api/maintenance/clear-broken": post_autopilot.post_maintenance_clear_broken,
+    "/api/obsidian-sync": post_autopilot.post_obsidian_sync,
     "/api/cv-studio/asset-save": post_cv_studio.post_asset_save,
     "/api/cv-studio/replace-photo": post_cv_studio.post_replace_photo,
     "/api/cv-studio/remove-photo": post_cv_studio.post_remove_photo,
