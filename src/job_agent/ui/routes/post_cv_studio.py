@@ -7,8 +7,10 @@ from job_agent.cv_studio import (
     apply_icon_pack as _studio_apply_icon_pack,
     compile_preview as _studio_compile_preview,
     import_github_project as _studio_import_project,
+    list_main_versions as _studio_list_versions,
     promote_draft_to_main as _studio_promote_main,
     remove_photo as _studio_remove_photo,
+    restore_main_version as _studio_restore_version,
     reorder_sections as _studio_reorder,
     replace_photo as _studio_replace_photo,
     reset_studio_draft as _studio_reset,
@@ -90,6 +92,15 @@ def post_reset(h, payload) -> None:
 
 def post_promote(h, payload) -> None:
     h._send_json(_studio_promote_main(h._config()))
+
+
+def post_versions(h, payload) -> None:
+    h._send_json({"ok": True, "versions": _studio_list_versions(h._config())})
+
+
+def post_restore_version(h, payload) -> None:
+    name = str(payload.get("name") or "")
+    h._send_json(_studio_restore_version(h._config(), name))
 
 
 def post_compile(h, payload) -> None:
