@@ -572,7 +572,7 @@ function renderJobs() {
           <td><input type="checkbox" data-select-job="${escapeHtml(job.id)}" ${checked} /></td>
           <td><strong>${escapeHtml(job.title)}</strong>${langWarn}<br>${companyLine(job)}${summary}${tags}</td>
           <td>${escapeHtml(job.location || "")}${job.remote ? ` ${renderBadge("Remote", "good")}` : ""}</td>
-          <td>${escapeHtml(job.status)}</td>
+          <td>${statusBadge(job.status)}</td>
           <td>${scorePill(job.fit_score)}${aiBadge ? `<br>${aiBadge}` : ""}</td>
           <td>${escapeHtml((job.tech_stack || []).slice(0, 5).join(", "))}</td>
           <td>${escapeHtml(enrichLabel)}</td>
@@ -581,11 +581,30 @@ function renderJobs() {
       },
     )
     .join("");
-  $("jobsTableWrap").innerHTML = `<table>
+  const countLine = `<div class="jobs-count muted">Showing <strong>${jobs.length}</strong> of <strong>${state.jobs.length}</strong> tracked jobs</div>`;
+  $("jobsTableWrap").innerHTML = countLine + `<table>
     <thead><tr><th></th><th>Job</th><th>Location</th><th>Status</th><th>Score</th><th>Signals</th><th>Enrich</th><th>Actions</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
   refreshSelectionUi();
+}
+
+// Map a job status to a small tone-coded pill.
+const _STATUS_TONE = {
+  REJECTED: "bad",
+  NEEDS_MANUAL: "warn",
+  APPLIED: "good",
+  SUBMITTED: "good",
+  INTERVIEW: "good",
+  OFFERED: "good",
+  ACCEPTED: "good",
+};
+
+function statusBadge(status) {
+  const key = String(status || "").toUpperCase();
+  const tone = _STATUS_TONE[key] || "";
+  const label = key.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  return renderBadge(label || "—", tone);
 }
 
 function refreshSelectionUi() {

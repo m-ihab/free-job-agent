@@ -737,6 +737,14 @@ html[data-theme="dark"] .detail-block {
 .table-wrap {
   overflow-x: auto;
 }
+.jobs-count {
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+.jobs-count strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
 
 .table-wrap table {
   width: 100%;
