@@ -23,6 +23,7 @@ etc.) keep working unchanged.
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -61,6 +62,9 @@ try:
 except Exception:  # pragma: no cover
     def _ai_generate_summary(*args, **kwargs):  # type: ignore[misc]
         return None
+
+
+logger = logging.getLogger(__name__)
 
 
 class LatexCompileError(RuntimeError):
@@ -328,6 +332,45 @@ def _safe_existing_file(path: Path) -> bool:
         return False
 
 
+_IMAGE_CMD_RE = re.compile(r"\\(?:photo|includegraphics)(?:\[[^\]]*\])*\{([^}]*)\}")
+_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".pdf")
+
+
+def _image_present(name: str, asset_dir: Path) -> bool:
+    """Is the image referenced by ``name`` available next to the .tex file?"""
+    name = name.strip().strip('"').lstrip("./")
+    if not name:
+        return False
+    base = Path(name).name
+    if Path(name).suffix.lower() in _IMAGE_EXTS:
+        candidates = [asset_dir / name, asset_dir / base]
+    else:  # moderncv \photo{me} resolves me.jpg/.png/...
+        candidates = [asset_dir / f"{stem}{ext}" for stem in (name, base) for ext in _IMAGE_EXTS]
+    return any(_safe_existing_file(c) for c in candidates)
+
+
+def neutralize_missing_images(tex_text: str, asset_dir: Path | str) -> tuple[str, list[str]]:
+    """Drop ``\\photo``/``\\includegraphics`` references whose file is absent.
+
+    A missing image makes pdflatex abort fatally ("reading image file failed").
+    A CV without a photo is far better than no CV at all, so we degrade
+    gracefully: the command is removed (replaced with empty text, safe even when
+    nested inline) and the dropped names are returned for logging. Present images
+    are left untouched.
+    """
+    asset_dir = Path(asset_dir)
+    removed: list[str] = []
+
+    def _replace(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if _image_present(name, asset_dir):
+            return match.group(0)
+        removed.append(name)
+        return ""
+
+    return _IMAGE_CMD_RE.sub(_replace, tex_text), removed
+
+
 def _perl_available() -> bool:
     """latexmk needs a Perl interpreter; check before preferring it."""
     return shutil.which("perl") is not None
@@ -406,6 +449,21 @@ def compile_latex_to_pdf(tex_path: Path | str, output_pdf: Path | str) -> Path:
         raise LatexCompileError("No LaTeX compiler found on PATH. Install MiKTeX or TeX Live to build cv.pdf from cv.tex.")
 
     workdir = tex_path.parent
+    # Graceful degradation: a \photo{me.jpg} / \includegraphics whose file isn't
+    # actually present (e.g. the user never imported a photo) makes pdflatex
+    # abort fatally. Strip those references so the CV still builds.
+    try:
+        original = tex_path.read_text(encoding="utf-8")
+        sanitized, dropped = neutralize_missing_images(original, workdir)
+        if dropped:
+            tex_path.write_text(sanitized, encoding="utf-8")
+            logger.warning(
+                "Omitted %d missing image(s) from %s so the CV could compile: %s",
+                len(dropped), tex_path.name, ", ".join(dropped),
+            )
+    except OSError as exc:  # pragma: no cover - unreadable tex is handled downstream
+        logger.warning("Could not pre-scan %s for missing images: %s", tex_path, exc)
+
     if Path(compiler).name.lower().startswith("latexmk"):
         command = [compiler, "-pdf", "-interaction=nonstopmode", "-halt-on-error", tex_path.name]
     else:
