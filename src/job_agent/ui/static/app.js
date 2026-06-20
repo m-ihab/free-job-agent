@@ -1398,6 +1398,21 @@ async function studioSwapEduExp() {
   }
 }
 
+let studioZoom = "page-width";
+
+function studioRefreshPreview() {
+  const iframe = document.getElementById("studioPreview");
+  if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}#zoom=${studioZoom}`;
+}
+
+function studioSetZoom(zoom) {
+  studioZoom = zoom;
+  document.querySelectorAll('.zoom-controls button[data-zoom]').forEach((b) => {
+    b.classList.toggle("active", b.dataset.zoom === zoom);
+  });
+  studioRefreshPreview();
+}
+
 async function studioCompile() {
   const button = document.getElementById("studioCompileBtn");
   const textarea = document.getElementById("studioTextarea");
@@ -1419,8 +1434,7 @@ async function studioCompile() {
       }
       return;
     }
-    const iframe = document.getElementById("studioPreview");
-    if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}`;
+    studioRefreshPreview();
     toast("Preview rebuilt.");
   } catch (error) {
     setNotice("studioNotice", error.message, true);
@@ -2999,6 +3013,9 @@ function bindEvents() {
   });
   const studioVersionsBtn = document.getElementById("studioVersionsBtn");
   if (studioVersionsBtn) studioVersionsBtn.addEventListener("click", studioToggleVersions);
+  document.querySelectorAll('.zoom-controls button[data-zoom]').forEach((b) => {
+    b.addEventListener("click", () => studioSetZoom(b.dataset.zoom));
+  });
   const studioReorderApplyBtn = document.getElementById("studioReorderApplyBtn");
   if (studioReorderApplyBtn) studioReorderApplyBtn.addEventListener("click", studioApplyReorder);
   const studioSwapBtn = document.getElementById("studioSwapEduExpBtn");

@@ -527,6 +527,12 @@ data engineer</textarea>
           <section class="panel studio-preview">
             <div class="studio-toolbar">
               <h3 style="margin:0">Live preview</h3>
+              <div class="zoom-controls" role="group" aria-label="Preview zoom">
+                <button type="button" data-zoom="page-width" class="active">Fit</button>
+                <button type="button" data-zoom="100">100%</button>
+                <button type="button" data-zoom="125">125%</button>
+                <button type="button" data-zoom="150">150%</button>
+              </div>
               <a class="button-link" href="/api/cv-studio/preview-pdf" target="_blank" rel="noreferrer">Open full PDF</a>
             </div>
             <iframe id="studioPreview" title="CV preview"></iframe>

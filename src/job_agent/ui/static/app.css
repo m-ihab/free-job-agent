@@ -1273,6 +1273,25 @@ html[data-theme="dark"] .chat-bubble.thinking {
   align-items: stretch;
 }
 
+.zoom-controls {
+  display: inline-flex;
+  gap: 0.2rem;
+  margin-left: auto;
+}
+
+.zoom-controls button {
+  min-height: 30px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  border-radius: var(--radius-sm);
+}
+
+.zoom-controls button.active {
+  background: var(--accent-soft);
+  border-color: var(--hairline);
+  color: var(--accent);
+}
+
 .studio-versions {
   margin-bottom: 1rem;
 }
