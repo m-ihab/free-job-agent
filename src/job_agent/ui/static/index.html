@@ -460,6 +460,20 @@ data engineer</textarea>
         </div>
 
         <div class="panel">
+          <div class="section-header" style="margin-bottom:0.6rem">
+            <div>
+              <h3 style="margin:0">AI routing</h3>
+              <p class="muted" style="margin:0.2rem 0 0">Which local model tier handled recent tasks, and how it performed. Prompts are never stored.</p>
+            </div>
+            <div class="action-row">
+              <button id="aiTraceRefreshBtn">Refresh</button>
+            </div>
+          </div>
+          <div class="metric-grid" id="aiTraceTiers"></div>
+          <ul class="version-list" id="aiTraceRecent" style="margin-top:0.6rem"></ul>
+        </div>
+
+        <div class="panel">
           <h3>Profile enrichment</h3>
           <p class="muted" style="margin:0 0 0.6rem">Pull skills + projects from your public GitHub, or paste the LinkedIn Skills section to add what's missing.</p>
           <div class="action-row">
@@ -478,9 +492,18 @@ data engineer</textarea>
           </div>
           <div class="action-row">
             <button id="studioReloadBtn" title="Reload from main.tex">Reload from main.tex</button>
+            <button id="studioVersionsBtn" title="Browse and restore previous versions of main.tex">Version history</button>
             <button id="studioResetBtn">Discard draft</button>
             <button class="primary-soft" id="studioPromoteBtn" title="Overwrite profiles/main.tex with this draft (a .bak is kept)">Save as main.tex</button>
           </div>
+        </div>
+
+        <div class="panel studio-versions hidden" id="studioVersions">
+          <div class="studio-versions-head">
+            <h3>Version history</h3>
+            <span class="muted" id="studioVersionsHint">Snapshots are saved automatically each time you save to main.tex.</span>
+          </div>
+          <ul class="version-list" id="studioVersionList"></ul>
         </div>
 
         <div class="studio-grid">

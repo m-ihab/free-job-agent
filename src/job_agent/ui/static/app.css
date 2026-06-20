@@ -1273,6 +1273,48 @@ html[data-theme="dark"] .chat-bubble.thinking {
   align-items: stretch;
 }
 
+.studio-versions {
+  margin-bottom: 1rem;
+}
+
+.studio-versions-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+.version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.version-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.version-row .version-name {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.version-row .version-size {
+  margin-left: auto;
+  font-size: 0.78rem;
+}
+
 .studio-editor,
 .studio-preview {
   display: flex;

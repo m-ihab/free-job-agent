@@ -1294,6 +1294,7 @@ function activateTab(name) {
   if (name === "autopilot") {
     loadAutopilot();
     loadAiSetup();
+    loadAiTrace();
     loadNeedsManual();
   }
   if (name === "studio") {
@@ -1453,12 +1454,63 @@ async function studioReset() {
 }
 
 async function studioPromote() {
-  if (!window.confirm("Overwrite profiles/main.tex with the current draft? A .bak backup will be kept.")) return;
+  if (!window.confirm("Overwrite profiles/main.tex with the current draft? A snapshot of the current version is kept.")) return;
   const result = await api("/api/cv-studio/promote", {});
   if (result.ok) {
-    toast("Promoted draft to main.tex.");
+    toast("Saved draft to main.tex.");
+    if (!document.getElementById("studioVersions").classList.contains("hidden")) {
+      studioLoadVersions();
+    }
   } else {
-    setNotice("studioNotice", `Could not promote: ${result.reason}`, true);
+    setNotice("studioNotice", result.log || `Could not save: ${result.reason}`, true);
+  }
+}
+
+async function studioToggleVersions() {
+  const panel = document.getElementById("studioVersions");
+  if (!panel) return;
+  const willShow = panel.classList.contains("hidden");
+  panel.classList.toggle("hidden");
+  if (willShow) await studioLoadVersions();
+}
+
+async function studioLoadVersions() {
+  const list = document.getElementById("studioVersionList");
+  if (!list) return;
+  list.innerHTML = "<li class='muted'>Loading…</li>";
+  try {
+    const result = await api("/api/cv-studio/versions", {});
+    const versions = (result && result.versions) || [];
+    if (!versions.length) {
+      list.innerHTML = "<li class='muted'>No saved versions yet.</li>";
+      return;
+    }
+    list.innerHTML = versions.map((v) => {
+      const kb = Math.max(1, Math.round((v.size || 0) / 1024));
+      const label = String(v.name).replace(/^main\.|\.tex$/g, "");
+      return `<li class="version-row">
+        <span class="version-name">${escapeHtml(label)}</span>
+        <span class="version-size muted">${kb} KB</span>
+        <button data-restore="${escapeHtml(v.name)}">Restore</button>
+      </li>`;
+    }).join("");
+    list.querySelectorAll("button[data-restore]").forEach((btn) => {
+      btn.addEventListener("click", () => studioRestoreVersion(btn.dataset.restore));
+    });
+  } catch (error) {
+    list.innerHTML = `<li class="muted">${escapeHtml(error.message)}</li>`;
+  }
+}
+
+async function studioRestoreVersion(name) {
+  if (!window.confirm(`Restore main.tex from ${name}? The current version is snapshotted first.`)) return;
+  const result = await api("/api/cv-studio/restore-version", { name });
+  if (result.ok) {
+    toast("Restored main.tex from history.");
+    await loadStudio();
+    await studioLoadVersions();
+  } else {
+    setNotice("studioNotice", `Could not restore: ${result.reason}`, true);
   }
 }
 
@@ -2493,6 +2545,33 @@ async function loadAiSetup() {
   }
 }
 
+const AI_TIER_LABELS = { L1: "Sentry (L1)", L2: "Worker (L2)", L3: "Architect (L3)" };
+
+async function loadAiTrace() {
+  const tiers = document.getElementById("aiTraceTiers");
+  const recent = document.getElementById("aiTraceRecent");
+  if (!tiers || !recent) return;
+  try {
+    const data = await api("/api/ai-trace");
+    const byTier = (data && data.tiers) || {};
+    const order = ["L1", "L2", "L3"];
+    const tileHtml = order
+      .filter((t) => byTier[t])
+      .map((t) => metric(AI_TIER_LABELS[t], `${byTier[t].count}`,
+        `${Math.round(byTier[t].success_rate * 100)}% ok · ${byTier[t].avg_ms} ms avg`))
+      .join("");
+    tiers.innerHTML = tileHtml || `<div class="muted">No AI tasks recorded yet — run an AI action to populate this.</div>`;
+    const rows = (data && data.recent) || [];
+    recent.innerHTML = rows.slice(0, 8).map((r) => `<li class="version-row">
+      <span class="version-name">${escapeHtml((r.tier || "?") + " · " + (r.task || "task"))}</span>
+      <span class="muted">${escapeHtml((r.model || "").replace(":latest", ""))}</span>
+      <span class="version-size ${r.ok ? "" : "muted"}">${r.ok ? "ok" : "fail"} · ${r.elapsed_ms || 0} ms</span>
+    </li>`).join("");
+  } catch (error) {
+    tiers.innerHTML = `<div class="muted">${escapeHtml(error.message)}</div>`;
+  }
+}
+
 function renderAiSetup() {
   const info = state.aiInstall || {};
   const status = state.aiStatus || {};
@@ -2872,6 +2951,8 @@ function bindEvents() {
   if (pullBtn) pullBtn.addEventListener("click", pullFastModel);
   const refreshAiBtn = document.getElementById("refreshAiSetupBtn");
   if (refreshAiBtn) refreshAiBtn.addEventListener("click", () => { loadAiSetup(); loadAiStatus(); });
+  const aiTraceRefreshBtn = document.getElementById("aiTraceRefreshBtn");
+  if (aiTraceRefreshBtn) aiTraceRefreshBtn.addEventListener("click", loadAiTrace);
   $("enrichGithubBtn").addEventListener("click", enrichGithub);
   $("enrichLinkedinBtn").addEventListener("click", openLinkedinModal);
   $("linkedinSubmitBtn").addEventListener("click", submitLinkedinSkills);
@@ -2916,6 +2997,8 @@ function bindEvents() {
     if (ta) delete ta.dataset.dirty;
     await loadStudio();
   });
+  const studioVersionsBtn = document.getElementById("studioVersionsBtn");
+  if (studioVersionsBtn) studioVersionsBtn.addEventListener("click", studioToggleVersions);
   const studioReorderApplyBtn = document.getElementById("studioReorderApplyBtn");
   if (studioReorderApplyBtn) studioReorderApplyBtn.addEventListener("click", studioApplyReorder);
   const studioSwapBtn = document.getElementById("studioSwapEduExpBtn");
