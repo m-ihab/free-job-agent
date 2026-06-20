@@ -147,17 +147,33 @@ def _portfolio_dir(config: AppConfig) -> Path:
     return base
 
 
+def _nonempty(path: Path) -> bool:
+    """True only if ``path`` exists and is not a 0-byte file."""
+    try:
+        return path.is_file() and path.stat().st_size > 0
+    except OSError:
+        return False
+
+
 def _photo_asset(config: AppConfig) -> str:
+    """Copy a usable portrait into the portfolio dir, returning its filename.
+
+    Validates the source is non-empty before copying (a 0-byte ``me.jpg`` would
+    otherwise render as a broken image), and falls back to a non-empty ``.bak``
+    sibling when the primary asset is empty.
+    """
     profiles = Path(config.profiles_dir or "")
     for name in ("me.jpg", "me.jpeg", "me.png"):
-        source = profiles / name
-        if source.exists():
+        # Prefer the live asset; fall back to its .bak if the live one is empty.
+        for candidate in (profiles / name, profiles / f"{name}.bak"):
+            if not _nonempty(candidate):
+                continue
             target = _portfolio_dir(config) / name
             try:
-                shutil.copyfile(source, target)
+                shutil.copyfile(candidate, target)
                 return name
             except Exception:
-                return ""
+                break  # try the next image name
     return ""
 
 
@@ -201,15 +217,10 @@ def _render_css(cfg: PortfolioConfig) -> str:
   --shadow: 0 24px 60px rgba(0,0,0,0.12);
 }}
 """
+    # The chosen theme palette is authoritative; no automatic
+    # ``prefers-color-scheme: dark`` override (it would flatten every theme to one
+    # palette in OS dark mode). Dark mode is opt-in via ``html[data-theme="dark"]``.
     dark_block = """
-@media (prefers-color-scheme: dark) {
-  html:not([data-theme="forced-light"]) {
-    --bg: #07111f;
-    --ink: #e5edf8;
-    --muted: #9fb2ca;
-    --surface: #0d1b2d;
-  }
-}
 html[data-theme="dark"] {
   --bg: #07111f;
   --ink: #e5edf8;
