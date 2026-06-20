@@ -372,6 +372,14 @@ def _post_filter(jobs: list[JobListing], search: FreeApiSearch, apply_query_filt
     Source APIs that accept a search parameter (Remotive, RemoteOK, etc.) have
     already done the keyword filtering. We enforce contract type, location,
     relevance, and tech-title constraints here, then sort by relevance.
+
+    ``apply_query_filter`` keeps only jobs whose title/description actually match
+    the query (``_contains_query``, which expands FR/EN synonyms). Leaving it on
+    is what keeps off-topic rows like "Informaticien" or "Master SI/Finance
+    Business" out of a "data scientist" search. The query-relevance *score*
+    (``assess_search_quality``) is recorded for ranking/UI but is intentionally
+    not used as a hard cutoff here, since it is tuned for data roles and would
+    over-filter legitimate adjacent roles (e.g. a plain "Python Engineer").
     """
     # Resolve effective contract filter (contract_type takes precedence, then internships_only legacy flag).
     ct = (search.contract_type or "").strip().lower()
