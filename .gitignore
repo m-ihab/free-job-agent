@@ -55,6 +55,8 @@ Thumbs.db
 
 # Local dev tooling (not part of the project)
 CLAUDE.md
+AGENTS.md
+MASTER_PROMPT.md
 .claude/
 .anthropic/
 # AI code-intelligence indexes — large, generated, regenerable; never commit.
