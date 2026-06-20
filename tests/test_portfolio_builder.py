@@ -284,3 +284,30 @@ def test_import_repos_missing_master_cv_returns_reason(tmp_path, monkeypatch):
 
     # Assert
     assert result == {"ok": False, "reason": "no_master_cv"}
+
+
+# --- section ordering -----------------------------------------------------
+
+
+def test_section_order_normalizes_drops_unknown_and_appends_missing():
+    from job_agent.portfolio_render import PortfolioConfig, REORDERABLE_SECTIONS
+
+    cfg = PortfolioConfig(section_order=["experience", "skills", "bogus", "experience"]).normalized()
+    # de-duped, unknown dropped, missing appended in default order
+    assert cfg.section_order[:2] == ["experience", "skills"]
+    assert set(cfg.section_order) == set(REORDERABLE_SECTIONS)
+    assert len(cfg.section_order) == len(REORDERABLE_SECTIONS)
+
+
+def test_section_order_default_when_unset():
+    from job_agent.portfolio_render import PortfolioConfig, REORDERABLE_SECTIONS
+
+    cfg = PortfolioConfig().normalized()
+    assert cfg.section_order == list(REORDERABLE_SECTIONS)
+
+
+def test_generate_portfolio_respects_section_order(tmp_path):
+    config = _make_config(tmp_path)
+    result = generate_portfolio(config, section_order=["experience", "skills", "projects", "education"])
+    html_text = result["html"]
+    assert html_text.index('id="experience"') < html_text.index('id="skills"')

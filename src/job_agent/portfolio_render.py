@@ -111,6 +111,9 @@ HERO_LAYOUTS = {
 
 OPTIONAL_SECTIONS = ("testimonials", "open_source", "speaking", "awards", "blog")
 
+# Middle sections the user can reorder (hero is always first, contact always last).
+REORDERABLE_SECTIONS = ("skills", "projects", "experience", "education")
+
 
 @dataclass
 class PortfolioConfig:
@@ -119,6 +122,7 @@ class PortfolioConfig:
     layout: str = "split"
     custom_accent: str = ""
     sections: dict[str, bool] = None  # type: ignore[assignment]
+    section_order: list[str] = None  # type: ignore[assignment]
     tagline: str = ""
     site_url: str = ""
     site_title_suffix: str = "Portfolio"
@@ -138,6 +142,16 @@ class PortfolioConfig:
         if self.custom_accent and not re.fullmatch(r"#[0-9a-fA-F]{6}", self.custom_accent):
             self.custom_accent = ""
         self.sections = sections
+        # Reorderable middle sections (hero stays first, contact last). Keep only
+        # valid keys, de-duplicate, then append any missing in their default order.
+        seen: list[str] = []
+        for key in (self.section_order or []):
+            if key in REORDERABLE_SECTIONS and key not in seen:
+                seen.append(key)
+        for key in REORDERABLE_SECTIONS:
+            if key not in seen:
+                seen.append(key)
+        self.section_order = seen
         return self
 
 
@@ -389,6 +403,17 @@ def _render_html(config: AppConfig, cfg: PortfolioConfig) -> str:
     experience_html = "".join(job_item(i, j) for i, j in enumerate(experience))
     education_html = "".join(education_item(i, e) for i, e in enumerate(education))
 
+    # Reorderable middle sections, keyed for cfg.section_order placement.
+    projects_body = projects_html or '<p class="muted">No projects yet. Add one in profiles/master_cv.json.</p>'
+    experience_body = experience_html or '<p class="muted">No experience yet.</p>'
+    education_body = education_html or '<p class="muted">No education yet.</p>'
+    middle_sections = {
+        "skills": f'<section class="section" id="skills"><div class="wrap"><h2 data-reveal>Core stack</h2><div class="chips" data-reveal>{skills_html}</div></div></section>',
+        "projects": f'<section class="section" id="projects"><div class="wrap"><h2 data-reveal>Selected projects</h2><div class="grid">{projects_body}</div></div></section>',
+        "experience": f'<section class="section" id="experience"><div class="wrap"><h2 data-reveal>Experience</h2><div class="timeline">{experience_body}</div></div></section>',
+        "education": f'<section class="section" id="education"><div class="wrap"><h2 data-reveal>Education</h2><div class="timeline">{education_body}</div></div></section>',
+    }
+
     # Optional sections — only render when toggled on.
     sections = cfg.sections or {}
     optional_blocks: list[str] = []
@@ -450,10 +475,7 @@ def _render_html(config: AppConfig, cfg: PortfolioConfig) -> str:
   </div></header>
   <main>
     <section class="hero" id="about"><div class="wrap hero-grid {cfg.layout}">{hero_inner}</div></section>
-    <section class="section" id="skills"><div class="wrap"><h2 data-reveal>Core stack</h2><div class="chips" data-reveal>{skills_html}</div></div></section>
-    <section class="section" id="projects"><div class="wrap"><h2 data-reveal>Selected projects</h2><div class="grid">{projects_html or '<p class="muted">No projects yet. Add one in profiles/master_cv.json.</p>'}</div></div></section>
-    <section class="section" id="experience"><div class="wrap"><h2 data-reveal>Experience</h2><div class="timeline">{experience_html or '<p class="muted">No experience yet.</p>'}</div></div></section>
-    <section class="section" id="education"><div class="wrap"><h2 data-reveal>Education</h2><div class="timeline">{education_html or '<p class="muted">No education yet.</p>'}</div></div></section>
+    {''.join(middle_sections[key] for key in cfg.section_order)}
     {''.join(optional_blocks)}
     <section class="section" id="contact"><div class="wrap"><h2 data-reveal>Contact</h2>
       <dl class="kv">
