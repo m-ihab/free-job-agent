@@ -30,7 +30,7 @@ jobs:
         # --reruns retries only failed tests (no cost on green); this absorbs
         # transient flakes in the threaded live-server tests on shared runners
         # without masking real failures (those fail every retry).
-        run: pytest -q --basetemp=.pytest_tmp/bt --reruns 2 --reruns-delay 1
+        run: pytest -q --basetemp=.pytest_tmp --reruns 2 --reruns-delay 1
 
   frontend-lint:
     runs-on: ubuntu-latest

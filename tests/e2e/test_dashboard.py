@@ -13,7 +13,11 @@ from __future__ import annotations
 
 import json
 
-from playwright.sync_api import Page, expect
+import pytest
+
+playwright_sync_api = pytest.importorskip("playwright.sync_api")
+Page = playwright_sync_api.Page
+expect = playwright_sync_api.expect
 
 
 def _post_json(page: Page, live_server_url: str, path: str, payload: dict):

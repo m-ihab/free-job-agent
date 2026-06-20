@@ -55,7 +55,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 # Use a project-local basetemp: a locked/corrupted %TEMP%\pytest-of-* dir on Windows
 # otherwise throws PermissionErrors and silently under-reports coverage.
-addopts = "--basetemp=.pytest_tmp/bt"
+addopts = "--basetemp=.pytest_tmp"
 
 [tool.ruff]
 src = ["src"]
