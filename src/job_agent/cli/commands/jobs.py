@@ -41,6 +41,22 @@ def _handle_add_url(args: argparse.Namespace) -> None:
     _add_job(job, _load_config())
 
 
+def _handle_obsidian_sync(args: argparse.Namespace) -> None:
+    """Export the local job DB into a linked Obsidian vault (graph + dashboard)."""
+    from job_agent.exporters.obsidian import export_obsidian_vault
+
+    config = _load_config()
+    vault_path = getattr(args, "vault", None)
+    try:
+        vault, count = export_obsidian_vault(config, vault_path=vault_path)
+    except Exception as exc:
+        _fail(f"Obsidian export failed: {exc}")
+    console.print(
+        f"Synced {count} job(s) to Obsidian vault: {vault}\n"
+        f"Open {vault} in Obsidian and view the graph; start at Dashboard.md."
+    )
+
+
 def _build_enrich_options(args: argparse.Namespace) -> EnrichOptions:
     flags = [
         args.rome,

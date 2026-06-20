@@ -27,6 +27,7 @@ profiles/
 jobs/
 data/
 outputs/
+second-brain/
 
 # Secrets & credentials
 .env
@@ -56,6 +57,11 @@ Thumbs.db
 CLAUDE.md
 .claude/
 .anthropic/
+# AI code-intelligence indexes — large, generated, regenerable; never commit.
+#   graphify-out/  ~13MB (graphify update .)
+#   .gitnexus/     ~73MB graph DB (gitnexus analyze)
+graphify-out/
+.gitnexus/
 
 # Node / Playwright
 node_modules/

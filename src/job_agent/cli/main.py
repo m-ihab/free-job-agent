@@ -83,6 +83,16 @@ class LocalCLIApp:
         add_rss.add_argument("--limit", "-n", type=int, default=None)
         add_rss.set_defaults(handler=search_cmds._handle_add_rss)
 
+        obsidian_p = sub.add_parser(
+            "obsidian-sync",
+            help="Export the local job DB into a linked Obsidian vault (graph + dashboard).",
+        )
+        obsidian_p.add_argument(
+            "--vault", default=None,
+            help="Vault directory (default: ./second-brain or config.obsidian_vault_dir).",
+        )
+        obsidian_p.set_defaults(handler=job_cmds._handle_obsidian_sync)
+
         discover_p = sub.add_parser("discover-links", help="Print likely job/application links.")
         discover_p.add_argument("url")
         discover_p.add_argument("--limit", type=int, default=50)

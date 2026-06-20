@@ -59,6 +59,7 @@ class AppConfig(BaseModel):
     default_locale: str = "en"
     log_level: str = "INFO"
     min_fit_score: int = 70
+    obsidian_vault_dir: Optional[Path] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -73,6 +74,8 @@ class AppConfig(BaseModel):
             self.profiles_dir = _default_profiles_dir(self.data_dir)
         if self.examples_dir is None:
             self.examples_dir = Path.cwd() / "examples"
+        if self.obsidian_vault_dir is None:
+            self.obsidian_vault_dir = Path.cwd() / "second-brain"
 
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
