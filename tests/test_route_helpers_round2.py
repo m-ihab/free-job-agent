@@ -205,6 +205,24 @@ def test_multi_source_search_parses_list_sources(config, monkeypatch):
     assert result["sources"] == ["remoteok", "arbeitnow"]
 
 
+def test_multi_source_search_floors_min_relevance_at_20(config, monkeypatch):
+    captured: dict = {}
+
+    def fake_all(**kwargs):
+        captured.update(kwargs)
+        return {"jobs": [], "per_source": {}, "errors": {}}
+
+    monkeypatch.setattr(rh, "search_all_free_sources", fake_all)
+
+    # Client sends 0 (or omits it) -> floored to 20 so one-token noise is dropped.
+    rh._multi_source_search(config, {"save": False, "min_relevance": 0})
+    assert captured["min_relevance"] == 20
+
+    # A higher caller value is respected, not lowered.
+    rh._multi_source_search(config, {"save": False, "min_relevance": 80})
+    assert captured["min_relevance"] == 80
+
+
 # --- _one_click_hunt -----------------------------------------------------
 
 

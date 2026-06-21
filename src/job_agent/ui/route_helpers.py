@@ -231,7 +231,9 @@ def _multi_source_search(config: AppConfig, payload: dict) -> dict:
     force_packets = bool(payload.get("force_packets", False))
     internships_only = bool(payload.get("internships_only", False))
     remote_only = bool(payload.get("remote_only", False))
-    min_relevance = _safe_int(payload.get("min_relevance"), 0, minimum=0, maximum=100)
+    # Floor relevance at 20 so a multi-token query (e.g. "stage data") can't admit
+    # jobs that match only one weak token. Callers can raise it, never lower it.
+    min_relevance = _safe_int(payload.get("min_relevance"), 20, minimum=20, maximum=100)
     france_eu_only = bool(payload.get("france_eu_only", False))
     radius_km = _safe_int(payload.get("radius_km"), 0, minimum=0, maximum=100)
     aggregate = search_all_free_sources(
@@ -275,7 +277,9 @@ def _api_search(config: AppConfig, payload: dict) -> dict:
     prepare_packets = bool(payload.get("prepare_packets", False))
     force_packets = bool(payload.get("force_packets", False))
     internships_only = bool(payload.get("internships_only", False))
-    min_relevance = _safe_int(payload.get("min_relevance"), 0, minimum=0, maximum=100)
+    # Floor relevance at 20 so a multi-token query (e.g. "stage data") can't admit
+    # jobs that match only one weak token. Callers can raise it, never lower it.
+    min_relevance = _safe_int(payload.get("min_relevance"), 20, minimum=20, maximum=100)
     france_eu_only = bool(payload.get("france_eu_only", False))
     radius_km = _safe_int(payload.get("radius_km"), 0, minimum=0, maximum=100)
     jobs = search_free_api_jobs(
@@ -308,7 +312,9 @@ def _one_click_hunt(config: AppConfig, payload: dict) -> dict:
     force_packets = bool(payload.get("force_packets", False))
     internships_only = bool(payload.get("internships_only", False))
     include_multi_source = bool(payload.get("include_multi_source", True))
-    min_relevance = _safe_int(payload.get("min_relevance"), 0, minimum=0, maximum=100)
+    # Floor relevance at 20 so a multi-token query (e.g. "stage data") can't admit
+    # jobs that match only one weak token. Callers can raise it, never lower it.
+    min_relevance = _safe_int(payload.get("min_relevance"), 20, minimum=20, maximum=100)
     france_eu_only = bool(payload.get("france_eu_only", False))
     radius_km = _safe_int(payload.get("radius_km"), 0, minimum=0, maximum=100)
     links = _search_links({"query": query, "location": location, "language": language, "limit": limit_queries, "boards": "recommended"})
