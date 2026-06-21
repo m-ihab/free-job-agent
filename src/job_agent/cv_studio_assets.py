@@ -112,7 +112,10 @@ def remove_photo(config: AppConfig, name: str = "me.jpg") -> dict[str, Any]:
     main = root / "main.tex"
     if main.exists():
         text = main.read_text(encoding="utf-8")
-        new_text = re.sub(r"^(\\photo\[[^\]]*\])?\{[^}]+\}", lambda m: "% " + m.group(0), text, count=1, flags=re.MULTILINE)
+        # ``\photo`` is required; the ``[size]`` options are optional. The old
+        # pattern made ``\photo`` itself optional, so the bare ``\photo{me.jpg}``
+        # form (moderncv's default, no size) was never commented out.
+        new_text = re.sub(r"^\\photo(?:\[[^\]]*\])?\{[^}]+\}", lambda m: "% " + m.group(0), text, count=1, flags=re.MULTILINE)
         if new_text != text:
             main.with_suffix(".tex.bak").write_text(text, encoding="utf-8")
             main.write_text(new_text, encoding="utf-8")

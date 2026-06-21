@@ -16,6 +16,7 @@ from job_agent.cv_studio_assets import (
     apply_icon_pack,
     list_assets,
     read_asset,
+    remove_photo,
     replace_photo,
     write_asset,
 )
@@ -34,6 +35,31 @@ def _seed_master_cv(config: AppConfig, projects: list[dict]) -> Path:
     path = Path(config.profiles_dir) / "master_cv.json"
     path.write_text(json.dumps({"contact": {"name": "X", "email": "x@y.z"}, "projects": projects}), encoding="utf-8")
     return path
+
+
+def test_remove_photo_comments_bare_photo_line(tmp_path):
+    # Regression: the moderncv default form ``\photo{me.jpg}`` (no [size]
+    # options) must be commented out, not just the ``\photo[..]{..}`` form.
+    config = _make_config(tmp_path)
+    main = Path(config.profiles_dir) / "main.tex"
+    main.write_text("\\photo{me.jpg}\n\\name{Jane}{Doe}\n", encoding="utf-8")
+    (Path(config.profiles_dir) / "me.jpg").write_bytes(b"\xff\xd8\xff")
+
+    result = remove_photo(config)
+
+    assert result["ok"] is True
+    assert "% \\photo{me.jpg}" in main.read_text(encoding="utf-8")
+    assert not (Path(config.profiles_dir) / "me.jpg").exists()
+
+
+def test_remove_photo_still_comments_sized_photo_line(tmp_path):
+    config = _make_config(tmp_path)
+    main = Path(config.profiles_dir) / "main.tex"
+    main.write_text("\\photo[64pt]{me.jpg}\n", encoding="utf-8")
+
+    remove_photo(config)
+
+    assert main.read_text(encoding="utf-8").startswith("% \\photo[64pt]{me.jpg}")
 
 
 # --- asset listing / read / write ----------------------------------------
