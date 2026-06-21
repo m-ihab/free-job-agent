@@ -283,6 +283,19 @@ _QUERY_SYNONYMS = {
 }
 
 
+# Compiled \b<word>\b patterns are reused across the thousands of token checks
+# a multi-source search performs, instead of recompiling on every call.
+_WORD_PATTERN_CACHE: dict[str, "re.Pattern[str]"] = {}
+
+
+def _word_pattern(word: str) -> "re.Pattern[str]":
+    pattern = _WORD_PATTERN_CACHE.get(word)
+    if pattern is None:
+        pattern = re.compile(r"\b" + re.escape(word) + r"\b")
+        _WORD_PATTERN_CACHE[word] = pattern
+    return pattern
+
+
 def _token_match(token: str, haystack: str) -> bool:
     """Match a token (or any of its synonyms) as a whole word in haystack.
 
@@ -293,8 +306,7 @@ def _token_match(token: str, haystack: str) -> bool:
     for syn in synonyms:
         if not syn:
             continue
-        pattern = r"\b" + re.escape(syn) + r"\b"
-        if re.search(pattern, haystack):
+        if _word_pattern(syn).search(haystack):
             return True
     return False
 

@@ -185,6 +185,7 @@ class JobAgentHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             return None
         except Exception:
+            logger.exception("autopilot SSE stream error")
             return None
         return None
 
