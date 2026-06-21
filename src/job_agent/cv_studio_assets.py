@@ -22,7 +22,12 @@ from job_agent.cv_studio_core import (
     _profiles_root,
     _safe_asset_path,
     _write_draft,
+    is_valid_latex_cv,
 )
+
+# JPEG/PNG file signatures — reject anything that is not actually an image so a
+# zero-byte or non-image payload can't silently corrupt the CV photo asset.
+_IMAGE_MAGIC = {".jpg": b"\xff\xd8\xff", ".jpeg": b"\xff\xd8\xff", ".png": b"\x89PNG"}
 
 
 # -----------------------------------------------------------------------------
@@ -67,6 +72,11 @@ def write_asset(config: AppConfig, name: str, text: str) -> dict[str, Any]:
     path = _safe_asset_path(config, name)
     if path.suffix.lower() not in _TEXT_ASSET_SUFFIXES:
         return {"ok": False, "reason": "binary_asset"}
+    # main.tex is the live CV source. Only accept writes that are a valid LaTeX
+    # CV, so the asset-save path can't clobber it with placeholder/JSON/garbage
+    # and bypass the promote/validate safety path.
+    if path.name == "main.tex" and not is_valid_latex_cv(text):
+        return {"ok": False, "reason": "invalid_latex_rejected"}
     if path.exists():
         try:
             shutil.copyfile(path, path.with_suffix(path.suffix + ".bak"))
@@ -93,6 +103,9 @@ def replace_photo(config: AppConfig, name: str, base64_data: str) -> dict[str, A
     safe_name = Path(name or "me.jpg").name
     if Path(safe_name).suffix.lower() not in {".jpg", ".jpeg", ".png"}:
         safe_name = "me.jpg"
+    magic = _IMAGE_MAGIC.get(Path(safe_name).suffix.lower(), b"")
+    if len(raw) < 4 or (magic and not raw.startswith(magic)):
+        return {"ok": False, "reason": "not_an_image"}
     target = root / safe_name
     if target.exists():
         try:

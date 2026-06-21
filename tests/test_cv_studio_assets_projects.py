@@ -102,19 +102,41 @@ def test_read_asset_missing_returns_not_found(tmp_path):
     assert result == {"ok": False, "reason": "not_found"}
 
 
+_VALID_TEX = (
+    "\\documentclass[11pt]{moderncv}\n"
+    "\\moderncvstyle{classic}\n\\moderncvcolor{blue}\n"
+    "\\name{Jane}{Doe}\n\\begin{document}\n\\makecvtitle\n"
+    "\\section{Experience}\nData scientist at Acme.\n\\end{document}\n"
+)
+
+
 def test_write_asset_creates_backup_of_previous_content(tmp_path):
-    # Arrange
+    # Arrange — use a non-main text asset; main.tex now requires valid LaTeX.
     config = _make_config(tmp_path)
-    target = Path(config.profiles_dir) / "main.tex"
+    target = Path(config.profiles_dir) / "extra.tex"
     target.write_text("v1", encoding="utf-8")
 
     # Act
-    result = write_asset(config, "main.tex", "v2")
+    result = write_asset(config, "extra.tex", "v2")
 
     # Assert
     assert result["ok"] is True
     assert target.read_text(encoding="utf-8") == "v2"
-    assert (Path(config.profiles_dir) / "main.tex.bak").read_text(encoding="utf-8") == "v1"
+    assert (Path(config.profiles_dir) / "extra.tex.bak").read_text(encoding="utf-8") == "v1"
+
+
+def test_write_asset_rejects_invalid_main_tex(tmp_path):
+    config = _make_config(tmp_path)
+    result = write_asset(config, "main.tex", "v2")  # not a valid LaTeX CV
+    assert result == {"ok": False, "reason": "invalid_latex_rejected"}
+    assert not (Path(config.profiles_dir) / "main.tex").exists()
+
+
+def test_write_asset_allows_valid_main_tex(tmp_path):
+    config = _make_config(tmp_path)
+    result = write_asset(config, "main.tex", _VALID_TEX)
+    assert result["ok"] is True
+    assert "\\begin{document}" in (Path(config.profiles_dir) / "main.tex").read_text(encoding="utf-8")
 
 
 def test_write_asset_rejects_binary_suffix(tmp_path):
@@ -158,6 +180,14 @@ def test_replace_photo_rejects_invalid_base64(tmp_path):
     config = _make_config(tmp_path)
     result = replace_photo(config, "me.jpg", "!!!not base64!!!")
     assert result == {"ok": False, "reason": "invalid_base64"}
+
+
+def test_replace_photo_rejects_non_image_bytes(tmp_path):
+    config = _make_config(tmp_path)
+    blob = base64.b64encode(b"this is plainly not an image").decode()
+    result = replace_photo(config, "me.jpg", "data:image/jpeg;base64," + blob)
+    assert result == {"ok": False, "reason": "not_an_image"}
+    assert not (Path(config.profiles_dir) / "me.jpg").exists()
 
 
 # --- icon packs -----------------------------------------------------------
