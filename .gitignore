@@ -80,6 +80,9 @@ UsersmihabDocumentstmppytest/
 france_urls.json
 france_urls.txt
 
+# Local review/analysis output (regenerable, not part of the project)
+reports/
+
 # Extra sensitive-file guards
 profiles/**/.env*
 profiles/**/*.env
