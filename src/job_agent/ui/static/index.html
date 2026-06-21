@@ -10,11 +10,10 @@
   <body>
     <header class="app-header">
       <div>
-        <p class="eyebrow">Local job-search cockpit</p>
         <h1>Paris Data Career Copilot</h1>
-        <p class="hero-sub muted" id="heroSub">Local-first. AI-powered. France-focused. Press <kbd>?</kbd> for shortcuts.</p>
       </div>
       <div class="status-strip" id="statusStrip">
+        <span class="muted kbd-hint">Press <kbd>?</kbd> for shortcuts</span>
         <button class="theme-toggle ghost" id="themeToggleBtn" title="Toggle dark mode" aria-label="Toggle theme">Theme</button>
       </div>
     </header>
@@ -65,10 +64,6 @@
             </select>
           </label>
           <label>
-            Radius km
-            <input id="radiusInput" type="number" min="0" max="100" value="25" />
-          </label>
-          <label>
             Language
             <select id="languageSelect">
               <option value="both">English first, then French</option>
@@ -76,41 +71,50 @@
               <option value="french">French only</option>
             </select>
           </label>
-          <label>
-            Boards
-            <select id="boardsSelect">
-              <option value="recommended">Recommended</option>
-              <option value="all">All boards</option>
-            </select>
-          </label>
-          <label>
-            Query variants
-            <input id="variantLimit" type="number" min="1" max="30" value="8" />
-          </label>
-          <label>
-            API jobs per query
-            <input id="apiLimit" type="number" min="1" max="30" value="5" />
-          </label>
-          <label class="check-row">
-            <input id="preparePackets" type="checkbox" />
-            Prepare packets for new API jobs
-          </label>
-          <label class="check-row">
-            <input id="forcePackets" type="checkbox" />
-            Force packet generation
-          </label>
-          <label class="check-row">
-            <input id="internshipsOnly" type="checkbox" checked />
-            Internships only
-          </label>
-          <label class="check-row">
-            <input id="smartRefine" type="checkbox" checked />
-            Smart refine results
-          </label>
-          <label class="check-row">
-            <input id="franceEuOnly" type="checkbox" checked />
-            France/EU only
-          </label>
+          <details class="search-advanced">
+            <summary>Advanced options</summary>
+            <div class="control-grid">
+              <label>
+                Radius km
+                <input id="radiusInput" type="number" min="0" max="100" value="25" />
+              </label>
+              <label>
+                Boards
+                <select id="boardsSelect">
+                  <option value="recommended">Recommended</option>
+                  <option value="all">All boards</option>
+                </select>
+              </label>
+              <label>
+                Query variants
+                <input id="variantLimit" type="number" min="1" max="30" value="8" />
+              </label>
+              <label>
+                API jobs per query
+                <input id="apiLimit" type="number" min="1" max="30" value="5" />
+              </label>
+              <label class="check-row">
+                <input id="preparePackets" type="checkbox" />
+                Prepare packets for new API jobs
+              </label>
+              <label class="check-row">
+                <input id="forcePackets" type="checkbox" />
+                Force packet generation
+              </label>
+              <label class="check-row">
+                <input id="internshipsOnly" type="checkbox" checked />
+                Internships only
+              </label>
+              <label class="check-row">
+                <input id="smartRefine" type="checkbox" checked />
+                Smart refine results
+              </label>
+              <label class="check-row">
+                <input id="franceEuOnly" type="checkbox" checked />
+                France/EU only
+              </label>
+            </div>
+          </details>
         </form>
 
         <div class="action-row">

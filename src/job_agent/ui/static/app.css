@@ -590,6 +590,50 @@ textarea {
   min-height: 18px;
 }
 
+/* Advanced search options collapsed behind a disclosure so the common path
+   (keywords + location + scope + language) stays uncluttered. */
+.search-advanced {
+  grid-column: 1 / -1;
+  margin-bottom: 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.5rem;
+}
+
+.search-advanced > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0;
+}
+
+.search-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.search-advanced > summary::before {
+  content: "\25B8  ";
+  color: var(--accent);
+}
+
+.search-advanced[open] > summary::before {
+  content: "\25BE  ";
+}
+
+.search-advanced > .control-grid {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+}
+
+.kbd-hint {
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
