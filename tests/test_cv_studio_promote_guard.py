@@ -70,7 +70,7 @@ def test_document_missing_begin_document_is_invalid():
 def test_validate_promote_blocks_suspicious_shrink(tmp_path):
     config = _make_config(tmp_path)
     main = Path(config.profiles_dir) / "main.tex"
-    main.write_text(VALID_CV + "\n" * 400, encoding="utf-8")  # large existing CV
+    main.write_text(VALID_CV + "\n" * 1500, encoding="utf-8")  # clearly larger existing CV
     tiny_but_valid = VALID_CV  # valid, but far smaller than current
     ok, reason = validate_promote(tiny_but_valid, main)
     assert ok is False
