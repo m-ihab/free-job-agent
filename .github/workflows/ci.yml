@@ -32,6 +32,23 @@ jobs:
         # without masking real failures (those fail every retry).
         run: pytest -q --basetemp=.pytest_tmp/bt --reruns 2 --reruns-delay 1
 
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (dev + e2e extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,e2e]"
+      - name: Install Playwright browsers
+        run: playwright install --with-deps chromium
+      - name: E2E tests
+        run: pytest tests/e2e/ -q --basetemp=.pytest_tmp/e2e
+
   frontend-lint:
     runs-on: ubuntu-latest
     steps:

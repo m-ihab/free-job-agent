@@ -37,6 +37,12 @@ dev = [
     "pip-audit>=2.7",
     "pip-tools>=7.4",
 ]
+e2e = [
+    # Playwright + pytest plugin for end-to-end dashboard tests.
+    # Install browsers separately: playwright install chromium
+    "playwright>=1.40,<2",
+    "pytest-playwright>=0.4",
+]
 full = ["streamlit>=1.28", "httpx>=0.25", "markitdown>=0.1.5"]
 
 [project.scripts]
