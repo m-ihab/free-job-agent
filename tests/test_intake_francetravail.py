@@ -222,6 +222,41 @@ def test_client_post_request_uses_post(ft_creds, monkeypatch, tmp_path):
     assert used["post"] is True
 
 
+def test_client_retries_once_on_401_with_cache_bypassed_token(ft_creds, monkeypatch, tmp_path):
+    monkeypatch.delenv("FRANCE_TRAVAIL_ENDPOINTS_FILE", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    minted: list[bool] = []
+
+    def _token(**kwargs):
+        minted.append(bool(kwargs.get("use_cache")))
+        return "stale-tok" if len(minted) == 1 else "fresh-tok"
+
+    monkeypatch.setattr(ft_client, "france_travail_token", _token)
+    invalidated = {"n": 0}
+    monkeypatch.setattr(
+        ft_client, "invalidate_france_travail_token_cache",
+        lambda: invalidated.__setitem__("n", invalidated["n"] + 1),
+    )
+
+    calls = {"n": 0}
+
+    def _get(url, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return FakeResponse(status_code=401, json_data={"error": "unauthorized"})
+        return FakeResponse(json_data={"resultats": []})
+
+    monkeypatch.setattr(ft_client.requests, "get", _get)
+    client = ft_client.FranceTravailClient(ft_client.ClientConfig(use_cache=True))
+    payload = client.request("job_offers", params={"motsCles": "data"})
+
+    assert payload == {"resultats": []}
+    assert calls["n"] == 2            # original 401 + one retry
+    assert invalidated["n"] == 1      # token cache cleared before retry
+    assert minted == [True, False]    # retry mints with the cache bypassed
+
+
 # ── rate limiter ─────────────────────────────────────────────────────────────
 
 def test_rate_limiter_no_wait_when_rate_zero():

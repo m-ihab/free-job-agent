@@ -8,7 +8,10 @@ from typing import Any
 import requests
 
 from job_agent.intake.api_cache import read_cached_json, write_cached_json
-from job_agent.intake.france_travail_auth import france_travail_token
+from job_agent.intake.france_travail_auth import (
+    france_travail_token,
+    invalidate_france_travail_token_cache,
+)
 from job_agent.intake.france_travail_endpoints import EndpointSpec, load_endpoint_base_url, load_endpoint_registry
 
 
@@ -81,18 +84,25 @@ class FranceTravailClient:
             if cached is not None:
                 return cached
 
-        token = france_travail_token(
-            timeout=self.config.timeout,
-            use_cache=self.config.use_cache,
-            cache_ttl_hours=self.config.cache_ttl_hours,
-        )
-        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        def _send(use_token_cache: bool) -> Any:
+            token = france_travail_token(
+                timeout=self.config.timeout,
+                use_cache=use_token_cache,
+                cache_ttl_hours=self.config.cache_ttl_hours,
+            )
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+            self._limiter.wait(key, spec.rate_per_sec)
+            if method == "POST":
+                return requests.post(url, params=payload_params, json=json_body, headers=headers, timeout=self.config.timeout)
+            return requests.get(url, params=payload_params, headers=headers, timeout=self.config.timeout)
 
-        self._limiter.wait(key, spec.rate_per_sec)
-        if method == "POST":
-            response = requests.post(url, params=payload_params, json=json_body, headers=headers, timeout=self.config.timeout)
-        else:
-            response = requests.get(url, params=payload_params, headers=headers, timeout=self.config.timeout)
+        response = _send(self.config.use_cache)
+        if response.status_code in (401, 403):
+            # A cached token can be stale or revoked. Drop it and mint a fresh
+            # one with the cache bypassed before a single retry, instead of
+            # failing the whole call on an expired credential.
+            invalidate_france_travail_token_cache()
+            response = _send(use_token_cache=False)
         if response.status_code >= 400:
             body = ""
             try:

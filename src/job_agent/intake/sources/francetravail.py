@@ -123,7 +123,7 @@ def _ft_request(url: str, params: dict[str, Any], search: FreeApiSearch, token: 
             invalidate_france_travail_token_cache()
             fresh = france_travail_token(
                 timeout=search.timeout,
-                use_cache=search.use_cache,
+                use_cache=False,  # bypass cache so a stale token can't be replayed
                 cache_ttl_hours=search.cache_ttl_hours,
             )
             headers = {"Authorization": f"Bearer {fresh}", "Accept": "application/json"}
