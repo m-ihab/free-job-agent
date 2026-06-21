@@ -32,6 +32,14 @@ def get_portfolio_preview(h) -> None:
     h.send_header("Content-Type", "text/html; charset=utf-8")
     h.send_header("Content-Length", str(len(body)))
     h.send_header("Cache-Control", "no-store")
+    # The preview can contain user/AI-authored HTML. Block scripts so it cannot
+    # reach the parent dashboard's CSRF token or call mutating local APIs, even
+    # though the iframe is same-origin. Inline styles are needed for the preview.
+    h.send_header(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; frame-ancestors 'self'",
+    )
     h.end_headers()
     h.wfile.write(body)
     return None

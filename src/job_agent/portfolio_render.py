@@ -128,6 +128,10 @@ class PortfolioConfig:
     site_title_suffix: str = "Portfolio"
     enable_dark_toggle: bool = True
     enable_animations: bool = True
+    # Local-first defaults: don't invite crawlers and don't phone Google Fonts
+    # home unless the user is deliberately publishing a public portfolio.
+    public_mode: bool = False
+    use_google_fonts: bool = False
 
     def normalized(self) -> "PortfolioConfig":
         sections = dict(self.sections or {})
@@ -363,7 +367,7 @@ def _render_html(config: AppConfig, cfg: PortfolioConfig) -> str:
     linkedin = html.escape(contact.get("linkedin_url") or "")
     email = html.escape(contact.get("email") or "")
     location = html.escape(contact.get("location") or "")
-    google_font = FONTS.get(cfg.font, {}).get("google", "")
+    google_font = FONTS.get(cfg.font, {}).get("google", "") if cfg.use_google_fonts else ""
     font_link = (
         f'\n  <link rel="preconnect" href="https://fonts.googleapis.com" />'
         f'\n  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />'
@@ -519,7 +523,13 @@ def _render_html(config: AppConfig, cfg: PortfolioConfig) -> str:
 
 
 def _render_robots(cfg: PortfolioConfig) -> str:
-    return "User-agent: *\nAllow: /\n" + (f"\nSitemap: {cfg.site_url.rstrip('/')}/sitemap.xml\n" if cfg.site_url else "")
+    # Default to Disallow: the portfolio is a private local asset unless the
+    # user opts into public_mode. Avoids accidental indexing if the port leaks.
+    rule = "Allow: /" if cfg.public_mode else "Disallow: /"
+    base = f"User-agent: *\n{rule}\n"
+    if cfg.site_url:
+        base += f"\nSitemap: {cfg.site_url.rstrip('/')}/sitemap.xml\n"
+    return base
 
 
 def _render_sitemap(cfg: PortfolioConfig) -> str:

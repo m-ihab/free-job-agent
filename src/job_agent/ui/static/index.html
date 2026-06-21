@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Paris Data Career Copilot</title>
     <link rel="stylesheet" href="/static/app.css" />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+    <script src="/static/vendor/chart.umd.min.js" defer></script>
   </head>
   <body>
     <header class="app-header">
@@ -731,7 +731,7 @@ data engineer</textarea>
               <h3 style="margin:0">Live site preview</h3>
               <span class="muted">Static HTML/CSS in <code>.job_agent/portfolio</code></span>
             </div>
-            <iframe id="portfolioPreview" title="Portfolio preview"></iframe>
+            <iframe id="portfolioPreview" title="Portfolio preview" sandbox="allow-popups"></iframe>
           </section>
           <section class="panel portfolio-editor-panel">
             <h3>Source editor</h3>
