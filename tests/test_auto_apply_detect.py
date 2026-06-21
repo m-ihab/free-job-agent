@@ -84,7 +84,9 @@ def test_detect_human_wall_handles_content_exception():
     assert reason == "wall detection unavailable"
 
 
-def test_detect_human_wall_handles_missing_frames():
+def test_detect_human_wall_unreadable_frames_fails_closed():
+    # A wall often lives in an iframe. If the main DOM looks clean but we cannot
+    # even enumerate frames, we must hand off, not declare the page clear.
     class NoFrames:
         def content(self):
             return "<html>clean</html>"
@@ -93,7 +95,52 @@ def test_detect_human_wall_handles_missing_frames():
         def frames(self):
             raise RuntimeError("frames unavailable")
 
-    assert _detect_human_wall(NoFrames()) == (False, "")
+    assert _detect_human_wall(NoFrames()) == (True, "wall detection unavailable")
+
+
+def test_detect_human_wall_unreadable_frame_dom_fails_closed():
+    # The main DOM is clean and the iframe URL is unremarkable, but the iframe's
+    # own DOM cannot be read — treat it as a possible wall.
+    class _BadFrame:
+        url = "https://challenge.example/widget"
+
+        def content(self):
+            raise RuntimeError("cross-origin frame")
+
+    class _Page:
+        frames = [_BadFrame()]
+
+        def content(self):
+            return "<html>clean body</html>"
+
+    assert _detect_human_wall(_Page()) == (True, "wall detection unavailable")
+
+
+def test_detect_human_wall_matches_marker_in_iframe_dom_only():
+    # Clean main DOM, unremarkable iframe URL, but the CAPTCHA markup lives
+    # inside the iframe's DOM — still detected.
+    class _Frame:
+        url = "https://widget.example/embed"
+
+        def content(self):
+            return "<div class='g-recaptcha'></div>"
+
+    class _Page:
+        frames = [_Frame()]
+
+        def content(self):
+            return "<html>clean body</html>"
+
+    is_wall, reason = _detect_human_wall(_Page())
+    assert is_wall is True
+    assert reason == "reCAPTCHA"
+
+
+def test_detect_human_wall_matches_french_login_wall():
+    page = _FakePage("<p>Veuillez vous connecter pour postuler</p>")
+    is_wall, reason = _detect_human_wall(page)
+    assert is_wall is True
+    assert reason == "login required"
 
 
 def test_detect_human_wall_matches_marker_in_iframe_url_only():

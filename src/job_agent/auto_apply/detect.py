@@ -45,6 +45,15 @@ _WALL_SIGNATURES = {
         "sign in to apply",
         "log in to apply",
         "you must be logged in",
+        # French walls — the whole tool targets the French market, so an
+        # English-only signature list would walk straight past them.
+        "connectez-vous",
+        "identifiez-vous",
+        "veuillez vous connecter",
+        "connexion requise",
+        "se connecter pour postuler",
+        "acces reserve",
+        "accès réservé",
     ],
 }
 
@@ -52,24 +61,42 @@ _WALL_SIGNATURES = {
 def _detect_human_wall(page: Any) -> tuple[bool, str]:
     """Recognize a CAPTCHA / login / anti-bot wall so full-auto can hand off.
 
-    This only *detects* the wall (reads the DOM + iframe URLs for known markers).
-    It never solves or circumvents it — that would mean defeating a third party's
-    access control. Returns ``(is_wall, reason)``.
+    This only *detects* the wall (reads the main DOM, each iframe URL, and each
+    iframe's DOM for known markers). It never solves or circumvents it — that
+    would mean defeating a third party's access control. Returns
+    ``(is_wall, reason)``.
+
+    Fails CLOSED everywhere: any part of the page we cannot inspect is treated
+    as a possible wall and handed off, never proceeded past with a blind submit.
     """
     try:
         html = (page.content() or "").lower()
     except Exception:  # pragma: no cover - page may be mid-navigation
-        # Fail CLOSED: if we cannot inspect the page we must assume a wall might
-        # be present and hand off, never proceed to a blind submit. The hard
-        # constraint is "detect and hand off", so an undetectable page is treated
-        # as a wall rather than as clear.
         return True, "wall detection unavailable"
-    frame_urls = ""
+
+    parts = [html]
     try:
-        frame_urls = " ".join((getattr(f, "url", "") or "") for f in page.frames).lower()
-    except Exception:  # pragma: no cover
-        frame_urls = ""
-    haystack = f"{html} {frame_urls}"
+        frames = list(page.frames)
+    except Exception:  # pragma: no cover - frames may be unavailable mid-nav
+        # A wall often lives in an iframe; if we cannot even enumerate frames we
+        # must assume one might be present rather than declaring the page clear.
+        return True, "wall detection unavailable"
+
+    for frame in frames:
+        parts.append((getattr(frame, "url", "") or "").lower())
+        # A CAPTCHA can sit entirely inside an iframe whose URL is not a known
+        # signature, so inspect the frame's DOM too when it is reachable.
+        frame_content = getattr(frame, "content", None)
+        if callable(frame_content):
+            try:
+                frame_html = frame_content()
+            except Exception:
+                # An unreadable frame might be hiding the wall — fail closed.
+                return True, "wall detection unavailable"
+            if frame_html:
+                parts.append(str(frame_html).lower())
+
+    haystack = " ".join(parts)
     for reason, markers in _WALL_SIGNATURES.items():
         if any(marker in haystack for marker in markers):
             return True, reason
