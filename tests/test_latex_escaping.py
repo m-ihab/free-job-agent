@@ -297,7 +297,7 @@ def test_tailored_summary_appends_contract_aware_closing(sample_job, sample_mast
 def test_compile_latex_to_pdf_raises_when_no_compiler(tmp_path, monkeypatch):
     # Arrange: force "no compiler found".
     monkeypatch.setattr(
-        "job_agent.renderer.latex_render.available_latex_compiler",
+        "job_agent.renderer.latex_compile.available_latex_compiler",
         lambda: None,
     )
     tex_path = tmp_path / "cv.tex"

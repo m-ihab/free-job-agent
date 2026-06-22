@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from job_agent.renderer import latex_render
+from job_agent.renderer import latex_compile, latex_render  # noqa: F401  (latex_render kept for re-export check)
 from job_agent.renderer.latex_render import (
     LatexCompileError,
     _image_present,
@@ -56,7 +56,7 @@ def test_compile_strips_missing_image_before_running(tmp_path: Path, monkeypatch
         r"\documentclass{article}\photo{me.jpg}\begin{document}hi\end{document}",
         encoding="utf-8",
     )
-    monkeypatch.setattr(latex_render, "available_latex_compiler", lambda: "pdflatex")
+    monkeypatch.setattr(latex_compile, "available_latex_compiler", lambda: "pdflatex")
 
     seen: dict = {}
 
@@ -66,7 +66,7 @@ def test_compile_strips_missing_image_before_running(tmp_path: Path, monkeypatch
         (tmp_path / "preview.pdf").write_bytes(b"%PDF-1.4")
         return __import__("subprocess").CompletedProcess(command, 0, stdout="ok")
 
-    monkeypatch.setattr(latex_render.subprocess, "run", fake_run)
+    monkeypatch.setattr(latex_compile.subprocess, "run", fake_run)
     out_pdf = compile_latex_to_pdf(tex_path, tmp_path / "out.pdf")
     assert out_pdf.exists()
     assert "me.jpg" not in seen["tex"]
@@ -80,13 +80,13 @@ def test_compile_keeps_present_image(tmp_path: Path, monkeypatch) -> None:
         r"\documentclass{article}\photo{me.jpg}\begin{document}hi\end{document}",
         encoding="utf-8",
     )
-    monkeypatch.setattr(latex_render, "available_latex_compiler", lambda: "pdflatex")
+    monkeypatch.setattr(latex_compile, "available_latex_compiler", lambda: "pdflatex")
 
     def fake_run(command, **kwargs):  # noqa: ANN001
         (tmp_path / "preview.pdf").write_bytes(b"%PDF-1.4")
         return __import__("subprocess").CompletedProcess(command, 0, stdout="ok")
 
-    monkeypatch.setattr(latex_render.subprocess, "run", fake_run)
+    monkeypatch.setattr(latex_compile.subprocess, "run", fake_run)
     compile_latex_to_pdf(tex_path, tmp_path / "out.pdf")
     assert r"\photo{me.jpg}" in tex_path.read_text(encoding="utf-8")  # untouched
 
@@ -94,6 +94,6 @@ def test_compile_keeps_present_image(tmp_path: Path, monkeypatch) -> None:
 def test_no_compiler_still_raises(tmp_path: Path, monkeypatch) -> None:
     tex_path = tmp_path / "preview.tex"
     tex_path.write_text(r"\documentclass{article}\begin{document}hi\end{document}", encoding="utf-8")
-    monkeypatch.setattr(latex_render, "available_latex_compiler", lambda: None)
+    monkeypatch.setattr(latex_compile, "available_latex_compiler", lambda: None)
     with pytest.raises(LatexCompileError):
         compile_latex_to_pdf(tex_path, tmp_path / "out.pdf")
