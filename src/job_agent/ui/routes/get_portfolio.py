@@ -32,12 +32,14 @@ def get_portfolio_preview(h) -> None:
     h.send_header("Content-Type", "text/html; charset=utf-8")
     h.send_header("Content-Length", str(len(body)))
     h.send_header("Cache-Control", "no-store")
-    # The preview can contain user/AI-authored HTML. Block scripts so it cannot
-    # reach the parent dashboard's CSRF token or call mutating local APIs, even
-    # though the iframe is same-origin. Inline styles are needed for the preview.
+    # The preview can contain user/AI-authored HTML. The iframe is sandboxed
+    # WITHOUT allow-same-origin (opaque origin), so its scripts run — the
+    # portfolio's own reveal/theme script needs this to render — but cannot read
+    # the parent dashboard's CSRF token or call mutating local APIs as us.
+    # Inline scripts/styles are part of the generated portfolio, so allow them.
     h.send_header(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; "
+        "default-src 'self'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; frame-ancestors 'self'",
     )
     h.end_headers()
