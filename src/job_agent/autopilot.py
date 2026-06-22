@@ -12,132 +12,56 @@ When enabled, the autopilot runs on a thread and periodically:
 Everything stays local. No network actions are taken on the user's behalf
 (no submissions, no logins, no scraping behind paywalls). The loop is stop/
 start from the dashboard.
+
+The heavy per-cycle logic lives in sibling modules so this file stays small:
+  * :mod:`job_agent.autopilot_config` — config + runtime-state dataclasses
+  * :mod:`job_agent.autopilot_sources` — the CAC40 ATS slug table
+  * :mod:`job_agent.autopilot_cycle` — one cycle: search + sweep + summary
+  * :mod:`job_agent.autopilot_packets` — packet tailoring + auto-apply trigger
+  * :mod:`job_agent.autopilot_queries` — smart query expansion
+
+Those modules reach the collaborators below through this module object
+(``import job_agent.autopilot as ap``), so the names imported here are the
+single monkeypatch seam the autopilot tests target.
 """
 from __future__ import annotations
 
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from job_agent.ai_agent import suggest_search_queries
+# These collaborators are imported here *so the sibling autopilot_* modules can
+# reach them as ``ap.<name>`` and the tests can monkeypatch this one seam*.
+# They look unused to ruff because the references live in the sibling modules.
+from job_agent.ai_agent import suggest_search_queries  # noqa: F401  (monkeypatch seam)
 from job_agent.config import AppConfig
-from job_agent.db.database import Database
-from job_agent.intake.free_apis import (
+from job_agent.db.database import Database  # noqa: F401  (monkeypatch seam)
+from job_agent.intake.free_apis import (  # noqa: F401  (monkeypatch seam)
     KEYWORD_ONLY_SOURCES,
     FreeApiError,
     search_all_free_sources,
     search_free_api_jobs,
 )
-from job_agent.intake.france_market import expand_france_search_queries, expand_role_family
-from job_agent.notifier import notify_packet_ready
-from job_agent.pipeline import add_job_to_tracker, generate_packet_for_job
-from job_agent.tracker import ApplicationTracker
-from job_agent.validators import load_profile_bundle
+from job_agent.intake.france_market import (  # noqa: F401  (monkeypatch seam)
+    expand_france_search_queries,
+    expand_role_family,
+)
+from job_agent.notifier import notify_packet_ready  # noqa: F401  (monkeypatch seam)
+from job_agent.pipeline import add_job_to_tracker, generate_packet_for_job  # noqa: F401  (seam)
+from job_agent.tracker import ApplicationTracker  # noqa: F401  (monkeypatch seam)
+from job_agent.validators import load_profile_bundle  # noqa: F401  (monkeypatch seam)
 
+from job_agent.autopilot_config import AutopilotConfig, AutopilotState
+from job_agent.autopilot_sources import CAC40_ATS_SLUGS
 
-@dataclass
-class AutopilotConfig:
-    queries: list[str] = field(default_factory=lambda: [
-        "data scientist", "data science", "machine learning",
-        "data analyst", "data engineer",
-    ])
-    location: str = "Paris"
-    language: str = "both"
-    interval_minutes: int = 30
-    auto_packet_threshold: int = 75
-    multi_source_limit: int = 8
-    france_travail_limit: int = 15
-    radius_km: int = 25
-    min_relevance: int = 20
-    france_eu_only: bool = True
-    use_france_travail: bool = True
-    use_multi_source: bool = True
-    use_cac40_sweep: bool = True
-    cac40_limit_per_company: int = 3
-    max_packets_per_cycle: int = 5
-    contract_type: str = "stage_and_alternance"  # "all"|"stage"|"alternance"|"stage_and_alternance"
-    email_notify: bool = False
-    auto_apply: bool = False
-    auto_apply_mode: str = "fill_and_confirm"
-    auto_apply_min_score: int = 75
-
-
-# Known CAC40 / large-French company ATS slugs. Each entry is the best-known
-# combination of public ATS source + slug for that employer. The autopilot
-# auto-disables a slug for 24 h after it 404s, so a wrong guess here is
-# self-healing rather than fatal. Use ``job-agent validate-sources`` (or the
-# UI button) to probe everything in one go.
-CAC40_ATS_SLUGS: list[tuple[str, str, str]] = [
-    # (source, slug, display name)
-    # Each entry below was probed live and returned HTTP 200 at the time of
-    # writing. Slugs that stop responding are auto-disabled for 24 h via the
-    # ``broken_sources`` table; run "Validate sources" in the UI to re-check.
-
-    # ---- Greenhouse (FR / EU scale-ups) ----
-    ("greenhouse", "doctolib", "Doctolib"),
-    ("greenhouse", "datadog", "Datadog"),
-    ("greenhouse", "shifttechnology", "Shift Technology"),
-    ("greenhouse", "algolia", "Algolia"),
-    ("greenhouse", "mirakl", "Mirakl"),
-    ("greenhouse", "thefork", "TheFork"),
-    ("greenhouse", "getyourguide", "GetYourGuide"),
-    ("greenhouse", "sumup", "SumUp"),
-    ("greenhouse", "cognism", "Cognism"),
-    ("greenhouse", "pleo", "Pleo"),
-    ("greenhouse", "iterable", "Iterable"),
-
-    # ---- Lever (FR data/AI scale-ups) ----
-    ("lever", "scaleway", "Scaleway"),
-    ("lever", "blablacar", "BlaBlaCar"),
-    ("lever", "ledger", "Ledger"),
-    ("lever", "swile", "Swile"),
-    ("lever", "qonto", "Qonto"),
-    ("lever", "mistral", "Mistral AI"),
-    ("lever", "aircall", "Aircall"),
-    ("lever", "voodoo", "Voodoo"),
-    ("lever", "pennylane", "Pennylane"),
-    ("lever", "malt", "Malt"),
-    ("lever", "agicap", "Agicap"),
-    ("lever", "pigment", "Pigment"),
-
-    # ---- SmartRecruiters (CAC 40 traditional employers) ----
-    ("smartrecruiters", "Capgemini", "Capgemini"),
-    ("smartrecruiters", "AccorHotels", "Accor"),
-    ("smartrecruiters", "LVMH", "LVMH"),
-    ("smartrecruiters", "VeoliaEnvironment", "Veolia"),
-    ("smartrecruiters", "Carrefour", "Carrefour"),
-    ("smartrecruiters", "Bouygues", "Bouygues"),
-    ("smartrecruiters", "Engie", "Engie"),
-    ("smartrecruiters", "SchneiderElectric", "Schneider Electric"),
-    ("smartrecruiters", "Orange", "Orange"),
-    ("smartrecruiters", "Renaultgroup", "Renault"),
-    ("smartrecruiters", "Sanofi", "Sanofi"),
-    ("smartrecruiters", "PernodRicard", "Pernod Ricard"),
-    ("smartrecruiters", "Airbus", "Airbus"),
-    ("smartrecruiters", "Vinci", "Vinci"),
-    ("smartrecruiters", "Stellantis", "Stellantis"),
-    ("smartrecruiters", "Saint-Gobain", "Saint-Gobain"),
-    ("smartrecruiters", "Michelin", "Michelin"),
-    ("smartrecruiters", "L-Oreal", "L'Oréal"),
-    ("smartrecruiters", "TotalEnergies", "TotalEnergies"),
-    ("smartrecruiters", "Danone", "Danone"),
+__all__ = [
+    "Autopilot",
+    "AutopilotConfig",
+    "AutopilotState",
+    "CAC40_ATS_SLUGS",
+    "get_autopilot",
 ]
-
-
-@dataclass
-class AutopilotState:
-    running: bool = False
-    last_run_at: str | None = None
-    last_error: str | None = None
-    cycles_completed: int = 0
-    jobs_added_total: int = 0
-    packets_built_total: int = 0
-    last_summary: dict[str, Any] | None = None
-    started_at: str | None = None
-    queries_count: int = 0
 
 
 class Autopilot:
@@ -236,255 +160,14 @@ class Autopilot:
         return bool(os.environ.get("FRANCE_TRAVAIL_CLIENT_ID") and os.environ.get("FRANCE_TRAVAIL_CLIENT_SECRET"))
 
     def _run_cycle(self) -> dict[str, Any]:
-        db = Database(self.config.db_path)  # type: ignore[arg-type]
-        db.initialize()
-        tracker = ApplicationTracker(db)  # noqa: F841  (constructed for its DB side effect; the autopilot tests patch this seam)
-        added: list[str] = []
-        packets: list[str] = []
-        errors: list[str] = []
-        per_query: dict[str, int] = {}
-
-        ft_ready = self.opts.use_france_travail and self._france_travail_ready()
-        search_queries = self._planned_queries()
-        for query in search_queries:
-            if self._stop_event.is_set():
-                break
-            cycle_added = 0
-            if ft_ready:
-                try:
-                    france_jobs = search_free_api_jobs(
-                        "francetravail",
-                        query=query,
-                        location=self.opts.location,
-                        limit=self.opts.france_travail_limit,
-                        contract_type=self.opts.contract_type,
-                        min_relevance=self.opts.min_relevance,
-                        france_eu_only=self.opts.france_eu_only,
-                        radius_km=self.opts.radius_km,
-                        use_cache=True,
-                        cache_ttl_hours=2.0,
-                    )
-                    for job in france_jobs:
-                        tracked, created = add_job_to_tracker(self.config, job)
-                        if created:
-                            added.append(tracked.id)
-                            cycle_added += 1
-                except FreeApiError as exc:
-                    errors.append(f"francetravail/{query}: {exc}")
-                except Exception as exc:
-                    errors.append(f"francetravail/{query}: {type(exc).__name__}: {exc}")
-
-            if self.opts.use_multi_source:
-                try:
-                    multi = search_all_free_sources(
-                        query=query,
-                        location=self.opts.location,
-                        limit_per_source=self.opts.multi_source_limit,
-                        sources=list(KEYWORD_ONLY_SOURCES),
-                        contract_type=self.opts.contract_type,
-                        min_relevance=self.opts.min_relevance,
-                        france_eu_only=self.opts.france_eu_only,
-                        radius_km=self.opts.radius_km,
-                        use_cache=True,
-                        cache_ttl_hours=2.0,
-                    )
-                    for job in multi.get("jobs", []):
-                        tracked, created = add_job_to_tracker(self.config, job)
-                        if created:
-                            added.append(tracked.id)
-                            cycle_added += 1
-                    for source, err in (multi.get("errors") or {}).items():
-                        errors.append(f"{source}/{query}: {err[:120]}")
-                except Exception as exc:
-                    errors.append(f"multi/{query}: {type(exc).__name__}: {exc}")
-            per_query[query] = cycle_added
-
-        # CAC40 / large-FR ATS sweep. Slugs that 404'd recently are skipped
-        # automatically — see ``broken_sources``. Genuine 404s are quietly
-        # added to that table so the user isn't spammed with dead-board noise.
-        cac40_added = 0
-        cac40_skipped_broken = 0
-        if self.opts.use_cac40_sweep:
-            import requests as _requests
-            for source_kind, slug, display_name in CAC40_ATS_SLUGS:
-                if self._stop_event.is_set():
-                    break
-                if db.is_source_broken(source_kind, slug):
-                    cac40_skipped_broken += 1
-                    continue
-                try:
-                    sweep_jobs = search_free_api_jobs(
-                        source_kind,
-                        query=self.opts.queries[0] if self.opts.queries else "data",
-                        board=slug,
-                        limit=self.opts.cac40_limit_per_company,
-                        contract_type=self.opts.contract_type,
-                        min_relevance=self.opts.min_relevance,
-                        france_eu_only=self.opts.france_eu_only,
-                        use_cache=True,
-                        cache_ttl_hours=4.0,
-                    )
-                except _requests.HTTPError as http_exc:
-                    status = getattr(http_exc.response, "status_code", None)
-                    if status in (404, 410, 403):
-                        # Dead board — mark for 24 h and stay silent.
-                        db.mark_source_broken(source_kind, slug, status_code=status, reason=str(http_exc)[:200])
-                        continue
-                    errors.append(f"{source_kind}/{display_name}: HTTP {status}")
-                    continue
-                except FreeApiError as exc:
-                    errors.append(f"{source_kind}/{display_name}: {exc}")
-                    continue
-                except Exception as exc:
-                    errors.append(f"{source_kind}/{display_name}: {type(exc).__name__}: {exc}")
-                    continue
-                for job in sweep_jobs:
-                    tracked, created = add_job_to_tracker(self.config, job)
-                    if created:
-                        added.append(tracked.id)
-                        cac40_added += 1
-            per_query["__cac40_sweep__"] = cac40_added
-            if cac40_skipped_broken:
-                per_query["__cac40_skipped_broken__"] = cac40_skipped_broken
-
-        # Auto-tailor for high-fit jobs. Load profile bundle once and share it
-        # across all workers to avoid redundant disk reads per packet.
-        packets_built = 0
-        ai_skipped = 0
-        notifications: list[dict[str, Any]] = []
-
-        shared_profile_bundle = None
-        try:
-            shared_profile_bundle = load_profile_bundle(self.config)
-        except Exception as exc:
-            errors.append(f"profile_load: {type(exc).__name__}: {exc}")
-
-        # Combine newly-added jobs with pre-existing jobs that have no packet yet.
-        catchup_ids = [
-            j.id for j in db.list_jobs_without_packets(limit=10)
-            if j.id not in added
-        ]
-        all_job_ids = list(added) + catchup_ids
-        candidate_ids = all_job_ids[:self.opts.max_packets_per_cycle]
-
-        def _build_one(job_id: str) -> tuple[str, Any, str | None]:
-            ai_cache = db.list_ai_cache_for_job(job_id) if db else {}
-            ai_fit = (ai_cache or {}).get("fit") or {}
-            if ai_fit.get("verdict") == "weak":
-                return job_id, None, "ai_skip"
-            try:
-                pkt = generate_packet_for_job(
-                    self.config, job_id, force=False,
-                    fast_mode=True,
-                    profile_bundle=shared_profile_bundle,
-                )
-                return job_id, pkt, None
-            except Exception as exc:
-                return job_id, None, f"{type(exc).__name__}: {exc}"
-
-        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="pkt") as pool:
-            futures = {pool.submit(_build_one, jid): jid for jid in candidate_ids}
-            for fut in as_completed(futures):
-                jid, pkt, err = fut.result()
-                if err == "ai_skip":
-                    ai_skipped += 1
-                elif err:
-                    errors.append(f"packet/{jid[:8]}: {err}")
-                elif pkt is not None:
-                    if pkt.fit_score is not None and pkt.fit_score >= self.opts.auto_packet_threshold:
-                        packets.append(pkt.id)
-                        packets_built += 1
-                        if self.opts.email_notify:
-                            job_obj = db.resolve_job(jid)
-                            if job_obj:
-                                notifications.append(notify_packet_ready(self.config, job_obj, pkt, reason="Autopilot"))
-
-        self.state.jobs_added_total += len(added)
-        self.state.packets_built_total += packets_built
-
-        # If auto-apply is enabled and packets were generated this cycle,
-        # trigger an apply session for the new high-fit packets.
-        if self.opts.auto_apply and packets:
-            try:
-                from job_agent import auto_apply as _aa
-                if not _aa.get_state()["running"]:
-                    _aa.start(
-                        self.config,
-                        mode=self.opts.auto_apply_mode,
-                        min_score=float(self.opts.auto_apply_min_score),
-                        limit=len(packets),
-                    )
-            except Exception as exc:
-                errors.append(f"auto_apply_trigger: {type(exc).__name__}: {exc}")
-
-        display_errors = [e for e in errors if not _is_expected_noise(e)]
-        return {
-            "jobs_added": len(added),
-            "packets_built": packets_built,
-            "ai_skipped": ai_skipped,
-            "notifications": notifications[:5],
-            "errors": display_errors[:10],
-            "per_query": per_query,
-            "queries": search_queries,
-            "france_travail_used": ft_ready,
-            "multi_source_used": self.opts.use_multi_source,
-            "broken_sources": db.list_broken_sources()[:20],
-            "ran_at": _now_iso(),
-        }
+        # Delegated to keep this module small; imported lazily to avoid a
+        # circular import at module load (the cycle module imports this one).
+        from job_agent.autopilot_cycle import run_cycle
+        return run_cycle(self)
 
     def _planned_queries(self) -> list[str]:
-        """Smart query expansion: role-family + AI + bilingual fallback.
-
-        Order of expansion (best-recall mix):
-        1. ``expand_role_family`` — deterministic data/AI synonyms (works
-           without Ollama; e.g. "data scientist" -> data engineer, ml
-           engineer, ai engineer, data analyst).
-        2. AI ``suggest_search_queries`` if Ollama is reachable.
-        3. ``expand_france_search_queries`` bilingual stage/alternance pack
-           so we always test French internship terms.
-        """
-        planned: list[str] = []
-
-        def _add(query: str) -> None:
-            key = (query or "").casefold().strip()
-            if not key or len(query) > 70:
-                return
-            seen = {item.casefold() for item in planned}
-            if key in seen:
-                return
-            planned.append(query.strip())
-
-        # 1) Deterministic role-family expansion always runs.
-        for seed in self.opts.queries:
-            for sibling in expand_role_family(seed):
-                _add(sibling)
-
-        # 2) Local-AI plan when reachable.
-        try:
-            profile, master_cv, _ = load_profile_bundle(self.config)
-            for seed in self.opts.queries[:3]:
-                plan = suggest_search_queries(
-                    profile,
-                    master_cv,
-                    seed_query=seed,
-                    location=self.opts.location,
-                    language=self.opts.language,
-                    internships_only=(self.opts.contract_type != "all"),
-                    limit=4,
-                )
-                for query in plan.get("queries", []):
-                    _add(str(query))
-        except Exception:
-            pass
-
-        # 3) French stage/alternance variants as the final safety net.
-        for seed in self.opts.queries[:4]:
-            for query in expand_france_search_queries(seed, limit=4, language=self.opts.language):
-                _add(query)
-                if len(planned) >= 24:
-                    break
-        # Hard cap so cycles stay reasonably fast.
-        return planned[:24] or self.opts.queries
+        from job_agent.autopilot_queries import plan_queries
+        return plan_queries(self)
 
 
 _EXPECTED_NOISE_PATTERNS = (
