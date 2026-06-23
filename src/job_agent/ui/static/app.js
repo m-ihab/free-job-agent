@@ -329,33 +329,41 @@ function renderSmartPlan(plan, multiSource = null) {
   </div>`;
 }
 
-// Pinned search results survive subsequent searches. `lastSearchJobs` holds the
-// jobs from the most recent search so a pin click can recover the full object.
+// Pinned search results. Tick a result's box to keep it in the pinned tray.
+// `keepPinsAcrossSearches` controls whether the tray survives the next search
+// (on = survives, the default; off = cleared whenever a new search runs).
+// `lastSearchJobs` holds the most recent results so a tick can recover the job.
 const pinnedJobs = new Map();
 let lastSearchJobs = [];
+let keepPinsAcrossSearches = true;
 
-function pinButton(job) {
+function pinCheckbox(job) {
   const pinned = pinnedJobs.has(job.id);
-  const action = pinned ? "unpin" : "pin";
-  const label = pinned ? "📌 Pinned" : "📌 Pin";
-  const title = pinned ? "Unpin this result" : "Keep this result visible while you search again";
-  return `<button class="pin-btn" data-action="${action}" data-job="${escapeHtml(job.id)}" title="${title}">${label}</button>`;
+  const title = pinned ? "Pinned — untick to remove" : "Tick to keep this result visible while you search again";
+  return `<input type="checkbox" class="pin-check" data-action="pin" data-job="${escapeHtml(job.id)}" ${pinned ? "checked" : ""} title="${title}" />`;
 }
 
-function searchResultRow(job, pinned = false) {
-  const action = pinned
-    ? `<button class="pin-btn" data-action="unpin" data-job="${escapeHtml(job.id)}" title="Unpin">📌 Unpin</button>`
-    : pinButton(job);
+const SEARCH_RESULT_HEAD = "<tr><th>Pin</th><th>Job</th><th>Location</th><th>Score</th><th>Status</th><th>Actions</th></tr>";
+
+function searchResultRow(job) {
   return `<tr>
+        <td class="pin-cell">${pinCheckbox(job)}</td>
         <td><strong>${escapeHtml(job.title)}</strong><br>${companyLine(job)}</td>
         <td>${escapeHtml(job.location || "")}</td>
         <td>${scorePill(job.fit_score)}</td>
         <td>${escapeHtml(job.status || "")}</td>
-        <td class="actions">${action}${jobActions(job)}</td>
+        <td class="actions">${jobActions(job)}</td>
       </tr>`;
 }
 
 function renderApiResults(jobs, failures = []) {
+  // A genuinely new search passes a fresh array; togglePin re-renders by passing
+  // the exact `lastSearchJobs` reference back, so we never clear pins on a toggle.
+  const isReRender = jobs === lastSearchJobs;
+  if (!isReRender && !keepPinsAcrossSearches && pinnedJobs.size) {
+    pinnedJobs.clear();
+    renderPinnedResults();
+  }
   lastSearchJobs = jobs || [];
   if ((!jobs || !jobs.length) && (!failures || !failures.length)) {
     $("apiResults").innerHTML = "";
@@ -367,7 +375,7 @@ function renderApiResults(jobs, failures = []) {
     : "";
   $("apiResults").innerHTML = `${failureBlock}<div class="table-wrap">
     <table>
-      <thead><tr><th>Job</th><th>Location</th><th>Score</th><th>Status</th><th>Actions</th></tr></thead>
+      <thead>${SEARCH_RESULT_HEAD}</thead>
       <tbody>${jobRows}</tbody>
     </table>
   </div>`;
@@ -380,7 +388,7 @@ function renderPinnedResults() {
     container.innerHTML = "";
     return;
   }
-  const rows = [...pinnedJobs.values()].map((job) => searchResultRow(job, true)).join("");
+  const rows = [...pinnedJobs.values()].map((job) => searchResultRow(job)).join("");
   container.innerHTML = `<div class="panel">
     <div class="section-header" style="margin-bottom:0.5rem">
       <h3 style="margin:0">📌 Pinned results (${pinnedJobs.size})</h3>
@@ -388,7 +396,7 @@ function renderPinnedResults() {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Job</th><th>Location</th><th>Score</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead>${SEARCH_RESULT_HEAD}</thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
@@ -403,7 +411,7 @@ function togglePin(jobId) {
     if (job) pinnedJobs.set(jobId, job);
   }
   renderPinnedResults();
-  // Re-render the live results so the pin button label flips.
+  // Re-render the live results (same array ref) so the tickbox reflects state.
   if (lastSearchJobs.length) renderApiResults(lastSearchJobs);
 }
 
@@ -1433,10 +1441,126 @@ function renderInsights(stats) {
     .join("") || "<li class='muted'>No data yet.</li>";
 }
 
+// ===== Tracker tab =====
+// The application funnel: tracked jobs grouped into pipeline stages, each row's
+// status editable inline (saves via /api/status), with the Excel export/import.
+const TRACKER_STAGES = [
+  { label: "To apply", statuses: ["NEW", "SCORED", "PACKET_READY", "NEEDS_REVIEW"] },
+  { label: "Applied", statuses: ["APPLYING", "APPLIED", "MANUALLY_SUBMITTED", "ASSISTED_APPLY_OPENED"] },
+  { label: "Interviewing", statuses: ["INTERVIEW"] },
+  { label: "Offers", statuses: ["OFFERED", "ACCEPTED"] },
+  { label: "Closed", statuses: ["REJECTED", "WITHDRAWN", "FAILED"] },
+  { label: "Needs manual", statuses: ["NEEDS_MANUAL"] },
+];
+const TRACKER_STATUS_OPTIONS = [
+  "NEW", "APPLYING", "APPLIED", "MANUALLY_SUBMITTED", "INTERVIEW",
+  "OFFERED", "ACCEPTED", "REJECTED", "WITHDRAWN", "NEEDS_MANUAL",
+];
+
+function trackerStatusSelect(job) {
+  const current = job.status || "NEW";
+  const known = TRACKER_STATUS_OPTIONS.includes(current)
+    ? TRACKER_STATUS_OPTIONS
+    : [current, ...TRACKER_STATUS_OPTIONS];
+  const opts = known
+    .map((s) => `<option value="${s}" ${s === current ? "selected" : ""}>${escapeHtml(s.replace(/_/g, " "))}</option>`)
+    .join("");
+  return `<select class="tracker-status" data-action="status-select" data-job="${escapeHtml(job.id)}">${opts}</select>`;
+}
+
+function renderTracker() {
+  const jobs = state.jobs || [];
+  const funnel = TRACKER_STAGES.map((stage) => {
+    const count = jobs.filter((j) => stage.statuses.includes(j.status)).length;
+    return `<div class="metric"><div class="metric-value">${count}</div><div class="metric-label">${stage.label}</div></div>`;
+  }).join("");
+  if ($("trackerFunnel")) $("trackerFunnel").innerHTML = funnel;
+
+  const rows = jobs.map((job) => `<tr>
+      <td><strong>${escapeHtml(job.title)}</strong><br>${companyLine(job)}</td>
+      <td>${scorePill(job.fit_score)}</td>
+      <td>${trackerStatusSelect(job)}</td>
+      <td class="actions">
+        <button data-action="brief" data-job="${escapeHtml(job.id)}" title="Headline, summary, keywords">Brief</button>
+        <button data-action="outreach" data-job="${escapeHtml(job.id)}" title="Outreach email">Outreach</button>
+        <button data-action="followup" data-job="${escapeHtml(job.id)}" title="Follow-up email">Follow-up</button>
+        ${job.apply_url ? `<a href="${escapeHtml(job.apply_url)}" target="_blank" rel="noreferrer">Apply</a>` : ""}
+      </td>
+    </tr>`).join("");
+  if ($("trackerTableWrap")) {
+    $("trackerTableWrap").innerHTML = jobs.length
+      ? `<div class="table-wrap"><table>
+          <thead><tr><th>Application</th><th>Score</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>`
+      : `<p class="muted">No tracked applications yet. Add jobs from the Search or Add Job tabs.</p>`;
+  }
+}
+
+async function loadTracker() {
+  if (!state.jobs || !state.jobs.length) {
+    try {
+      await loadJobs(false);
+    } catch (error) {
+      setNotice("trackerNotice", error.message, true);
+    }
+  }
+  renderTracker();
+}
+
+async function trackerSetStatus(jobId, status, el) {
+  if (el) el.disabled = true;
+  try {
+    await api("/api/status", { job_id: jobId, status, note: "Tracker update" });
+    await loadJobs(false);
+    renderTracker();
+    toast(`Status → ${status.replace(/_/g, " ")}`);
+  } catch (error) {
+    setNotice("trackerNotice", error.message, true);
+  } finally {
+    if (el) el.disabled = false;
+  }
+}
+
+async function trackerExport() {
+  const button = $("trackerExportBtn");
+  setBusy(button, true);
+  setNotice("trackerNotice", "");
+  try {
+    const payload = await api("/api/export-internships", {});
+    setNotice("trackerNotice", `Exported ${payload.count} application(s) to ${payload.workbook}`);
+  } catch (error) {
+    setNotice("trackerNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function trackerImport() {
+  const button = $("trackerImportBtn");
+  setBusy(button, true);
+  setNotice("trackerNotice", "");
+  try {
+    const payload = await api("/api/tracker-import", {});
+    const errors = payload.errors || [];
+    setNotice("trackerNotice",
+      `Synced ${payload.updated} status change(s) · ${payload.unmatched} unmatched` + (errors.length ? `\n${errors.join("\n")}` : ""),
+      errors.length > 0);
+    if (payload.updated > 0) {
+      await loadJobs(false);
+      renderTracker();
+    }
+  } catch (error) {
+    setNotice("trackerNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 function activateTab(name) {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === name));
   document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `tab-${name}`));
   if (name === "jobs") renderJobs();
+  if (name === "tracker") loadTracker();
   if (name === "insights" && !state.insightsCache) loadInsights();
   if (name === "autopilot") {
     loadAutopilot();
@@ -3140,6 +3264,18 @@ function bindEvents() {
   $("addUrlBtn").addEventListener("click", addUrl);
   $("addTextBtn").addEventListener("click", addText);
   if ($("bulkAddBtn")) $("bulkAddBtn").addEventListener("click", addBulk);
+  if ($("keepPinsAcrossSearches")) {
+    $("keepPinsAcrossSearches").addEventListener("change", (event) => {
+      keepPinsAcrossSearches = event.target.checked;
+    });
+  }
+  if ($("trackerRefreshBtn")) $("trackerRefreshBtn").addEventListener("click", loadTracker);
+  if ($("trackerExportBtn")) $("trackerExportBtn").addEventListener("click", trackerExport);
+  if ($("trackerImportBtn")) $("trackerImportBtn").addEventListener("click", trackerImport);
+  document.body.addEventListener("change", (event) => {
+    const statusSelect = event.target.closest("[data-action='status-select']");
+    if (statusSelect) trackerSetStatus(statusSelect.dataset.job, statusSelect.value, statusSelect);
+  });
   $("profileRefreshBtn").addEventListener("click", loadState);
   $("exportInternshipsBtn").addEventListener("click", exportInternships);
   if ($("importTrackerBtn")) $("importTrackerBtn").addEventListener("click", importTracker);

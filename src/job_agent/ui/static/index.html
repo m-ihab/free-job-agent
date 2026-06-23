@@ -21,6 +21,7 @@
     <nav class="tabs" aria-label="Main sections">
       <button class="tab active" data-tab="search">Search</button>
       <button class="tab" data-tab="jobs">Jobs</button>
+      <button class="tab" data-tab="tracker">Tracker</button>
       <button class="tab" data-tab="autopilot">Autopilot</button>
       <button class="tab" data-tab="studio">CV Studio</button>
       <button class="tab" data-tab="portfolio">Portfolio</button>
@@ -126,6 +127,10 @@
 
         <div class="metric-grid" id="searchMetrics"></div>
         <div class="notice hidden" id="searchNotice"></div>
+        <label class="check-row" style="margin:0.6rem 0" title="On: pinned results stay after you run another search. Off: each new search clears the pinned tray.">
+          <input id="keepPinsAcrossSearches" type="checkbox" checked />
+          Keep pinned results across searches
+        </label>
         <div id="pinnedResults" class="results-stack"></div>
         <div id="multiSourceResults" class="results-stack"></div>
         <div id="manualResults" class="results-stack"></div>
@@ -240,6 +245,23 @@
             </div>
           </aside>
         </div>
+      </section>
+
+      <section id="tab-tracker" class="tab-panel">
+        <div class="section-header">
+          <div>
+            <h2>Application tracker</h2>
+            <p class="hint">Your application funnel. Change a status inline — it saves to the local tracker and feeds the Excel export/import.</p>
+          </div>
+          <div class="toolbar">
+            <button id="trackerRefreshBtn" title="Reload from the local tracker">Refresh</button>
+            <button id="trackerExportBtn" title="Write applied internships into your Excel workbook">Export to Excel</button>
+            <button id="trackerImportBtn" title="Read status edits from the Excel workbook back into the tracker">Import status edits</button>
+          </div>
+        </div>
+        <div class="metric-grid" id="trackerFunnel"></div>
+        <div class="notice hidden" id="trackerNotice"></div>
+        <div id="trackerTableWrap"></div>
       </section>
 
       <section id="tab-autopilot" class="tab-panel">
