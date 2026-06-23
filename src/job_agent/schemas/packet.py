@@ -65,6 +65,11 @@ class ApplicationPacket(BaseModel):
     cover_letter_pdf_path: Optional[str] = None
     qa_answers: dict[str, str] = Field(default_factory=dict)
     assistant_page_html: str = ""
+    # Per-application brief: a one-line headline, a short summary, and the role's
+    # most relevant keywords. Grounded in profile+job fields (never invented).
+    headline: str = ""
+    summary: str = ""
+    keywords: list[str] = Field(default_factory=list)
     notes: str = ""
     created_at: str = Field(default_factory=utc_now)
     updated_at: str = Field(default_factory=utc_now)
