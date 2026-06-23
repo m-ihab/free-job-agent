@@ -329,23 +329,39 @@ function renderSmartPlan(plan, multiSource = null) {
   </div>`;
 }
 
-function renderApiResults(jobs, failures = []) {
-  if ((!jobs || !jobs.length) && (!failures || !failures.length)) {
-    $("apiResults").innerHTML = "";
-    return;
-  }
-  const jobRows = (jobs || [])
-    .slice(0, 80)
-    .map(
-      (job) => `<tr>
+// Pinned search results survive subsequent searches. `lastSearchJobs` holds the
+// jobs from the most recent search so a pin click can recover the full object.
+const pinnedJobs = new Map();
+let lastSearchJobs = [];
+
+function pinButton(job) {
+  const pinned = pinnedJobs.has(job.id);
+  const action = pinned ? "unpin" : "pin";
+  const label = pinned ? "📌 Pinned" : "📌 Pin";
+  const title = pinned ? "Unpin this result" : "Keep this result visible while you search again";
+  return `<button class="pin-btn" data-action="${action}" data-job="${escapeHtml(job.id)}" title="${title}">${label}</button>`;
+}
+
+function searchResultRow(job, pinned = false) {
+  const action = pinned
+    ? `<button class="pin-btn" data-action="unpin" data-job="${escapeHtml(job.id)}" title="Unpin">📌 Unpin</button>`
+    : pinButton(job);
+  return `<tr>
         <td><strong>${escapeHtml(job.title)}</strong><br>${companyLine(job)}</td>
         <td>${escapeHtml(job.location || "")}</td>
         <td>${scorePill(job.fit_score)}</td>
         <td>${escapeHtml(job.status || "")}</td>
-        <td class="actions">${jobActions(job)}</td>
-      </tr>`,
-    )
-    .join("");
+        <td class="actions">${action}${jobActions(job)}</td>
+      </tr>`;
+}
+
+function renderApiResults(jobs, failures = []) {
+  lastSearchJobs = jobs || [];
+  if ((!jobs || !jobs.length) && (!failures || !failures.length)) {
+    $("apiResults").innerHTML = "";
+    return;
+  }
+  const jobRows = (jobs || []).slice(0, 80).map((job) => searchResultRow(job)).join("");
   const failureBlock = failures.length
     ? `<div class="notice error">${failures.slice(0, 8).map(escapeHtml).join("<br>")}</div>`
     : "";
@@ -355,6 +371,40 @@ function renderApiResults(jobs, failures = []) {
       <tbody>${jobRows}</tbody>
     </table>
   </div>`;
+}
+
+function renderPinnedResults() {
+  const container = $("pinnedResults");
+  if (!container) return;
+  if (pinnedJobs.size === 0) {
+    container.innerHTML = "";
+    return;
+  }
+  const rows = [...pinnedJobs.values()].map((job) => searchResultRow(job, true)).join("");
+  container.innerHTML = `<div class="panel">
+    <div class="section-header" style="margin-bottom:0.5rem">
+      <h3 style="margin:0">📌 Pinned results (${pinnedJobs.size})</h3>
+      <button data-action="clear-pins" title="Unpin all">Clear all</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Job</th><th>Location</th><th>Score</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function togglePin(jobId) {
+  if (pinnedJobs.has(jobId)) {
+    pinnedJobs.delete(jobId);
+  } else {
+    const job = lastSearchJobs.find((j) => j.id === jobId) || pinnedJobs.get(jobId);
+    if (job) pinnedJobs.set(jobId, job);
+  }
+  renderPinnedResults();
+  // Re-render the live results so the pin button label flips.
+  if (lastSearchJobs.length) renderApiResults(lastSearchJobs);
 }
 
 function companyLine(job) {
@@ -376,6 +426,7 @@ function jobActions(job) {
   const remove = `<button data-action="delete-job" data-job="${escapeHtml(job.id)}" title="Remove this job from the local tracker">Remove</button>`;
   return `<div class="row-actions">
     <button data-action="packet" data-job="${escapeHtml(job.id)}" title="Generate a tailored CV + cover letter for this job">Tailor CV</button>
+    <button data-action="brief" data-job="${escapeHtml(job.id)}" title="Write a headline, summary, and the most relevant keywords for this application">Brief</button>
     <button data-action="outreach" data-job="${escapeHtml(job.id)}" title="Draft a cold outreach email to the recruiter/hiring manager">Outreach</button>
     <button data-action="linkedin" data-job="${escapeHtml(job.id)}" title="Draft a LinkedIn message to the recruiter">LinkedIn</button>
     <button data-action="interview" data-job="${escapeHtml(job.id)}" title="Generate interview prep questions">Prep</button>
@@ -719,6 +770,33 @@ async function addUrl() {
   }
 }
 
+async function addBulk() {
+  const button = $("bulkAddBtn");
+  const text = $("bulkAddInput").value.trim();
+  if (!text) {
+    setNotice("addNotice", "Paste at least one job posting or URL first.", true);
+    return;
+  }
+  setBusy(button, true);
+  setNotice("addNotice", "");
+  try {
+    const payload = await api("/api/add-bulk", { text });
+    const errors = payload.errors || [];
+    const parts = [`Added ${payload.added}`, `${payload.duplicates} duplicate(s)`];
+    if (errors.length) parts.push(`${errors.length} error(s)`);
+    setNotice("addNotice", parts.join(" · ") + (errors.length ? `\n${errors.join("\n")}` : ""), errors.length > 0);
+    if (payload.added > 0) {
+      $("bulkAddInput").value = "";
+      await loadJobs(false);
+      renderState();
+    }
+  } catch (error) {
+    setNotice("addNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function addText() {
   const button = $("addTextBtn");
   setBusy(button, true);
@@ -740,12 +818,23 @@ async function addText() {
   }
 }
 
+// Outreach engine toggle: "auto" tries local Ollama (with template fallback),
+// "standard" forces the deterministic templates. Read once per request.
+function outreachEngine() {
+  const select = document.getElementById("outreachEngine");
+  return select ? select.value : "auto";
+}
+
+function engineSuffix(engine) {
+  return engine === "smart" ? " (AI-enhanced)" : "";
+}
+
 async function generateLinkedInMessage(jobId, button) {
   setBusy(button, true);
   toast("Drafting LinkedIn message…");
   try {
-    const payload = await api("/api/linkedin-message", { job_id: jobId, type: "recruiter" });
-    openTextModal("LinkedIn Message Draft", payload.message, "Copy to clipboard");
+    const payload = await api("/api/linkedin-message", { job_id: jobId, type: "recruiter", engine: outreachEngine() });
+    openTextModal(`LinkedIn Message Draft${engineSuffix(payload.engine)}`, payload.message, "Copy to clipboard");
   } catch (error) {
     toast(`LinkedIn message failed: ${error.message}`);
   } finally {
@@ -785,8 +874,8 @@ async function generateFollowupEmail(jobId, button) {
   setBusy(button, true);
   toast("Drafting follow-up email…");
   try {
-    const payload = await api("/api/followup-email", { job_id: jobId, type: "week1" });
-    openTextModal("Follow-up Email Draft", payload.email_md, "Copy");
+    const payload = await api("/api/followup-email", { job_id: jobId, type: "week1", engine: outreachEngine() });
+    openTextModal(`Follow-up Email Draft${engineSuffix(payload.engine)}`, payload.email_md, "Copy");
   } catch (error) {
     toast(`Follow-up failed: ${error.message}`);
   } finally {
@@ -887,11 +976,30 @@ async function runHeadhunter() {
   }
 }
 
+async function generateBrief(jobId, button) {
+  setBusy(button, true);
+  toast("Writing application brief…");
+  try {
+    const payload = await api("/api/application-brief", { job_id: jobId, engine: outreachEngine() });
+    const keywords = (payload.keywords || []).join(", ");
+    const text = [
+      `HEADLINE\n${payload.headline || ""}`,
+      `SUMMARY\n${payload.summary || ""}`,
+      `KEYWORDS (most relevant for this role)\n${keywords}`,
+    ].join("\n\n");
+    openTextModal(`Application Brief${engineSuffix(payload.engine)}`, text, "Copy");
+  } catch (error) {
+    toast(`Brief failed: ${error.message}`);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function generateOutreachEmail(jobId, button) {
   setBusy(button, true);
   toast("Drafting outreach email…");
   try {
-    const payload = await api("/api/generate-outreach", { job_id: jobId });
+    const payload = await api("/api/generate-outreach", { job_id: jobId, engine: outreachEngine() });
     openOutreachModal(payload);
   } catch (error) {
     toast(`Outreach failed: ${error.message}`);
@@ -1078,6 +1186,26 @@ async function exportInternships() {
       sheet: $("internshipSheetName").value.trim(),
     });
     setNotice("profileNotice", `Exported ${payload.count} internship applications to ${payload.workbook}`);
+  } catch (error) {
+    setNotice("profileNotice", error.message, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function importTracker() {
+  const button = $("importTrackerBtn");
+  setBusy(button, true);
+  setNotice("profileNotice", "");
+  try {
+    const payload = await api("/api/tracker-import", {});
+    const errors = payload.errors || [];
+    const parts = [`Synced ${payload.updated} status change(s)`, `${payload.unmatched} unmatched row(s)`];
+    setNotice("profileNotice", parts.join(" · ") + (errors.length ? `\n${errors.join("\n")}` : ""), errors.length > 0);
+    if (payload.updated > 0) {
+      await loadJobs(false);
+      renderState();
+    }
   } catch (error) {
     setNotice("profileNotice", error.message, true);
   } finally {
@@ -3011,8 +3139,10 @@ function bindEvents() {
   });
   $("addUrlBtn").addEventListener("click", addUrl);
   $("addTextBtn").addEventListener("click", addText);
+  if ($("bulkAddBtn")) $("bulkAddBtn").addEventListener("click", addBulk);
   $("profileRefreshBtn").addEventListener("click", loadState);
   $("exportInternshipsBtn").addEventListener("click", exportInternships);
+  if ($("importTrackerBtn")) $("importTrackerBtn").addEventListener("click", importTracker);
   const importCvBtn = document.getElementById("importCvTemplateBtn");
   if (importCvBtn) importCvBtn.addEventListener("click", importCvTemplate);
   $("copyApiTextBtn").addEventListener("click", async () => {
@@ -3320,6 +3450,23 @@ function bindEvents() {
       const jobId = chatTarget.dataset.job;
       const job = state.jobs.find((item) => item.id === jobId);
       if (job) openChatModal(job);
+      return;
+    }
+    const pinTarget = event.target.closest("[data-action='pin'], [data-action='unpin']");
+    if (pinTarget) {
+      togglePin(pinTarget.dataset.job);
+      return;
+    }
+    const clearPinsTarget = event.target.closest("[data-action='clear-pins']");
+    if (clearPinsTarget) {
+      pinnedJobs.clear();
+      renderPinnedResults();
+      if (lastSearchJobs.length) renderApiResults(lastSearchJobs);
+      return;
+    }
+    const briefTarget = event.target.closest("[data-action='brief']");
+    if (briefTarget) {
+      generateBrief(briefTarget.dataset.job, briefTarget);
       return;
     }
     const outreachTarget = event.target.closest("[data-action='outreach']");

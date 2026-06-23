@@ -13,6 +13,7 @@ from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.filters import FilterConfig, apply_filters
 from job_agent.fingerprint import set_fingerprint
+from job_agent.generator.application_brief import build_application_brief
 from job_agent.generator.cover_letter import generate_cover_letter
 from job_agent.generator.cv import tailor_cv
 from job_agent.generator.interview_prep import generate_interview_prep
@@ -415,6 +416,9 @@ def generate_packet_for_job(
     if fit_analysis is not None:
         artifacts.append(_write_text(out_dir / "ai_fit_brief.md", _render_ai_brief(job, fit_analysis)))
 
+    # Per-application brief (deterministic, grounded): headline, summary, keywords.
+    brief = build_application_brief(job, master_cv, profile)
+
     risk_flags = sorted(set(job.risk_flags + filter_result.risk_flags + (["screening_question_needs_manual_review"] if needs_screening_review else [])))
     if latex_warning:
         artifacts.append(_write_text(out_dir / "latex_warning.txt", latex_warning))
@@ -460,6 +464,9 @@ def generate_packet_for_job(
         cover_letter_pdf_path=str(letter_pdf_path) if not fast_mode else "",
         qa_answers=qa_answers,
         assistant_page_html=assistant_html,
+        headline=brief["headline"],
+        summary=brief["summary"],
+        keywords=brief["keywords"],
     )
     # In full mode, rewrite assistant page with the finalised packet ID.
     if not fast_mode:

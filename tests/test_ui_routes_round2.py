@@ -216,7 +216,9 @@ def test_linkedin_message_connect_branch(server, monkeypatch):
         port, token, "/api/linkedin-message", {"job_id": job_id, "type": "connect"}
     )
     assert status == 200
-    assert payload == {"message": "Hi connect", "type": "connect"}
+    # No Ollama in the test env → the engine selector returns the deterministic
+    # draft and reports the "standard" engine.
+    assert payload == {"message": "Hi connect", "type": "connect", "engine": "standard"}
 
 
 def test_interview_prep_requires_job_id(server):

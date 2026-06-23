@@ -7,8 +7,10 @@ from pathlib import Path
 from job_agent.cv_template import import_cv_template_upload
 from job_agent.db.database import Database
 from job_agent.enrichment import EnrichOptions, enrich_job
+from job_agent.intake.bulk_add import bulk_add_jobs
 from job_agent.pipeline import add_text_job, add_url_job, generate_packet_for_job
 from job_agent.profile_enrich import enrich_from_github, enrich_from_linkedin_skills
+from job_agent.tracker_file import import_tracker
 from job_agent.utils.net import UnsafeUrlError
 from job_agent.ui.route_helpers import (
     _api_search,
@@ -69,6 +71,19 @@ def post_add_text(h, payload) -> None:
     h._send_json({"created": created, "job": job_to_dict(job)})
 
 
+def post_add_bulk(h, payload) -> None:
+    config = h._config()
+    text = str(payload.get("text") or "").strip()
+    raw_urls = payload.get("urls") or []
+    urls = [str(u) for u in raw_urls] if isinstance(raw_urls, list) else []
+    if not text and not urls:
+        return h._send_error_json(
+            "Paste one or more job posts (separated by '---' or a blank line) or URLs."
+        )
+    result = bulk_add_jobs(config, text=text, urls=urls)
+    h._send_json(result)
+
+
 def post_generate_packet(h, payload) -> None:
     config = h._config()
     job_id = str(payload.get("job_id") or "")
@@ -118,6 +133,11 @@ def post_enrich_linkedin(h, payload) -> None:
 
 def post_export_internships(h, payload) -> None:
     h._send_json(_export_internships(h._config(), payload))
+
+
+def post_tracker_import(h, payload) -> None:
+    """Sync status edits from the internship tracking workbook back into the DB."""
+    h._send_json(import_tracker(h._config()))
 
 
 def post_import_cv_template(h, payload) -> None:

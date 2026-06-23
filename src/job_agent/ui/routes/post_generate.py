@@ -10,7 +10,9 @@ from job_agent.generator.linkedin_message import (
     generate_linkedin_recruiter_message,
     generate_linkedin_followup_message,
 )
+from job_agent.generator.application_brief import build_application_brief
 from job_agent.generator.outreach_email import generate_outreach_email
+from job_agent.generator.outreach_llm import select_outreach_text
 from job_agent.headhunter import (
     build_batch_outreach,
     english_first_strategy_report,
@@ -36,11 +38,41 @@ def post_generate_outreach(h, payload) -> None:
     if not job:
         return h._send_error_json("Job not found.")
     profile, master_cv, _ = load_profile_bundle(config)
-    email_md = generate_outreach_email(job, master_cv, profile)
+    base = generate_outreach_email(job, master_cv, profile)
+    email_md, engine_used = select_outreach_text(
+        base, job=job, master_cv=master_cv, profile=profile,
+        kind="email", engine=str(payload.get("engine") or "auto"),
+    )
     h._send_json({
         "email_md": email_md,
+        "engine": engine_used,
         "recruiter_name": job.recruiter_name,
         "recruiter_email": job.recruiter_email,
+    })
+
+
+def post_application_brief(h, payload) -> None:
+    config = h._config()
+    job_id = str(payload.get("job_id") or "")
+    if not job_id:
+        return h._send_error_json("job_id is required.")
+    tracker = _tracker(config)
+    job = tracker.get_job(job_id)
+    if not job:
+        return h._send_error_json("Job not found.")
+    profile, master_cv, _ = load_profile_bundle(config)
+    brief = build_application_brief(job, master_cv, profile)
+    # Headline + keywords stay deterministic; the prose summary may be enhanced
+    # by the Smart engine (guarded, falls back to the grounded summary).
+    summary, engine_used = select_outreach_text(
+        brief["summary"], job=job, master_cv=master_cv, profile=profile,
+        kind="recruiter", engine=str(payload.get("engine") or "auto"),
+    )
+    h._send_json({
+        "headline": brief["headline"],
+        "summary": summary,
+        "keywords": brief["keywords"],
+        "engine": engine_used,
     })
 
 
@@ -67,12 +99,19 @@ def post_linkedin_message(h, payload) -> None:
         return h._send_error_json("Job not found.")
     profile, master_cv, _ = load_profile_bundle(config)
     if msg_type == "connect":
-        msg = generate_linkedin_connect_request(job, master_cv, profile)
+        base = generate_linkedin_connect_request(job, master_cv, profile)
+        kind = "connect"
     elif msg_type == "followup":
-        msg = generate_linkedin_followup_message(job, master_cv, profile)
+        base = generate_linkedin_followup_message(job, master_cv, profile)
+        kind = "followup"
     else:
-        msg = generate_linkedin_recruiter_message(job, master_cv, profile)
-    h._send_json({"message": msg, "type": msg_type})
+        base = generate_linkedin_recruiter_message(job, master_cv, profile)
+        kind = "recruiter"
+    msg, engine_used = select_outreach_text(
+        base, job=job, master_cv=master_cv, profile=profile,
+        kind=kind, engine=str(payload.get("engine") or "auto"),
+    )
+    h._send_json({"message": msg, "type": msg_type, "engine": engine_used})
 
 
 def post_audit_profile(h, payload) -> None:
@@ -147,8 +186,12 @@ def post_followup_email(h, payload) -> None:
     if not job:
         return h._send_error_json("Job not found.")
     profile, master_cv, _ = load_profile_bundle(config)
-    email_md = generate_followup_email(job, master_cv, profile, follow_type=follow_type)
-    h._send_json({"email_md": email_md, "type": follow_type})
+    base = generate_followup_email(job, master_cv, profile, follow_type=follow_type)
+    email_md, engine_used = select_outreach_text(
+        base, job=job, master_cv=master_cv, profile=profile,
+        kind="followup", engine=str(payload.get("engine") or "auto"),
+    )
+    h._send_json({"email_md": email_md, "type": follow_type, "engine": engine_used})
 
 
 def post_headhunter_batch(h, payload) -> None:

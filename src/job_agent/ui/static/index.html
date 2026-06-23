@@ -126,6 +126,7 @@
 
         <div class="metric-grid" id="searchMetrics"></div>
         <div class="notice hidden" id="searchNotice"></div>
+        <div id="pinnedResults" class="results-stack"></div>
         <div id="multiSourceResults" class="results-stack"></div>
         <div id="manualResults" class="results-stack"></div>
         <div id="apiResults" class="results-stack"></div>
@@ -157,6 +158,13 @@
               <option value="ai">AI verdict</option>
               <option value="recent">Recent</option>
               <option value="company">Company</option>
+            </select>
+          </label>
+          <label title="Smart uses your local Ollama model for richer wording (falls back to Standard if Ollama is off). Standard uses the built-in templates.">
+            Outreach text
+            <select id="outreachEngine">
+              <option value="auto">Smart (Ollama, auto-fallback)</option>
+              <option value="standard">Standard templates</option>
             </select>
           </label>
           <label>
@@ -918,6 +926,15 @@ data engineer</textarea>
             <button id="addTextBtn">Import text</button>
           </section>
         </div>
+        <section class="panel">
+          <h2>Bulk add</h2>
+          <p class="hint">Paste several postings at once — separate them with a line of <code>---</code> or a blank line. Lines that are just URLs are imported as URLs.</p>
+          <label>
+            Multiple jobs or URLs
+            <textarea id="bulkAddInput" rows="8" placeholder="https://company.com/jobs/1&#10;https://company.com/jobs/2&#10;---&#10;Paste a full job description here…"></textarea>
+          </label>
+          <button id="bulkAddBtn">Add all</button>
+        </section>
         <div class="notice hidden" id="addNotice"></div>
       </section>
 
@@ -957,6 +974,8 @@ data engineer</textarea>
               <input id="internshipSheetName" value="" placeholder="Optional sheet name" />
             </label>
             <button id="exportInternshipsBtn">Export internship tracker</button>
+            <button id="importTrackerBtn" title="Read status changes you made in the workbook (e.g. set a job to Interview/Rejected) back into the local tracker">Import status edits</button>
+            <p class="hint">Export rebuilds the workbook from the tracker. Edit the <strong>Status</strong> column in Excel (Applied, Interview, Rejected, Offered…), save, then Import to sync those changes back.</p>
           </section>
           <section class="panel">
             <h3>Paths</h3>
