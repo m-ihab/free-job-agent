@@ -85,6 +85,7 @@ reports/
 
 # Local working notes + commit helper (not part of the project)
 SESSION-HISTORY.md
+PLAN.md
 commit-all.bat
 
 # Extra sensitive-file guards
