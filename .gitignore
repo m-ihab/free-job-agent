@@ -83,6 +83,10 @@ france_urls.txt
 # Local review/analysis output (regenerable, not part of the project)
 reports/
 
+# Local working notes + commit helper (not part of the project)
+SESSION-HISTORY.md
+commit-all.bat
+
 # Extra sensitive-file guards
 profiles/**/.env*
 profiles/**/*.env
