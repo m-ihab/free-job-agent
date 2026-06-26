@@ -329,25 +329,8 @@ function renderSmartPlan(plan, multiSource = null) {
   </div>`;
 }
 
-// Pinned search results. Tick a result's box to keep it in the pinned tray.
-// `keepPinsAcrossSearches` controls whether the tray survives the next search
-// (on = survives, the default; off = cleared whenever a new search runs).
-// `lastSearchJobs` holds the most recent results so a tick can recover the job.
-const pinnedJobs = new Map();
-let lastSearchJobs = [];
-let keepPinsAcrossSearches = true;
-
-function pinCheckbox(job) {
-  const pinned = pinnedJobs.has(job.id);
-  const title = pinned ? "Pinned — untick to remove" : "Tick to keep this result visible while you search again";
-  return `<input type="checkbox" class="pin-check" data-action="pin" data-job="${escapeHtml(job.id)}" ${pinned ? "checked" : ""} title="${title}" />`;
-}
-
-const SEARCH_RESULT_HEAD = "<tr><th>Pin</th><th>Job</th><th>Location</th><th>Score</th><th>Status</th><th>Actions</th></tr>";
-
 function searchResultRow(job) {
   return `<tr>
-        <td class="pin-cell">${pinCheckbox(job)}</td>
         <td><strong>${escapeHtml(job.title)}</strong><br>${companyLine(job)}</td>
         <td>${escapeHtml(job.location || "")}</td>
         <td>${scorePill(job.fit_score)}</td>
@@ -357,14 +340,6 @@ function searchResultRow(job) {
 }
 
 function renderApiResults(jobs, failures = []) {
-  // A genuinely new search passes a fresh array; togglePin re-renders by passing
-  // the exact `lastSearchJobs` reference back, so we never clear pins on a toggle.
-  const isReRender = jobs === lastSearchJobs;
-  if (!isReRender && !keepPinsAcrossSearches && pinnedJobs.size) {
-    pinnedJobs.clear();
-    renderPinnedResults();
-  }
-  lastSearchJobs = jobs || [];
   if ((!jobs || !jobs.length) && (!failures || !failures.length)) {
     $("apiResults").innerHTML = "";
     return;
@@ -375,44 +350,20 @@ function renderApiResults(jobs, failures = []) {
     : "";
   $("apiResults").innerHTML = `${failureBlock}<div class="table-wrap">
     <table>
-      <thead>${SEARCH_RESULT_HEAD}</thead>
+      <thead><tr><th>Job</th><th>Location</th><th>Score</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>${jobRows}</tbody>
     </table>
   </div>`;
 }
 
-function renderPinnedResults() {
-  const container = $("pinnedResults");
-  if (!container) return;
-  if (pinnedJobs.size === 0) {
-    container.innerHTML = "";
-    return;
-  }
-  const rows = [...pinnedJobs.values()].map((job) => searchResultRow(job)).join("");
-  container.innerHTML = `<div class="panel">
-    <div class="section-header" style="margin-bottom:0.5rem">
-      <h3 style="margin:0">📌 Pinned results (${pinnedJobs.size})</h3>
-      <button data-action="clear-pins" title="Unpin all">Clear all</button>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead>${SEARCH_RESULT_HEAD}</thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  </div>`;
-}
+// Jobs-tab pins: tick a tracked job to keep it visible (floated to the top, and
+// shown even when the current search/filter would otherwise hide it).
+const pinnedJobIds = new Set();
 
-function togglePin(jobId) {
-  if (pinnedJobs.has(jobId)) {
-    pinnedJobs.delete(jobId);
-  } else {
-    const job = lastSearchJobs.find((j) => j.id === jobId) || pinnedJobs.get(jobId);
-    if (job) pinnedJobs.set(jobId, job);
-  }
-  renderPinnedResults();
-  // Re-render the live results (same array ref) so the tickbox reflects state.
-  if (lastSearchJobs.length) renderApiResults(lastSearchJobs);
+function toggleJobPin(jobId) {
+  if (pinnedJobIds.has(jobId)) pinnedJobIds.delete(jobId);
+  else pinnedJobIds.add(jobId);
+  renderJobs();
 }
 
 function companyLine(job) {
@@ -613,12 +564,29 @@ function renderJobs() {
   if (minScore > 0) jobs = jobs.filter((job) => (job.fit_score ?? 0) >= minScore);
   jobs = sortJobs(jobs, sortMode);
 
+  // Pinned jobs stay visible: re-add any the filter hid, then float all pinned
+  // jobs to the top so they remain in view while you search/filter the rest.
+  let hiddenPinnedCount = 0;
+  if (pinnedJobIds.size) {
+    const present = new Set(jobs.map((job) => job.id));
+    const hiddenPinned = state.jobs.filter((job) => pinnedJobIds.has(job.id) && !present.has(job.id));
+    hiddenPinnedCount = hiddenPinned.length;
+    const pinned = [];
+    const rest = [];
+    for (const job of [...hiddenPinned, ...jobs]) {
+      (pinnedJobIds.has(job.id) ? pinned : rest).push(job);
+    }
+    jobs = [...pinned, ...rest];
+  }
+
   renderJobsMetrics(jobs);
 
   const rows = jobs
     .map(
       (job) => {
         const checked = state.selectedJobs.has(job.id) ? "checked" : "";
+        const pinChecked = pinnedJobIds.has(job.id) ? "checked" : "";
+        const pinnedClass = pinnedJobIds.has(job.id) ? " pinned-row" : "";
         const enrichLabel = job.enriched ? "Enriched" : "—";
         const activeClass = state.activeJobId === job.id ? "active-row" : "";
         const summary = job.ai_summary ? `<div class="row-summary">${escapeHtml(job.ai_summary)}</div>` : "";
@@ -627,8 +595,9 @@ function renderJobs() {
         const langWarn = (job.risk_flags || []).includes("LANGUAGE_MISMATCH")
           ? `<span class="badge-lang-warn" title="This job requires French — your profile is English-only">⚠ French required</span>`
           : "";
-        return `<tr data-job-row="${escapeHtml(job.id)}" class="${activeClass}">
+        return `<tr data-job-row="${escapeHtml(job.id)}" class="${activeClass}${pinnedClass}">
           <td><input type="checkbox" data-select-job="${escapeHtml(job.id)}" ${checked} /></td>
+          <td class="pin-cell"><input type="checkbox" class="pin-check" data-action="job-pin" data-job="${escapeHtml(job.id)}" ${pinChecked} title="Pin to keep this job visible while you search or filter" /></td>
           <td><strong>${escapeHtml(job.title)}</strong>${langWarn}<br>${companyLine(job)}${summary}${tags}</td>
           <td>${escapeHtml(job.location || "")}${job.remote ? ` ${renderBadge("Remote", "good")}` : ""}</td>
           <td>${statusBadge(job.status)}</td>
@@ -640,9 +609,12 @@ function renderJobs() {
       },
     )
     .join("");
-  const countLine = `<div class="jobs-count muted">Showing <strong>${jobs.length}</strong> of <strong>${state.jobs.length}</strong> tracked jobs</div>`;
+  const pinNote = hiddenPinnedCount
+    ? ` <span class="row-tag">+${hiddenPinnedCount} pinned kept visible</span>`
+    : "";
+  const countLine = `<div class="jobs-count muted">Showing <strong>${jobs.length}</strong> of <strong>${state.jobs.length}</strong> tracked jobs${pinNote}</div>`;
   $("jobsTableWrap").innerHTML = countLine + `<table>
-    <thead><tr><th></th><th>Job</th><th>Location</th><th>Status</th><th>Score</th><th>Signals</th><th>Enrich</th><th>Actions</th></tr></thead>
+    <thead><tr><th></th><th title="Pin">📌</th><th>Job</th><th>Location</th><th>Status</th><th>Score</th><th>Signals</th><th>Enrich</th><th>Actions</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
   refreshSelectionUi();
@@ -3264,11 +3236,6 @@ function bindEvents() {
   $("addUrlBtn").addEventListener("click", addUrl);
   $("addTextBtn").addEventListener("click", addText);
   if ($("bulkAddBtn")) $("bulkAddBtn").addEventListener("click", addBulk);
-  if ($("keepPinsAcrossSearches")) {
-    $("keepPinsAcrossSearches").addEventListener("change", (event) => {
-      keepPinsAcrossSearches = event.target.checked;
-    });
-  }
   if ($("trackerRefreshBtn")) $("trackerRefreshBtn").addEventListener("click", loadTracker);
   if ($("trackerExportBtn")) $("trackerExportBtn").addEventListener("click", trackerExport);
   if ($("trackerImportBtn")) $("trackerImportBtn").addEventListener("click", trackerImport);
@@ -3588,16 +3555,9 @@ function bindEvents() {
       if (job) openChatModal(job);
       return;
     }
-    const pinTarget = event.target.closest("[data-action='pin'], [data-action='unpin']");
-    if (pinTarget) {
-      togglePin(pinTarget.dataset.job);
-      return;
-    }
-    const clearPinsTarget = event.target.closest("[data-action='clear-pins']");
-    if (clearPinsTarget) {
-      pinnedJobs.clear();
-      renderPinnedResults();
-      if (lastSearchJobs.length) renderApiResults(lastSearchJobs);
+    const jobPinTarget = event.target.closest("[data-action='job-pin']");
+    if (jobPinTarget) {
+      toggleJobPin(jobPinTarget.dataset.job);
       return;
     }
     const briefTarget = event.target.closest("[data-action='brief']");
