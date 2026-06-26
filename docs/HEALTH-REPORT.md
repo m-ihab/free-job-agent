@@ -1,5 +1,21 @@
 # free-job-agent — Codebase Health Report
 
+> 2026-06-23 review note:
+> This report is a triage snapshot, not the current product policy source.
+> The old "never auto-submit" language is stale. `FULL_AUTO` is now an owner-approved
+> unattended mode when the user turns Full Auto ON for a run. Re-audit should verify:
+>
+> - Full Auto OFF / `FILL_AND_CONFIRM` never submits without user confirmation.
+> - Full Auto ON / `FULL_AUTO` submits without per-job human interaction.
+> - `FULL_AUTO` fails closed to `NEEDS_MANUAL` on CAPTCHA, login walls, anti-bot,
+>   rate limits, unknown required fields, unknown factual answers, unsupported flows,
+>   upload failure, unclear submit state, and detection failure.
+> - Auto-apply attempts are locally audited.
+> - Real Chrome profile use remains advanced opt-in and clearly warned.
+>
+> Keep the security/code-quality findings, but update any remediation that assumes
+> Full Auto should be removed or forced into per-job confirmation.
+
 _Generated 2026-06-17 against HEAD `0fcae40`. Scope: `src/job_agent/` (~19,200 LOC Python,
 79 modules) + `src/job_agent/ui/static/app.js` (3,567 LOC) + tests (`tests/`, 42 unit files +
 Playwright e2e). Method: direct exploration + parallel python-reviewer, typescript-reviewer,
@@ -20,7 +36,7 @@ Pydantic schemas, optional local Ollama LLM. No cloud services for job data by d
 | Normalize/Score | `normalizer.py`, `scorer.py`, `filters.py`, `skill_extractor.py`, `search_quality.py` | Extract tech/salary/seniority; deterministic 0–100 fit scoring; noise filtering |
 | Generate | `generator/` (cv, qa, cover-letter, followup, linkedin, interview-prep), `cv_studio.py` (988), `coach.py` (699), `portfolio_builder.py` (924) | Tailored CV/cover/QA, portfolio site, interview coaching |
 | Render | `renderer/` (`latex_render.py` 898, `pdf_render.py`, `html_render.py`, `assistant_render.py`, `markdown_render.py`) | Markdown/HTML/PDF/LaTeX outputs |
-| Apply | `auto_apply.py` (1046, Playwright), `apply_bridge.py`, `autopilot.py` (515) | Browser-assisted apply with human-in-the-loop gate |
+| Apply | `auto_apply.py` (1046, Playwright), `apply_bridge.py`, `autopilot.py` (515) | Browser apply layer with mode toggle: Full Auto OFF = Fill & Confirm; Full Auto ON = automatic submit for eligible supported applications. |
 | AI | `ai_agent.py` (661), `agent_core.py`, `ollama_manage.py` | Optional local LLM routing/caching |
 | Persistence/Util | `db/database.py` (563, SQLite), `config.py`, `secrets.py`, `validators.py`, `utils/` | Storage, env/secret loading, boundary validation |
 
@@ -121,7 +137,10 @@ SQL injection (parameterized throughout `db/database.py`); command injection (on
 
 ### Not yet covered
 - Dependency CVEs — run `pip-audit`/`bandit` (recommend adding to CI).
-- A focused re-audit of `auto_apply.py`'s human-review gate (the "never auto-submit" constraint).
+- A focused re-audit of the `auto_apply/` mode toggle:
+  - Full Auto OFF / `FILL_AND_CONFIRM` must wait for user submit.
+  - Full Auto ON / `FULL_AUTO` must submit without per-job human interaction.
+  - Full Auto must write local audit events and fail closed to `NEEDS_MANUAL` on uncertain or human-presence cases.
 
 ## 4. Test Coverage (python-test-coverage-auditor)
 
@@ -137,7 +156,7 @@ SQL injection (parameterized throughout `db/database.py`); command injection (on
 `enrichment*.py` (12-18%).
 
 **Under-tested high-value logic:** `ai_agent.py` (20%), `coach.py` (21%), `cv_studio.py` (22%),
-`profile_audit.py` (19%), `auto_apply.py` (27% — error/human-gate paths thin),
+`profile_audit.py` (19%), `auto_apply.py` (27% — error/apply-mode paths thin),
 `intake/free_apis.py` (42%), `cli/main.py` (47%), `db/database.py` (54%), **`validators.py` (43%)**,
 `skill_extractor.py` (37%).
 
@@ -152,7 +171,7 @@ schemas 92-100%, france_market 92%, config 92%. Tests that exist are genuinely b
 | 2 | CRITICAL (correctness) | Fix the two 3.12-only f-strings so the code runs on the declared Python 3.11 | `portfolio_builder.py:404`, `latex_render.py:729` |
 | 3 | HIGH (security) | Add SSRF guard (scheme allowlist + private-IP block + redirect vetting) to URL/RSS intake | `intake/url.py:22`, `intake/rss.py:24,49` |
 | 4 | HIGH (security) | Add Origin/CSRF defense + JSON `Content-Type` check to the dashboard; move mutating ops off GET; keep `127.0.0.1` default and warn on `0.0.0.0` | `ui/server.py` `/api/*`, `_read_json:137` |
-| 5 | HIGH (testing) | Lift coverage toward 80%, P0 first: `validators.py`, `auto_apply.py` human-review gate, `db/database.py`; fix the temp-dir issue blocking local runs | 45% vs 80% mandate |
+| 5 | HIGH (testing) | Lift coverage toward 80%, P0 first: `validators.py`, `auto_apply.py` mode toggle + fail-closed handoff, `db/database.py`; fix the temp-dir issue blocking local runs | 45% vs 80% mandate |
 | 6 | HIGH (quality) | Introduce `logging` project-wide; stop swallowing 123 broad excepts silently | 54 files, ~5 import logging |
 | 7 | HIGH (quality) | Decompose `do_POST` into a route table + per-route handlers; split the 10 oversized modules | `ui/server.py:686` (480 ln, cx 108) |
 | 8 | HIGH (quality) | Add the 59 missing type hints, esp. `cli/main.py` `_handle_*(args)` | CLAUDE.md type-hint rule |

@@ -49,4 +49,19 @@ job-agent apply-assist <packet-id>
 
 ## Why not scraping?
 
-Logged-in job-board scraping and auto-submission are intentionally out of scope. The tool stays free and reliable by automating the local package generation and tracking while leaving final submission to you.
+Logged-in job-board scraping remains out of scope. Do not scrape or automate logged-in LinkedIn, Indeed, Welcome to the Jungle, Glassdoor, or similar job-board account flows.
+
+That is separate from Job Agent's local apply-mode toggle.
+
+Supported workflow:
+
+1. Use official/free APIs where available.
+2. Generate manual French board search URLs.
+3. Import promising public job URLs manually.
+4. Use public ATS feeds when available.
+5. Generate grounded packets locally.
+6. Apply through the toggle:
+   - **Full Auto OFF** -> `FILL_AND_CONFIRM`: fill supported forms and wait for the user to submit.
+   - **Full Auto ON** -> `FULL_AUTO`: fill and submit eligible supported applications automatically.
+
+`FULL_AUTO` must not bypass CAPTCHAs, login walls, anti-bot checks, rate limits, paywalls, or access controls. Human-presence walls and unknown factual questions become `NEEDS_MANUAL`.

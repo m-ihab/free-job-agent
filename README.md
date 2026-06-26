@@ -105,25 +105,49 @@ That token is used with `Authorization: Bearer ...` against
   bullets and paragraphs under strict validation (no invented facts, numbers
   preserved verbatim, bounded length). Off by default.
 - **Safe auto-apply:** Playwright can open a separate local Job Agent browser
-  profile, fill supported ATS forms, and either pause for your confirmation or
-  use full-auto mode with a 10-second cancellation window.
+  profile and fill supported application forms. With **Full Auto OFF**, Job Agent
+  uses **Fill & Confirm** and waits for you to review and submit. With
+  **Full Auto ON**, Job Agent uses **Full Auto** and submits eligible supported
+  applications automatically without per-job human interaction.
 
 ## Auto-apply safety model
 
-Auto-apply is designed to be useful without becoming reckless:
+Auto-apply has a simple toggle:
 
-- Default mode is **Fill & Confirm**: Job Agent fills the form, then waits for
-  you to review the browser page and click Submit.
-- **Full Auto** is available only when you explicitly choose it; the dashboard
-  broadcasts a 10-second cancellation window before every submit.
-- Browser automation uses a dedicated local profile at
-  `.job_agent/browser_profiles/auto_apply` by default. Sign in once inside that
-  browser and the login stays local for future sessions.
-- Your normal Chrome profile is not used by default because Chrome locks it
-  while your daily browser is open. If you really want to opt in, close every
-  Chrome window and set `JOB_AGENT_AUTO_APPLY_USE_REAL_CHROME_PROFILE=1`.
-- To choose a custom local browser profile folder, set
-  `JOB_AGENT_AUTO_APPLY_PROFILE_DIR`.
+| Full Auto toggle | Mode | What happens |
+|------------------|------|--------------|
+| **OFF** | **Fill & Confirm** | Job Agent fills supported forms, then waits for you to review and click Submit. |
+| **ON** | **Full Auto** | Job Agent fills and submits eligible supported applications without per-job human interaction. |
+
+`Manual Packet` remains available as a packet-only path for generating artifacts without browser submission.
+
+Full Auto is intentionally hands-off after you turn it on for a run. It does not pause for per-job confirmation. If you want to review each application before submission, keep Full Auto OFF and use Fill & Confirm.
+
+Full Auto still fails closed. It will not bypass CAPTCHA, anti-bot checks, login walls, paywalls, rate limits, or access controls. It also will not guess unknown factual screening answers. If any of those appear, Job Agent marks the job `NEEDS_MANUAL`, records the reason, and continues with the next eligible job.
+
+Browser automation uses a dedicated local profile by default:
+
+```text
+.job_agent/browser_profiles/auto_apply
+```
+
+Sign in once inside that browser and the login stays local for future sessions.
+
+Your normal Chrome profile is not used by default. If you intentionally opt in, close every Chrome window and set:
+
+```text
+JOB_AGENT_AUTO_APPLY_USE_REAL_CHROME_PROFILE=1
+```
+
+To choose a custom local browser profile folder, set:
+
+```text
+JOB_AGENT_AUTO_APPLY_PROFILE_DIR
+```
+
+The 10-second cancellation window, when enabled, is a non-blocking safety window. It is not a confirmation requirement and must not turn Full Auto into Fill & Confirm.
+
+Full Auto is separate from Autopilot. Autopilot discovers jobs and prepares packets; the apply-mode toggle controls browser submission.
 
 ## Install
 
@@ -545,9 +569,15 @@ auto-packet score threshold. Click **Start**. The background loop will:
 5. Auto-generate tailored packets for jobs that beat the threshold.
 6. Optionally write a local email-style notification for strong matches.
 
-The autopilot **never** submits applications, never logs in to job boards,
-and never makes network calls beyond the configured public APIs. Stop it any
-time from the same tab.
+Autopilot itself **does not submit applications**. It discovers jobs, scores them,
+deduplicates them, and can prepare packets for strong matches. Submitting applications
+is controlled separately by the apply-mode toggle:
+
+- **Full Auto OFF** -> Fill & Confirm.
+- **Full Auto ON** -> Full Auto.
+
+Autopilot never bypasses login walls, CAPTCHAs, anti-bot checks, rate limits,
+or platform access controls.
 
 Email notifications are optional. With **Notify me for strong matches** on,
 Autopilot always writes a local `.eml` file under `.job_agent/notifications`.
@@ -582,8 +612,9 @@ another local reviewer to critique the packet before you apply:
 openclaw .job_agent\outputs\<company_jobid>\packet_vN\external_agent_prompt.md
 ```
 
-The prompt forbids invented facts, automated submissions, login automation,
-and unsafe screening answers. It asks for file-specific edits only.
+The prompt forbids invented facts, unarmed submissions, login-wall bypass,
+access-control circumvention, and unsafe screening answers. It asks for
+file-specific edits only.
 
 ## One-command processing
 
@@ -637,15 +668,21 @@ job-agent packet show JOB_OR_PACKET_ID
 ## Safety rules
 
 - Never invent experience, education, metrics, certifications, dates, legal
-  facts, visa facts, work authorization, or salary expectations.
-- Never infer sponsorship claims in the cover letter.
-- Never answer unknown screening questions automatically.
+  facts, visa facts, work authorization, language level, school/program,
+  availability, or salary expectations.
+- Never infer sponsorship claims in the CV, cover letter, outreach, screening
+  answers, or auto-apply fields.
+- Never answer unknown factual screening questions automatically.
 - Never bypass CAPTCHAs, login restrictions, paywalls, platform rate limits,
-  or access controls.
+  anti-bot checks, or access controls.
 - Never scrape logged-in LinkedIn / Indeed / Glassdoor / Welcome to the
-  Jungle pages or automate account actions.
-- Never auto-submit applications.
+  Jungle pages or automate account actions on those platforms.
+- Never submit outside an explicitly chosen apply mode.
+- **Full Auto OFF** is the default browser behavior: Fill & Confirm fills supported forms and waits for user submit.
+- **Full Auto ON** enables `FULL_AUTO`: eligible supported applications may be submitted automatically without per-job human interaction.
+- Full Auto must hand off uncertain, unsupported, unknown-answer, or human-presence cases to `NEEDS_MANUAL`.
 - Keep every generated artifact traceable with hashes.
+- Keep candidate data and application history local by default.
 
 ## Development
 

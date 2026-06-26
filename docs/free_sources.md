@@ -26,9 +26,19 @@ This project is designed for a free local workflow. It uses official/free read-o
 
 These are not scraped automatically. Open the URLs, review jobs, then import promising job URLs with `job-agent add url`.
 
-## Why not LinkedIn/Indeed/Glassdoor/WTTJ auto-apply?
+## Why not logged-in LinkedIn/Indeed/Glassdoor/WTTJ automation?
 
-These platforms do not provide a free public personal applicant-side search-and-apply API suitable for this local project. Their official APIs are partner/employer/ATS oriented, authenticated, or require agreements. Browser automation against logged-in job boards is intentionally out of scope because it is fragile and can violate platform rules.
+These platforms do not provide a free public personal applicant-side search-and-apply API suitable for this local project. Their official APIs are partner/employer/ATS oriented, authenticated, or require agreements.
+
+Do not scrape or automate logged-in LinkedIn, Indeed, Glassdoor, Welcome to the Jungle, or similar job-board account flows.
+
+This does **not** ban Job Agent's own local apply-mode toggle for supported public or direct application flows:
+
+- `MANUAL_PACKET`: generate packet artifacts only.
+- **Full Auto OFF** -> `FILL_AND_CONFIRM`: fill supported forms, then wait for user review and submit.
+- **Full Auto ON** -> `FULL_AUTO`: fill and submit eligible supported applications without per-job human interaction.
+
+`FULL_AUTO` must hand off to `NEEDS_MANUAL` when it encounters login walls, CAPTCHAs, anti-bot checks, rate limits, unknown required fields, unsupported forms, failed uploads, unclear submit state, or unknown factual answers. Detection is allowed; bypass is not.
 
 ## France Travail setup
 

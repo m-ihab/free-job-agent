@@ -16,6 +16,22 @@ _Audit date: 2026-06-18 · Method: `python-security-auditor` · Severity ranking
 - Severity uses the triaging P1–P4 matrix (P1 Critical … P4 Low) and NIST
   incident categories. This is a code audit, so "exploit path" replaces "alert".
 
+## 2026-06-23 policy update
+
+The prior "never auto-submit" policy is stale. Owner decision: `FULL_AUTO` is a supported unattended apply mode. The security goal is not to remove `FULL_AUTO`; it is to protect the Full Auto toggle, enforce same-origin controls, audit attempts locally, and fail closed.
+
+Canonical apply behavior:
+
+- `MANUAL_PACKET`: packet only, no browser submit.
+- Full Auto OFF -> `FILL_AND_CONFIRM`: browser fill, user reviews and submits.
+- Full Auto ON -> `FULL_AUTO`: unattended submit for eligible supported applications.
+
+The user's act of turning Full Auto ON for a run is the mode choice for automatic submission. Do not add per-job confirmation to Full Auto; that is the purpose of Fill & Confirm.
+
+`FULL_AUTO` must hand off to `NEEDS_MANUAL` for CAPTCHA, anti-bot, login walls, rate limits, unsupported forms, unknown required fields, unknown screening answers, failed uploads, unclear submit state, post-submit human walls, or detection failure.
+
+F1 and F2 remain the highest-priority fixes because unauthenticated state-changing POSTs and unsafe URL fetches become more serious when browser automation exists.
+
 ---
 
 ## Findings (ordered by severity)
@@ -60,23 +76,22 @@ _Audit date: 2026-06-18 · Method: `python-security-auditor` · Severity ranking
   after each redirect, or disable redirects); cap response size. In
   `src/requests.py`, explicitly reject non-`http(s)` schemes in `_request`.
 
-### F3 — `FULL_AUTO` auto-submits applications; `USE_REAL_CHROME_PROFILE` exposes live sessions — **P3 Medium**
+### F3 — Full Auto toggle protection, audit logging, and real-profile safeguards — **P3 Medium**
 - **Category:** Improper Usage / Safety-constraint risk
-- **Location:** `src/job_agent/auto_apply.py` — `ApplyMode.FULL_AUTO` flow
-  (283–311), `_select_browser_profile` (811–837), `_find_chrome_profile`
-  (874–885), `_launch_browser_context` (840–871).
-- **Exploit path:** `CLAUDE.md` states "Never auto-submit applications without
-  human review." `FULL_AUTO` fills and clicks submit after only a 10-second
-  cancel window (no affirmative human confirmation), which weakens that
-  guarantee — especially if started via F1. Separately,
-  `JOB_AGENT_AUTO_APPLY_USE_REAL_CHROME_PROFILE=1` drives the user's **real**
-  Chrome profile, exposing all logged-in cookies/sessions to the automation and
-  to any page it navigates to (`page.goto(apply_url)` with an untrusted listing
-  URL).
-- **Remediation:** Require explicit per-run confirmation for `FULL_AUTO` (or
-  gate it behind a setting), and ensure it is never reachable via an
-  unauthenticated POST once F1 is fixed. Document the real-profile risk and keep
-  the dedicated profile the default (it already is).
+- **Location:** `src/job_agent/auto_apply/`, dashboard `/api/auto-apply/*`, browser profile selection.
+- **Policy update:** `FULL_AUTO` is owner-approved and genuinely unattended when the Full Auto toggle is ON for a run. It should not require per-job confirmation; that is the purpose of `FILL_AND_CONFIRM`.
+- **Risk:** If `FULL_AUTO` can be started by an unauthenticated POST, by a spoofed local origin, or with a real Chrome profile, the tool may submit real applications or expose live browser sessions unexpectedly. The risk compounds with F1. Real Chrome profile use can expose logged-in cookies/sessions to pages reached through untrusted job URLs.
+- **Remediation:**
+  - Fix F1 before expanding `FULL_AUTO`.
+  - Require same-origin CSRF/Origin/Host validation for all auto-apply routes.
+  - Keep Full Auto OFF by default.
+  - Treat the Full Auto toggle as the user's consent for automatic submission during that run.
+  - Do not add per-job confirmation to Full Auto; that is `FILL_AND_CONFIRM`.
+  - Record max submissions, min score, allowed sources/ATS, and skip rules.
+  - Keep dedicated browser profile as default.
+  - Keep real Chrome profile opt-in behind an environment variable and visible warning.
+  - Emit a local audit event for every attempt.
+  - Fail closed to `NEEDS_MANUAL` on unknown fields, unknown screening answers, CAPTCHA, anti-bot, rate limits, login walls, unsupported flows, failed upload, unclear submit state, or detection failure.
 
 ### F4 — Dependency hygiene: floor-only pins, no lockfile, no vulnerability scan in CI — **P3 Medium**
 - **Category:** Supply-chain / Vulnerability Management
@@ -137,13 +152,14 @@ _Audit date: 2026-06-18 · Method: `python-security-auditor` · Severity ranking
 |----|---------|----------|----------|
 | F1 | No CSRF/Origin/Host validation on dashboard | P2 High | CSRF / Access Control |
 | F2 | SSRF via add-url; `file://` via fallback shim | P2 High | SSRF |
-| F3 | FULL_AUTO submit + real-Chrome-profile exposure | P3 Medium | Improper Usage |
+| F3 | Full Auto toggle protection + real-Chrome-profile exposure | P3 Medium | Improper Usage |
 | F4 | Unpinned deps, no lockfile, no pip-audit | P3 Medium | Supply Chain |
 | F5 | Exception messages leaked to client | P4 Low | Info Disclosure |
 | F6 | Broad exception swallowing | P4 Low | Reliability |
 
-Recommended remediation order: **F1 → F2** (they compound), then **F4**, **F3**,
-then **F5/F6**.
+Recommended remediation order: **F1 → F2** first because they compound with
+browser-driving endpoints, then **F3** apply-mode toggle/audit safeguards, then
+**F4**, then **F5/F6**.
 
 ---
 

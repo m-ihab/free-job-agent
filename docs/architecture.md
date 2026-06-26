@@ -1,39 +1,140 @@
 # Architecture
 
+free-job-agent is a free, local-first job-search, application, and conversion copilot for Paris / France / Europe data, AI, ML, analyst, data engineering, stage, alternance, apprenticeship, internship, and junior roles.
+
 ```text
 candidate_profile.json
 master_cv.json
 master_qa_profile.json
+profiles/main.tex
+GitHub / LinkedIn manual enrichment
         |
         v
-Profile validation
+Profile validation + locked factual fields
         |
         v
-Job intake: paste/file/url/rss/discover/free public APIs + optional free-key APIs
+Job discovery / intake
+  - paste
+  - file
+  - public URL
+  - RSS
+  - free/read-only APIs
+  - France Travail
+  - La bonne alternance when token configured
+  - public ATS feeds
+  - manual French board URLs
         |
         v
-Normalizer: text -> structured JobListing
+Normalization
+  - title
+  - company
+  - location / remote
+  - seniority
+  - contract type
+  - salary
+  - language requirements
+  - work-authorization signals
+  - requirements / responsibilities
+  - tech stack
         |
         v
-Fingerprint dedupe
+Fingerprinting + company canonicalization + dedupe
         |
         v
-Hard filters
+Hard filters + deterministic fit scoring
         |
         v
-Fit scorer
+Application preflight
+  - apply / edit / manual / skip verdict
+  - missing must-haves
+  - ATS keyword gap
+  - evidence map
+  - unknown screening answers
+  - risk flags
         |
         v
-Packet generator
+Packet generation
+  - tailored CV
+  - cover letter
+  - locked QA answers
+  - application brief
+  - outreach / follow-up drafts
+  - proof pack / portfolio links
         |
         v
-Markdown/HTML/PDF renderers + artifact hashes
+Renderers + artifact hashes
+  - Markdown
+  - HTML
+  - PDF
+  - LaTeX
+  - assistant.html
         |
         v
-assistant.html for manual final application
+Apply behavior
+  - MANUAL_PACKET: packet only, no browser submission
+  - Full Auto OFF -> FILL_AND_CONFIRM: fill form, wait for user submit
+  - Full Auto ON  -> FULL_AUTO: fill and submit eligible jobs automatically
         |
         v
-SQLite tracker
+Fail-closed handoff
+  - CAPTCHA / anti-bot
+  - login wall
+  - rate limit
+  - unsupported ATS
+  - unknown required field
+  - unknown factual answer
+  - upload failure
+  - unclear submit state
+        |
+        v
+SQLite tracker + application events
+        |
+        v
+Pipeline / Conversion cockpit
+  - next-best action
+  - follow-up due
+  - outreach sent
+  - reply / interview / offer tracking
+  - needs-manual queue
+  - stale detection
+  - conversion metrics
+        |
+        v
+Learning loop
+  - source quality
+  - score calibration
+  - outreach reply rate
+  - follow-up effectiveness
+  - manual vs full-auto outcomes
 ```
 
-The system is intentionally local-first and manual-submit-only. It automates the safe parts: public job discovery, dedupe, scoring, packet creation, artifact hashing, and local assistant pages. It leaves irreversible submission and any logged-in platform interaction to the user.
+## Apply-mode contract
+
+The system is local-first, but browser submission is controlled by the Full Auto toggle:
+
+| Toggle state | Browser mode | Behavior |
+|---|---|---|
+| Full Auto OFF | `FILL_AND_CONFIRM` | Opens and fills a supported form, then waits for the user to review and click Submit. |
+| Full Auto ON | `FULL_AUTO` | Runs without per-job human interaction and submits eligible supported applications automatically. |
+
+`MANUAL_PACKET` is a separate packet-only path that generates artifacts and assistant pages without driving browser submission.
+
+`FULL_AUTO` must fail closed. CAPTCHA, anti-bot checks, login walls, rate limits, unsupported forms, unknown required fields, unknown factual screening answers, failed uploads, unclear submit state, post-submit human walls, or detection failures become `NEEDS_MANUAL`. The run records the reason and continues without bypassing the wall.
+
+## Non-goals
+
+- No paid scraping.
+- No paid browser agents.
+- No paid CAPTCHA solvers.
+- No cloud job-data storage by default.
+- No invented candidate facts.
+- No logged-in scraping of LinkedIn, Indeed, Welcome to the Jungle, Glassdoor, or similar job boards.
+- No bypassing access controls or human-presence checks.
+
+## Product direction
+
+The core architecture should evolve from a packet generator into a conversion OS:
+
+```text
+discovery -> qualification -> proof -> apply/outreach -> follow-up -> interview -> learning
+```
