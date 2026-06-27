@@ -1,0 +1,131 @@
+"""SQLite schema DDL + additive migrations for the job-agent database.
+
+Kept separate from the CRUD logic so the table definitions live in one place and
+``Database.initialize`` stays small.
+"""
+from __future__ import annotations
+
+SCHEMA_SQL = """
+    CREATE TABLE IF NOT EXISTS jobs (
+        id TEXT PRIMARY KEY,
+        fingerprint TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT 'manual',
+        source_url TEXT,
+        raw_text TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL,
+        company TEXT NOT NULL,
+        location TEXT,
+        remote INTEGER NOT NULL DEFAULT 0,
+        work_mode TEXT,
+        seniority TEXT,
+        job_type TEXT,
+        salary_min INTEGER,
+        salary_max INTEGER,
+        salary_currency TEXT NOT NULL DEFAULT 'USD',
+        description TEXT NOT NULL DEFAULT '',
+        requirements_json TEXT NOT NULL DEFAULT '[]',
+        responsibilities_json TEXT NOT NULL DEFAULT '[]',
+        tech_stack_json TEXT NOT NULL DEFAULT '[]',
+        benefits_json TEXT NOT NULL DEFAULT '[]',
+        languages_json TEXT NOT NULL DEFAULT '[]',
+        risk_flags_json TEXT NOT NULL DEFAULT '[]',
+        apply_url TEXT,
+        posted_date TEXT,
+        deadline TEXT,
+        status TEXT NOT NULL DEFAULT 'NEW',
+        fit_score REAL,
+        fit_confidence REAL,
+        fit_decision TEXT,
+        fit_notes_json TEXT NOT NULL DEFAULT '[]',
+        missing_requirements_json TEXT NOT NULL DEFAULT '[]',
+        recruiter_name TEXT,
+        recruiter_email TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_fingerprint_unique
+        ON jobs(fingerprint) WHERE fingerprint != '';
+    CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+
+    CREATE TABLE IF NOT EXISTS packets (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        job_fingerprint TEXT NOT NULL DEFAULT '',
+        version INTEGER NOT NULL DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'DRAFT',
+        fit_score REAL,
+        fit_confidence REAL,
+        fit_decision TEXT,
+        fit_notes_json TEXT NOT NULL DEFAULT '[]',
+        risk_flags_json TEXT NOT NULL DEFAULT '[]',
+        profile_hash TEXT,
+        master_cv_hash TEXT,
+        qa_profile_hash TEXT,
+        artifacts_json TEXT NOT NULL DEFAULT '[]',
+        screening_answers_json TEXT NOT NULL DEFAULT '[]',
+        tailored_cv_md TEXT NOT NULL DEFAULT '',
+        tailored_cv_html TEXT NOT NULL DEFAULT '',
+        tailored_cv_pdf_path TEXT,
+        cover_letter_md TEXT NOT NULL DEFAULT '',
+        cover_letter_html TEXT NOT NULL DEFAULT '',
+        cover_letter_pdf_path TEXT,
+        qa_answers_json TEXT NOT NULL DEFAULT '{}',
+        assistant_page_html TEXT NOT NULL DEFAULT '',
+        notes TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_packets_job_id ON packets(job_id);
+    CREATE INDEX IF NOT EXISTS idx_packets_status ON packets(status);
+
+    CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id TEXT,
+        packet_id TEXT,
+        event_type TEXT NOT NULL,
+        event_data_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE,
+        FOREIGN KEY(packet_id) REFERENCES packets(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS enrichments (
+        job_id TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_cache (
+        job_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        model TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (job_id, kind),
+        FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_cache_kind ON ai_cache(kind);
+
+    -- Sources (ATS slugs etc.) that have recently 404'd. The autopilot consults
+    -- this to skip dead boards without nagging the user. Auto-expires after
+    -- broken_until passes.
+    CREATE TABLE IF NOT EXISTS broken_sources (
+        source TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        status_code INTEGER,
+        reason TEXT NOT NULL DEFAULT '',
+        broken_at TEXT NOT NULL,
+        broken_until TEXT NOT NULL,
+        PRIMARY KEY (source, slug)
+    );
+"""
+
+# Additive column migrations — run after CREATE TABLE so new DBs get the column
+# inline and existing DBs get it here. Each is wrapped in try/except by the
+# caller since SQLite raises OperationalError on a duplicate column.
+MIGRATIONS = [
+    "ALTER TABLE jobs ADD COLUMN recruiter_name TEXT",
+    "ALTER TABLE jobs ADD COLUMN recruiter_email TEXT",
+]
