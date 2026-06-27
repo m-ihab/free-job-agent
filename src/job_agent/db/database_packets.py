@@ -6,13 +6,16 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from typing import Optional
+from typing import Any, Optional
 
 from job_agent.schemas.packet import ApplicationPacket
 from job_agent.timeutil import utc_now
 
 
 class PacketsMixin:
+    def _connect(self) -> Any:
+        raise NotImplementedError
+
     def save_packet(self, packet: ApplicationPacket) -> None:
         packet.updated_at = utc_now()
         values = {

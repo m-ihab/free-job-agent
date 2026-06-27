@@ -22,6 +22,7 @@ export default [
         setInterval: "readonly",
         clearInterval: "readonly",
         FileReader: "readonly",
+        URL: "readonly",
         Date: "readonly",
         JSON: "readonly",
       },

@@ -5,6 +5,7 @@ returns canned values for only the methods the code under test calls.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,6 +26,8 @@ from job_agent.auto_apply.driver import _field_label
 from job_agent.auto_apply.driver import (
     _AUTO_APPLY_PROFILE_ENV,
     _USE_REAL_CHROME_PROFILE_ENV,
+    _click_submit,
+    _fill_visible_fields,
 )
 
 
@@ -75,6 +78,21 @@ class FakePage:
             if key in selector:
                 return FakeLocator(count=1, text=text)
         return FakeLocator(count=0)
+
+
+class _EmptyLocator:
+    @property
+    def first(self):
+        return self
+
+    def count(self) -> int:
+        return 0
+
+    def is_visible(self) -> bool:
+        return False
+
+    def is_enabled(self) -> bool:
+        return False
 
 
 # ── _truthy_env ───────────────────────────────────────────────────────────────
@@ -193,6 +211,69 @@ def test_field_label_uses_autocomplete_token():
 def test_field_label_ignores_autocomplete_on_off():
     field = FakeElement({"autocomplete": "off", "name": "fallback_name"})
     assert _field_label(FakePage(), field) == "fallback name"
+
+
+def test_fill_visible_fields_logs_field_failures(monkeypatch, caplog):
+    class FailingField(FakeElement):
+        def evaluate(self, _script: str):
+            return "input"
+
+        def fill(self, _value: str) -> None:
+            raise RuntimeError("field detached")
+
+    class FieldCollection:
+        def all(self):
+            return [FailingField({"type": "text"})]
+
+    class PageWithField:
+        def locator(self, _selector: str):
+            return FieldCollection()
+
+    monkeypatch.setattr(
+        "job_agent.auto_apply.driver_fields._field_label",
+        lambda _page, _field: "Email",
+    )
+
+    with caplog.at_level(logging.WARNING, logger="job_agent.auto_apply.driver_fields"):
+        filled: list[str] = []
+        _fill_visible_fields(PageWithField(), {"email": "alice@example.com"}, filled)
+
+    assert filled == []
+    assert any("Auto-apply field fill failed" in rec.message for rec in caplog.records)
+
+
+def test_click_submit_logs_click_failures(caplog):
+    class FailingSubmitLocator:
+        @property
+        def first(self):
+            return self
+
+        def count(self) -> int:
+            return 1
+
+        def is_visible(self) -> bool:
+            return True
+
+        def is_enabled(self) -> bool:
+            return True
+
+        def click(self) -> None:
+            raise RuntimeError("submit intercepted")
+
+    class PageWithFailingSubmit:
+        def __init__(self):
+            self.calls = 0
+
+        def locator(self, _selector: str):
+            self.calls += 1
+            if self.calls == 1:
+                return FailingSubmitLocator()
+            return _EmptyLocator()
+
+    with caplog.at_level(logging.WARNING, logger="job_agent.auto_apply.driver_fill"):
+        assert _click_submit(PageWithFailingSubmit(), "greenhouse") is False
+
+    assert any("Auto-apply submit click failed" in rec.message for rec in caplog.records)
 
 
 # ── _build_summary ────────────────────────────────────────────────────────────

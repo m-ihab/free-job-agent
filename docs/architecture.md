@@ -108,6 +108,16 @@ Learning loop
   - manual vs full-auto outcomes
 ```
 
+## Grounding And Work Authorization
+
+- `evidence.py` builds a local `evidence_items` index from existing profile,
+  master CV, and locked QA facts. It does not synthesize facts; generators and
+  preflight features should query this store before adding claims or keywords.
+- `work_auth.py` routes jobs by contract kind (`stage`, `alternance`, `CDI`,
+  `CDD`, etc.). For non-EU student profiles, stage/alternance can be directly
+  applicable when the profile explicitly contains stage/convention facts, while
+  CDI/permanent roles that need sponsorship are flagged as `SPONSORSHIP_GATED`.
+
 ## Apply-mode contract
 
 The system is local-first, but browser submission is controlled by the Full Auto toggle:

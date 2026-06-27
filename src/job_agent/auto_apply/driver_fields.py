@@ -6,7 +6,10 @@ the merged QA dict. Re-exported by :mod:`job_agent.auto_apply.driver`.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _fill_visible_fields(page: Any, qa: dict, filled: list[str]) -> None:
@@ -51,7 +54,11 @@ def _fill_visible_fields(page: Any, qa: dict, filled: list[str]) -> None:
                     field_el.select_option(label=answer, timeout=1000)
                     filled.append(f"{label_text}: {answer[:60]}")
                 except Exception:
-                    pass
+                    logger.debug(
+                        "Auto-apply select option failed for label %r",
+                        label_text,
+                        exc_info=True,
+                    )
             elif field_type == "checkbox":
                 if str(answer).lower() in ("yes", "true", "1", "oui"):
                     if not field_el.is_checked():
@@ -61,6 +68,7 @@ def _fill_visible_fields(page: Any, qa: dict, filled: list[str]) -> None:
                 field_el.fill(str(answer))
                 filled.append(f"{label_text}: {str(answer)[:60]}")
         except Exception:
+            logger.warning("Auto-apply field fill failed for a visible field", exc_info=True)
             continue
 
 
@@ -99,7 +107,7 @@ def _field_label(page: Any, field: Any) -> str:
                         if text.strip():
                             return text.strip()
                 except Exception:
-                    pass
+                    logger.debug("Auto-apply aria-labelledby lookup failed", exc_info=True)
 
         # 4. DOM walk — find the nearest <label> or labelling text node
         try:
@@ -121,7 +129,7 @@ def _field_label(page: Any, field: Any) -> str:
             if text and text.strip():
                 return text.strip()
         except Exception:
-            pass
+            logger.debug("Auto-apply DOM label walk failed", exc_info=True)
 
         # 5. placeholder
         ph = field.get_attribute("placeholder") or ""
@@ -137,6 +145,7 @@ def _field_label(page: Any, field: Any) -> str:
         name = field.get_attribute("name") or ""
         return name.replace("_", " ").replace("-", " ").strip()
     except Exception:
+        logger.debug("Auto-apply field label extraction failed", exc_info=True)
         return ""
 
 

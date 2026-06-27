@@ -5,6 +5,7 @@ from job_agent.schemas.candidate import CandidateProfile
 from job_agent.schemas.job import JobListing
 from job_agent.schemas.scoring import ScoreBreakdown
 from job_agent.utils import fuzzy
+from job_agent.work_auth import WorkAuthClass, classify_work_auth
 
 # Fuzzy-match acceptance thresholds (0-100). A skill counts as matched when its
 # full-string similarity clears _SKILL_RATIO_MIN or its partial (substring)
@@ -116,31 +117,14 @@ def _language_score(job: JobListing, profile: CandidateProfile) -> tuple[int, li
 
 
 def _work_auth_score(job: JobListing, profile: CandidateProfile) -> tuple[int, list[str], list[str]]:
-    """Score work authorization compatibility. Critical for EU/France roles."""
-    job_text = (job.description + " " + (job.title or "")).lower()
-
-    # Signals that EU/France work auth is required
-    eu_only_signals = [
-        "eu citizen", "european union", "carte de sejour", "titre de sejour",
-        "autorisation de travail", "non-eu not eligible", "visa sponsorship not available",
-        "no sponsorship", "must be authorized to work"
-    ]
-    eu_only = any(s in job_text for s in eu_only_signals)
-
-    if not eu_only:
-        return 75, ["No explicit work authorization restriction detected"], []
-
-    profile_auths = [a.lower() for a in getattr(profile, "work_authorizations", [])]
-    has_eu_auth = any(
-        "eu" in a or "european" in a or "france" in a or "french" in a
-        or "citizen" in a or "carte" in a
-        for a in profile_auths
-    )
-
-    if has_eu_auth:
-        return 100, ["EU work authorization confirmed"], []
-
-    return 5, ["Job requires EU/France work authorization; candidate authorization unclear"], ["WORK_AUTH_REQUIRED"]
+    """Score work authorization compatibility with contract-aware routing."""
+    assessment = classify_work_auth(job, profile)
+    note = f"Work auth: {assessment.rationale}"
+    if assessment.work_auth_class == WorkAuthClass.DIRECTLY_APPLICABLE:
+        return 100, [note, *assessment.notes], []
+    if assessment.work_auth_class == WorkAuthClass.SPONSORSHIP_GATED:
+        return 5, [note, *assessment.notes], ["SPONSORSHIP_GATED"]
+    return 75, [note, *assessment.notes], []
 
 
 def score_job(job: JobListing, profile: CandidateProfile) -> ScoreBreakdown:
@@ -181,8 +165,8 @@ def score_job(job: JobListing, profile: CandidateProfile) -> ScoreBreakdown:
     # Hard penalties: work auth and language are dealbreakers
     if "FRENCH_REQUIRED" in lang_risks:
         total = min(total, 25)
-    if "WORK_AUTH_REQUIRED" in auth_risks:
-        total = min(total, 20)
+    if "SPONSORSHIP_GATED" in auth_risks:
+        total = min(total, 45)
     risk_flags = seniority_risks + salary_risks + lang_risks + auth_risks
     min_fit = getattr(profile, "min_fit_score", 70) or 70
     if total >= min_fit and not risk_flags:

@@ -85,6 +85,19 @@ function fileHref(path) {
   return path ? `/file?path=${encodeURIComponent(path)}` : "";
 }
 
+function safeHref(value) {
+  try {
+    const parsed = new URL(String(value || ""), window.location.href);
+    const protocol = parsed.protocol;
+    if (protocol === "http:" || protocol === "https:") {
+      return escapeHtml(parsed.href);
+    }
+  } catch {
+    // Invalid URLs are rendered inert instead of entering an href attribute.
+  }
+  return "#";
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -259,7 +272,7 @@ function renderManualGroups(groups) {
           .map(
             (link) => `<tr>
               <td>${escapeHtml(link.board)}</td>
-              <td><a href="${escapeHtml(link.url)}" target="_blank" rel="noreferrer">Open search</a></td>
+              <td><a href="${safeHref(link.url)}" target="_blank" rel="noreferrer">Open search</a></td>
               <td>${escapeHtml(link.note)}</td>
             </tr>`,
           )
@@ -376,7 +389,7 @@ function companyLine(job) {
 }
 
 function jobActions(job) {
-  const apply = job.apply_url ? `<a href="${escapeHtml(job.apply_url)}" target="_blank" rel="noreferrer">Apply</a>` : "";
+  const apply = job.apply_url ? `<a href="${safeHref(job.apply_url)}" target="_blank" rel="noreferrer">Apply</a>` : "";
   const assistant = job.assistant_page ? `<a href="${fileHref(job.assistant_page)}" target="_blank">Assistant</a>` : "";
   const cv = job.cv_pdf ? `<a href="${fileHref(job.cv_pdf)}" target="_blank">CV</a>` : "";
   const letter = job.cover_letter_pdf ? `<a href="${fileHref(job.cover_letter_pdf)}" target="_blank">Letter</a>` : "";
@@ -478,7 +491,7 @@ function renderEnrichmentDetails(job) {
   const market = (job.labour_market_signals || []).join(", ");
   const techStack = (job.tech_stack || []).slice(0, 10).join(", ");
   const apply = job.apply_url
-    ? `<a href="${escapeHtml(job.apply_url)}" target="_blank" rel="noreferrer">Apply URL</a>`
+    ? `<a href="${safeHref(job.apply_url)}" target="_blank" rel="noreferrer">Apply URL</a>`
     : "<span class='muted'>No apply URL.</span>";
   const cvPreview = job.cv_pdf
     ? `<iframe class="doc-preview" title="Tailored CV preview" src="${fileHref(job.cv_pdf)}"></iframe>`
@@ -1456,7 +1469,7 @@ function renderTracker() {
         <button data-action="brief" data-job="${escapeHtml(job.id)}" title="Headline, summary, keywords">Brief</button>
         <button data-action="outreach" data-job="${escapeHtml(job.id)}" title="Outreach email">Outreach</button>
         <button data-action="followup" data-job="${escapeHtml(job.id)}" title="Follow-up email">Follow-up</button>
-        ${job.apply_url ? `<a href="${escapeHtml(job.apply_url)}" target="_blank" rel="noreferrer">Apply</a>` : ""}
+        ${job.apply_url ? `<a href="${safeHref(job.apply_url)}" target="_blank" rel="noreferrer">Apply</a>` : ""}
       </td>
     </tr>`).join("");
   if ($("trackerTableWrap")) {
@@ -2422,7 +2435,7 @@ async function loadGithubReposForPortfolio() {
           <span class="coach-sub">${escapeHtml(repo.description || "—")}</span>
           <span class="row-tag">${escapeHtml(repo.language || "")} · ★ ${repo.stars || 0}</span>
         </div>
-        <a href="${escapeHtml(repo.url)}" target="_blank" rel="noreferrer" class="muted">Open</a>
+        <a href="${safeHref(repo.url)}" target="_blank" rel="noreferrer" class="muted">Open</a>
       </label>
     `).join("");
   } catch (error) {
@@ -2590,7 +2603,7 @@ function renderCoachPlan(plan) {
     certsNode.innerHTML = certs.length
       ? certs.map((cert) => `<li>
           <div>
-            <span class="coach-title">${cert.url ? `<a href="${escapeHtml(cert.url)}" target="_blank" rel="noreferrer">${escapeHtml(cert.name)}</a>` : escapeHtml(cert.name)}</span>
+            <span class="coach-title">${cert.url ? `<a href="${safeHref(cert.url)}" target="_blank" rel="noreferrer">${escapeHtml(cert.name)}</a>` : escapeHtml(cert.name)}</span>
             <span class="coach-sub">Closes <em>${escapeHtml(cert.because || "")}</em> gap. ${escapeHtml(cert.free_path || "")}</span>
           </div>
           <strong>${escapeHtml(cert.duration || "")}</strong>
@@ -3741,7 +3754,7 @@ function renderNeedsManual(jobs) {
   wrap.innerHTML = jobs
     .map((job) => {
       const reason = escapeHtml(job.needs_manual_reason || "human-presence wall");
-      const listing = job.apply_url ? `<a href="${escapeHtml(job.apply_url)}" target="_blank" rel="noreferrer">Open listing</a>` : "";
+      const listing = job.apply_url ? `<a href="${safeHref(job.apply_url)}" target="_blank" rel="noreferrer">Open listing</a>` : "";
       const assistant = job.assistant_page ? `<a href="${fileHref(job.assistant_page)}" target="_blank">Assistant</a>` : "";
       const cv = job.cv_pdf ? `<a href="${fileHref(job.cv_pdf)}" target="_blank">CV draft</a>` : "";
       const letter = job.cover_letter_pdf ? `<a href="${fileHref(job.cover_letter_pdf)}" target="_blank">Letter draft</a>` : "";

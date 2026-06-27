@@ -80,7 +80,12 @@ That token is used with `Authorization: Bearer ...` against
 - **Normalization & scoring:** extracts tech stack, salary, remote/hybrid,
   seniority, language signals, requirements, responsibilities, and benefits;
   deterministic 0-100 fit score with notes, confidence, decision, missing
-  requirements, and risk flags.
+  requirements, and risk flags. Work-authorization scoring is contract-aware:
+  stage/alternance can be treated differently from CDI roles that need
+  sponsorship, using only explicit local profile facts.
+- **Evidence-backed grounding:** a local evidence index is rebuilt from your
+  profile, master CV, projects, and locked QA answers so later AI/preflight
+  features can separate defensible keywords from unsafe invented claims.
 - **Tailored LaTeX CV:** uses your `profiles/main.tex`. The template's design,
   layout, photo, language toggle, and curated skills narrative are preserved;
   only role-relevant text (summary closer, experience-bullet ordering, top
@@ -386,7 +391,32 @@ FRANCE_TRAVAIL_SCOPE=api_offresdemploiv2 o2dsoffre
 The app auto-loads `.env.local` when it starts. If your portal does not show a
 scope, leave `FRANCE_TRAVAIL_SCOPE` blank — fallback scope logic runs.
 
-### 4. (Optional) Configure France Travail enrichment endpoints
+### 4. (Optional) Tune local application strategy
+
+The defaults are safe and local-first, so you can skip this at first. If you
+create `.job_agent/config.json`, these keys are available for the newer
+conversion pipeline features:
+
+```json
+{
+  "cover_letter_auto_threshold": 70,
+  "cover_letter_always_contexts": ["bank", "stage", "alternance", "formal_fr"],
+  "fullauto_min_score": 75,
+  "fullauto_max_submissions_per_day": 5,
+  "fullauto_max_submissions_per_run": 10,
+  "fullauto_require_preflight_apply": true,
+  "fullauto_block_sponsorship_gated": true,
+  "freshness_recent_hours": 72,
+  "stale_days": 14,
+  "france_gratification_min_hourly": null,
+  "remote_global_sources_enabled": false,
+  "learning_rerank_enabled": true
+}
+```
+
+Do not put secrets in `config.json`; keep API credentials in `.env.local`.
+
+### 5. (Optional) Configure France Travail enrichment endpoints
 
 To use ROME 4.0, Anotea, Open Training, Labour Market, etc., copy
 `docs/france_travail_endpoints.example.json` to
@@ -402,7 +432,7 @@ job-agent enrich <job-id>
 Without this file, only the core job-offer search works — enrichment is
 skipped safely.
 
-### 5. Target CAC 40 / large French companies
+### 6. Target CAC 40 / large French companies
 
 ```bash
 job-agent france-targets
@@ -411,7 +441,7 @@ job-agent france-targets
 Open the career page, search for `data`/`stage`/`alternance`, import promising
 URLs with `job-agent add url`.
 
-### 6. Run the built-in Paris data/AI query pack
+### 7. Run the built-in Paris data/AI query pack
 
 ```bash
 job-agent france-hunt --location Paris --limit 10

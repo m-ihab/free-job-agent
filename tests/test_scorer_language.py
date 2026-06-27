@@ -89,7 +89,7 @@ class TestWorkAuthScore:
             _profile(),
         )
         assert score >= 60
-        assert "WORK_AUTH_REQUIRED" not in risks
+        assert "SPONSORSHIP_GATED" not in risks
 
     def test_eu_only_candidate_has_eu_auth(self) -> None:
         score, notes, risks = _work_auth_score(
@@ -97,7 +97,7 @@ class TestWorkAuthScore:
             _profile(work_authorizations=["EU citizen"]),
         )
         assert score == 100
-        assert "WORK_AUTH_REQUIRED" not in risks
+        assert "SPONSORSHIP_GATED" not in risks
 
     def test_eu_only_candidate_no_auth_listed(self) -> None:
         score, notes, risks = _work_auth_score(
@@ -105,14 +105,14 @@ class TestWorkAuthScore:
             _profile(work_authorizations=[]),
         )
         assert score <= 10
-        assert "WORK_AUTH_REQUIRED" in risks
+        assert "SPONSORSHIP_GATED" in risks
 
     def test_no_sponsorship_signal(self) -> None:
         score, notes, risks = _work_auth_score(
             _job(description="No sponsorship available."),
             _profile(work_authorizations=[]),
         )
-        assert "WORK_AUTH_REQUIRED" in risks
+        assert "SPONSORSHIP_GATED" in risks
 
 
 # ── Full score integration ─────────────────────────────────────────────────
@@ -142,8 +142,8 @@ class TestScoreJobWithLanguageAuth:
             work_authorizations=[],  # unclear
         )
         breakdown = score_job(job, profile)
-        assert breakdown.total_score <= 20
-        assert "WORK_AUTH_REQUIRED" in breakdown.risk_flags
+        assert breakdown.total_score <= 45
+        assert "SPONSORSHIP_GATED" in breakdown.risk_flags
 
     def test_strong_match_with_french_and_eu_auth(self) -> None:
         job = _job(

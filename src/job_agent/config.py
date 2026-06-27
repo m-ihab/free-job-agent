@@ -59,6 +59,20 @@ class AppConfig(BaseModel):
     default_locale: str = "en"
     log_level: str = "INFO"
     min_fit_score: int = 70
+    cover_letter_auto_threshold: int = 70
+    cover_letter_always_contexts: list[str] = Field(
+        default_factory=lambda: ["bank", "stage", "alternance", "formal_fr"]
+    )
+    fullauto_min_score: int = 75
+    fullauto_max_submissions_per_day: int = 5
+    fullauto_max_submissions_per_run: int = 10
+    fullauto_require_preflight_apply: bool = True
+    fullauto_block_sponsorship_gated: bool = True
+    freshness_recent_hours: int = 72
+    stale_days: int = 14
+    france_gratification_min_hourly: Optional[float] = None
+    remote_global_sources_enabled: bool = False
+    learning_rerank_enabled: bool = True
     obsidian_vault_dir: Optional[Path] = None
 
     class Config:

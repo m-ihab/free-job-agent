@@ -78,6 +78,7 @@ In those cases it must mark the job `NEEDS_MANUAL`, record the reason, and conti
 ## Never allowed
 
 - CAPTCHA solving.
+- Detection is allowed. Bypass is not.
 - Anti-bot bypass.
 - Rate-limit bypass.
 - Paywall bypass.

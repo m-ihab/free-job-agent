@@ -7,6 +7,7 @@ from typing import Optional
 from job_agent.schemas.candidate import CandidateProfile
 from job_agent.schemas.job import JobListing
 from job_agent.utils import fuzzy
+from job_agent.work_auth import WorkAuthClass, classify_work_auth
 
 
 @dataclass
@@ -21,6 +22,7 @@ class FilterConfig:
     disallowed_job_types: list[str] = field(default_factory=list)
     max_seniority: Optional[str] = None
     fuzzy_threshold: int = 80
+    hide_sponsorship_gated: bool = False
 
 
 @dataclass
@@ -97,6 +99,11 @@ def apply_filters(
         auth_keywords = ["sponsorship", "visa", "work authorization", "authorized to work"]
         if any(kw in text for kw in auth_keywords) and not profile.work_authorizations:
             risk_flags.append("WORK_AUTHORIZATION_MENTIONED_NO_PROFILE_ANSWER")
+        auth = classify_work_auth(job, profile)
+        if auth.work_auth_class == WorkAuthClass.SPONSORSHIP_GATED:
+            risk_flags.append("SPONSORSHIP_GATED")
+            if config.hide_sponsorship_gated:
+                reasons.append(auth.rationale)
 
     decision = "pass" if not reasons else "reject"
     if risk_flags and not reasons:

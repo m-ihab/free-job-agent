@@ -178,9 +178,13 @@ def _click_submit(page: Any, ats: str) -> bool:
         try:
             btn = page.locator(sel).first
             if btn.count() and btn.is_visible() and btn.is_enabled():
-                btn.click()
-                return True
+                try:
+                    btn.click()
+                    return True
+                except Exception:
+                    logger.warning("Auto-apply submit click failed for selector %s", sel, exc_info=True)
         except Exception:
+            logger.debug("Auto-apply submit selector probe failed for %s", sel, exc_info=True)
             continue
     return False
 

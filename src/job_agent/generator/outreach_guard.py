@@ -97,5 +97,10 @@ def assert_grounded(
 
     # De-duplicate while preserving order for stable, readable output.
     seen: set[str] = set()
-    unique = [v for v in violations if not (v in seen or seen.add(v))]
+    unique: list[str] = []
+    for violation in violations:
+        if violation in seen:
+            continue
+        seen.add(violation)
+        unique.append(violation)
     return (len(unique) == 0, unique)

@@ -26,3 +26,20 @@ def test_profile_dir_env_override(tmp_path, monkeypatch):
     config = AppConfig(data_dir=tmp_path / "data")
 
     assert config.profiles_dir == explicit_profiles
+
+
+def test_conversion_os_config_defaults_are_safe(tmp_path):
+    config = AppConfig(data_dir=tmp_path / "data")
+
+    assert config.cover_letter_auto_threshold == 70
+    assert config.cover_letter_always_contexts == ["bank", "stage", "alternance", "formal_fr"]
+    assert config.fullauto_min_score == 75
+    assert config.fullauto_max_submissions_per_day == 5
+    assert config.fullauto_max_submissions_per_run == 10
+    assert config.fullauto_require_preflight_apply is True
+    assert config.fullauto_block_sponsorship_gated is True
+    assert config.freshness_recent_hours == 72
+    assert config.stale_days == 14
+    assert config.france_gratification_min_hourly is None
+    assert config.remote_global_sources_enabled is False
+    assert config.learning_rerank_enabled is True

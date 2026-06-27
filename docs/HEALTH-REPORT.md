@@ -177,3 +177,175 @@ schemas 92-100%, france_market 92%, config 92%. Tests that exist are genuinely b
 | 8 | HIGH (quality) | Add the 59 missing type hints, esp. `cli/main.py` `_handle_*(args)` | CLAUDE.md type-hint rule |
 | 9 | HIGH (JS) | Delete the 4 dead duplicate `app.js` functions; enable `no-redeclare` + fix `globals` in ESLint; surface auto-apply `catch {}` errors | `app.js:1542-1673`, `eslint.config.mjs` |
 | 10 | MEDIUM | Harden `/file` symlink escape, clamp GET params, dedupe the GitHub-handle block, fix bugbear correctness risks (`field` shadow, `raise…from`, `zip(strict=)`); add `pip-audit`+`bandit` to CI | §2/§3 MEDIUM items |
+
+---
+---
+
+# Health Report — Refresh 2026-06-27
+
+_Generated 2026-06-27 against HEAD `71ee64b`. Scope: `src/job_agent/` (**175 modules / ~23,647 LOC Python**,
+up from 79 modules / ~19,200 LOC at the 2026-06-17 snapshot) + `src/job_agent/ui/static/app.js`
+(**3,988 LOC**) + tests (`tests/`, **95 files** + Playwright e2e). Method: graphify/GitNexus orientation +
+four parallel passes — `python-reviewer`, `typescript-reviewer` (dashboard JS), `python-security-auditor`,
+and `python-test-coverage-auditor`._
+
+> This section is **added, not a replacement** — the 2026-06-17 report above is preserved for history.
+> **Several of its findings are now resolved** (see "Deltas since 2026-06-17" below).
+
+## 0. What changed since the last report (deltas)
+
+| 2026-06-17 finding | Status on 2026-06-27 |
+|---|---|
+| CSRF / Origin / Host gaps on dashboard | ✅ **FIXED** — `ui/security.py:54` `check_request` enforces per-process token + same-origin + Host allowlist on every GET/POST |
+| SSRF in URL/RSS intake | ✅ **FIXED (dashboard paths)** — `utils/net.py:90-192` scheme allowlist, private/loopback/link-local block, per-redirect re-validation, IP pinning, body cap |
+| Exception leakage from `do_POST` | ✅ **FIXED** — generic 500 + `logging` (`server.py:154`) |
+| Dependency hygiene (unpinned) | ✅ **FIXED** — upper-bounded deps, `requirements.lock`, CI `bandit` + `pip-audit` |
+| Test coverage 45% | ✅ **IMPROVED to 83%** aggregate (but unevenly — see §4) |
+| 10 oversized modules / monolith splits | ✅ **All 10 planned splits DONE** (see §1) — but **34 modules still exceed the 200-line cap** |
+| `do_POST` monolith | ✅ Split into `ui/routes/*` handlers |
+| Rotate FT secret / `.env.local` in OneDrive | ⚠️ **Operational — verify owner did this**; code no longer logs secrets and only `.env.local.example` is tracked |
+| 3.12-only f-strings on declared 3.11 | ↪️ Not re-confirmed this pass (venv is 3.12.13, still masks it) — re-verify on a real 3.11 interpreter |
+
+## 1. Refactor-Split Progress Audit
+
+**The 10 originally-planned monolith splits are ALL COMPLETE** (verified on disk + git log + small facades):
+
+| Original monolith | Facade now | Children extracted |
+|---|---|---|
+| `db/database.py` | 60 L | `database_schema/_jobs/_packets/_meta` (mixin pattern) |
+| `auto_apply/session.py` | 143 L | `session_types/_runner/_actions/_control` |
+| `ai_agent.py` | 194 L | `ai_agent_fit/_classify/_letters/_search` |
+| `cv_studio.py` | 96 L | `draft/sections/suggest/fit/ats/core/assets/projects` |
+| `coach.py` | 137 L | `skills/catalog/market/suggestions/interview` |
+| `autopilot.py` | 196 L | `config/cycle/packets/queries/sources` |
+| `auto_apply/driver.py` | — | `driver_fields/_fill/_browser` |
+| `renderer/latex_render.py` | 317 L | `latex_assets/_compile/_helpers` |
+| `intake/france_market.py` | — | `france_market_boards/_queries` |
+| `portfolio_render.py` | — | `portfolio_core/_css/_html/_seo` |
+
+**NOT done — the 7 "newly surfaced" optional splits** (tracked in `SESSION-HISTORY.md`, all still over the 200-line cap):
+`pipeline.py` (501), `renderer/latex_helpers.py` (494), `portfolio_builder.py` (464), `ui/route_helpers.py` (446),
+`intake/sources/base.py` (441), `profile_enrich.py` (402), `cv_studio_assets.py` (242).
+
+**Additionally, ~27 other modules exceed 200 lines** that were never in any split plan — e.g. `cli/main.py` (384),
+`intake/sources/registry.py` (339), `ui/server.py` (335), `profile_audit.py` (333), `polish.py` (323). **34 modules
+total** violate the cap, 6 of them above 400 lines. And the dashboard **`app.js` is 3,988 lines** (grew from 3,567)
+— ~5× the 800-line hard cap and ~20× the 200-line target; it is the single largest unsplit unit in the project.
+
+**Verdict:** the deliberate split campaign succeeded (10/10), but the cap is not being held repo-wide — a second
+split batch (the 7 surfaced + `app.js` by feature area) is the outstanding work.
+
+## 2. Architecture Overview
+
+Local-first, single-user job-search/application copilot for France/Paris data-AI roles. Python 3.11+, two entry
+points (`job-agent` CLI via `cli/main.py`; dashboard via stdlib `http.server` on `127.0.0.1:8765`), SQLite, Pydantic
+schemas, optional local Ollama. **Data flow:** intake (`intake/` — paste/file/URL/RSS/free APIs/France Travail/ATS
+feeds) → normalize/fingerprint (`normalizer.py`, `fingerprint.py`) → hard filters + deterministic 0–100 scoring
+(`filters.py`, `scorer.py`, `skill_extractor.py`) → SQLite (`db/` mixins) → packet generation (`generator/`,
+`cv_studio*`, `pipeline.py`) → render (`renderer/` md/html/pdf/latex) → apply (`auto_apply/` Playwright,
+`apply_bridge.py`, `autopilot*`). The post-refactor structure is markedly healthier: feature decomposition is clean,
+the DB/auto-apply/AI/cv-studio cores are now small facades over focused children, and the security boundary
+(`ui/security.py`, `utils/net.py`) is well-factored. Remaining structural weak points: a handful of orchestration
+monoliths (`pipeline.py`, `route_helpers.py`), the JS monolith, and pervasive silent exception-swallowing.
+
+## 3. Code Quality (`python-reviewer` + dashboard-JS `typescript-reviewer`)
+
+> Note: there is **no first-party TypeScript**; the JS pass covered `app.js` + `eslint.config.mjs` + `playwright.config.js`.
+
+**Python — CRITICAL**
+- **Swallowed exceptions in FULL_AUTO form-filling** — `auto_apply/driver_fields.py:53,63,101,123` and the submit
+  click at `driver_fill.py:183` use `except Exception: pass/continue`. A form can be submitted blank/partial with
+  zero signal — directly undercuts the "answers must be grounded / fail-closed" contract. Add `logger.warning(..., exc_info=True)`.
+- **`extra = "allow"` on all three core schemas** — `schemas/job.py:75`, `candidate.py:25`, `packet.py:79` accept
+  arbitrary unknown fields instead of raising. Combined with **22 in-place mutations** (e.g. `pipeline.py:276,289`,
+  `enrichment.py:65-79`, `db/database_jobs.py:18`) the schemas act as mutable bags, not validated boundaries. Move to
+  `extra="forbid"` (`ConfigDict`) and use copy-and-save instead of mutation.
+
+**Python — HIGH**
+- AI futures swallowed without logging in the core packet loop — `pipeline.py:308,312,316` silently produce
+  AI-less packets when Ollama fails. Log each.
+- **34 modules > 200-line cap** (6 > 400) and **7 functions ≫ 50-line cap** — worst: `cli/main.py:38 build_parser()`
+  (294 L, all sequential `add_parser` calls), `pipeline.py:239 generate_packet_for_job()` (255 L).
+- **73 `# type: ignore`** suppressions, ~15 masking one real `Optional[Path]` issue: `Database(config.db_path)`
+  where `db_path: Optional[Path]`. Add one assert / `resolved_db_path` property → removes 15 suppressions + a real None-deref risk.
+- `portfolio_render_core.py:120-121` — dataclass fields typed `dict`/`list` but defaulting `None` behind `type: ignore`; use `| None`.
+- **37 swallowed exceptions across 28 files** — incl. `autopilot_queries.py:60` (degraded queries) and `coach.py:127`
+  (silent empty plan) which affect user-visible output.
+- Level-9 nesting in `generator/outreach_llm.py:104` — needs guard clauses + helper extraction.
+
+**Python — MEDIUM:** 52 `print()` calls (esp. `ui/server.py:294-309` in a server thread → use `logging`);
+117 signatures missing arg type hints (route handlers `(h)` in `ui/routes/get_core.py`); duplicated
+`_search_free_api_jobs()` shim in `france.py`/`search.py`; f-string SQL column construction is currently safe but
+fragile (`db/database_jobs.py:56`) — guard with a `COLUMNS` constant; finish the Pydantic v1→v2 migration.
+
+**Dashboard JS — CRITICAL**
+- **`javascript:` URI passthrough into `href`** — `app.js:262,379,2425`. `escapeHtml()` does not validate URL
+  protocol, so a scraped `apply_url` of `javascript:…` executes on click. Add a `safeHref()` allowlist (`http:`/`https:`)
+  before interpolation — one helper closes all three sinks.
+
+**Dashboard JS — HIGH:** unhandled promise rejections in `enrichBatch`/`studioReset`/`studioPromote`/`studioApplyReorder`
+(`app.js:1095,1723,1731,2024` — no error UI, button stuck disabled); interval leak in `pullFastModel` (`app.js:2951`);
+`app.js` at 3,988 lines; ESLint config too thin (`eslint.config.mjs:29-33` — add `no-console`, `eqeqeq`,
+`eslint-plugin-security`). **MEDIUM/LOW:** numeric server fields into `innerHTML` un-guarded (`app.js:1934,2004`),
+`escapeHtml` misses `'`, no debounce on `generatePortfolio`, 3 stray `console.*`, zero JSDoc types.
+
+## 4. Security (`python-security-auditor`)
+
+**Headline: no CRITICAL or HIGH issues. The 2026-06-17 HIGH findings (CSRF, SSRF, exception leakage, deps) are
+fixed and correctly wired into the live request paths.** The auto-apply fail-closed contract is implemented:
+`auto_apply/detect.py:61 _detect_human_wall` fails **closed** (unreadable page ⇒ treated as wall, EN+FR login
+signatures); `session_runner.py` checks before fill (`:146`), before submit (`:174`), and **post-submit** (`:190`),
+handing off to `NEEDS_MANUAL` (`session_actions.py:93`). Detection-only, no circumvention. SQL is parameterized
+throughout; secrets read from env and never logged.
+
+**Remaining (all LOW, defense-in-depth):**
+- **N1** — `intake/discover.py:15` does a raw `requests.get(user_url)` bypassing `utils.net.safe_get`. CLI-only
+  (not reachable from dashboard, so not CSRF-chainable), but would follow redirects to internal IPs with real `requests`. Route through `safe_get`.
+- **N2** — GitHub handle only `strip()`-sanitized in `profile_enrich.py:64` and `portfolio_builder.py:364` (host is
+  fixed to `api.github.com`, so request-shaping only, not SSRF). Apply the dashboard's `_GITHUB_HANDLE_RE`.
+- **N3/N4** — FT access token cached plaintext on disk (~18-min TTL, `client_secret` never written); `languages_url`
+  fetched raw from the (trusted) GitHub API response. Note-only.
+
+_Unknowns: no live `pip-audit` CVE run this pass (CI gating exists); Jinja2 SSTI surface not exhaustively traced
+(prior audit found renderer escapes untrusted text)._
+
+## 5. Test Coverage (`python-test-coverage-auditor`)
+
+**Measured 83% line coverage** (11,608 stmts, 1,994 missed; 1,430 passed, 0 skipped/xfail) — meets the 80% floor in
+aggregate, **but coverage is dangerously uneven: the safest code (schemas/scorer/normalizer/DB mixins) is well
+covered while the highest-risk behavioral code is the least covered.**
+
+| Module | Cover | Why it matters |
+|---|---:|---|
+| `auto_apply/driver_fill.py` | **21%** | Actually fills/submits forms — submission logic essentially untested |
+| `auto_apply/session_control.py` | **29%** | Enforces FULL_AUTO gates (max submissions, score threshold, allowed sources/ATS, skip rules) |
+| `ai_agent_letters.py` | **28%** | LLM letter generation — "never invent facts" constraint unguarded by tests |
+| `auto_apply/session_runner.py` | **42%** | Per-job loop + NEEDS_MANUAL handoff continuation |
+| `auto_apply/session_actions.py` / `driver_fields.py` | 46% / 53% | Attempt events, state saving; field mapping (wrong-fill risk) |
+| `autopilot_cycle.py` / `cv_studio_suggest.py` | 45% / 33% | No dedicated test file |
+| `ui/server.py` / `ui/routes/post_generate.py` | 65% / 59% | Security-adjacent; branch-heavy |
+
+**Gaps:** the auto-apply package — the most safety-critical code in the repo (real submission + legal "never invent /
+fail-closed" invariants) — is the least tested; existing `test_auto_apply*.py` don't drive the fill/submit/control
+internals. No e2e exercise of the FULL_AUTO flow (eligible job → fill → submit/handoff). Intake adapters are thin on
+error/empty-response branches (`ashby` 68%, `lever` 78%, `francetravail` 75%).
+
+**Flaky:** `tests/test_ui_security.py::test_post_without_token_returns_403` fails non-deterministically with
+`ConnectionAbortedError [WinError 10053]` (real-socket timing on the in-thread live-server fixture) — makes CI
+green/red non-deterministic on Windows. _Caveat: this is line, not branch, coverage (`--cov-branch` would show the
+auto-apply modules even lower)._
+
+## 6. Top 10 Prioritized Improvements (2026-06-27)
+
+| # | Priority | Improvement | Evidence |
+|---|----------|-------------|----------|
+| 1 | CRITICAL (safety) | Stop swallowing form-fill/submit exceptions in FULL_AUTO — log every failure; never let a blank/partial form submit silently | `auto_apply/driver_fields.py:53,63,101,123`, `driver_fill.py:183` |
+| 2 | CRITICAL (JS security) | Add `safeHref()` protocol allowlist before any server-sourced URL goes into `href` (blocks `javascript:` XSS from scraped `apply_url`) | `app.js:262,379,2425` |
+| 3 | CRITICAL (correctness) | Set `extra="forbid"` on the 3 core schemas and replace the 22 in-place mutations with copy-and-save | `schemas/job.py:75`, `candidate.py:25`, `packet.py:79` |
+| 4 | HIGH (testing) | Add control-gate + fail-closed unit tests for the auto-apply core (currently 21–46%) — the project's least-tested, highest-risk code | `session_control.py` 29%, `driver_fill.py` 21%, `session_runner.py` 42% |
+| 5 | HIGH (observability) | Add logging to the 37 silent `except Exception: pass` blocks (start with `pipeline.py:308-319` AI futures, `autopilot_queries.py:60`, `coach.py:127`) | 37 across 28 files |
+| 6 | HIGH (quality) | Finish the split campaign: the 7 surfaced modules + the 27 other >200-line modules; split `app.js` by feature area | §1; 34 modules over cap |
+| 7 | HIGH (types) | Fix the `Optional[Path]` root cause (`assert`/`resolved_db_path`) to delete ~15 `# type: ignore`; add the 117 missing arg hints | `pipeline.py:48`, `ui/routes/get_core.py:40+` |
+| 8 | HIGH (JS) | Wrap the 4 unhandled `await api()` calls in try/catch + error UI; fix the `pullFastModel` interval leak; tighten ESLint | `app.js:1095,1723,1731,2024,2951`, `eslint.config.mjs` |
+| 9 | MEDIUM (CI reliability) | Stabilize the WinError-10053 flake in `test_ui_security.py` (wait-for-ready / WSGI-style call) so CI signal is deterministic | `tests/test_ui_security.py` live-server fixture |
+| 10 | MEDIUM (security hardening) | Route `discover.py` through `safe_get` (N1); apply `_GITHUB_HANDLE_RE` in the 2 CLI/import GitHub paths (N2); replace `ui/server.py` thread `print()`s with `logging` | `intake/discover.py:15`, `profile_enrich.py:64`, `portfolio_builder.py:364`, `ui/server.py:294-309` |

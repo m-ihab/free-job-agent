@@ -120,6 +120,19 @@ SCHEMA_SQL = """
         broken_until TEXT NOT NULL,
         PRIMARY KEY (source, slug)
     );
+
+    CREATE TABLE IF NOT EXISTS evidence_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,
+        label TEXT NOT NULL,
+        value TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL,
+        source_ref TEXT,
+        confidence REAL NOT NULL DEFAULT 1.0,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_evidence_kind_label ON evidence_items(kind, label);
+    CREATE INDEX IF NOT EXISTS idx_evidence_source ON evidence_items(source);
 """
 
 # Additive column migrations — run after CREATE TABLE so new DBs get the column

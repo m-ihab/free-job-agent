@@ -100,6 +100,11 @@ class CandidateProfile(_Base):
     skills: list[Skill] = Field(default_factory=list)
     languages: list[str] = Field(default_factory=list)
     work_authorizations: list[str] = Field(default_factory=list)
+    work_auth_status: str = ""
+    can_do_stage: bool = False
+    convention_de_stage_available: bool = False
+    needs_sponsorship_for_cdi: bool = False
+    visa_expiry: Optional[str] = None
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
     target_roles: list[str] = Field(default_factory=list)

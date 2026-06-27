@@ -7,13 +7,16 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from typing import Optional
+from typing import Any, Optional
 
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.timeutil import utc_now
 
 
 class JobsMixin:
+    def _connect(self) -> Any:
+        raise NotImplementedError
+
     def save_job(self, job: JobListing) -> None:
         job.updated_at = utc_now()
         values = {

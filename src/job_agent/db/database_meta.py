@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from job_agent.timeutil import utc_now
 
@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 class MetaMixin:
+    def _connect(self) -> Any:
+        raise NotImplementedError
+
     # ---- Events ----
 
     def log_event(self, job_id: Optional[str], event_type: str, event_data: dict, packet_id: Optional[str] = None) -> None:
@@ -188,5 +191,37 @@ class MetaMixin:
             rows = conn.execute(
                 "SELECT source, slug, status_code, reason, broken_at, broken_until FROM broken_sources "
                 "ORDER BY broken_until DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    # ---- Evidence items ----
+
+    def replace_evidence_items(self, items: list[dict]) -> None:
+        """Replace derived evidence rows with a fresh local rebuild."""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM evidence_items")
+            conn.executemany(
+                "INSERT INTO evidence_items "
+                "(kind, label, value, source, source_ref, confidence, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        item["kind"],
+                        item["label"],
+                        item.get("value", ""),
+                        item["source"],
+                        item.get("source_ref"),
+                        float(item.get("confidence", 1.0)),
+                        utc_now(),
+                    )
+                    for item in items
+                ],
+            )
+
+    def list_evidence_items(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT kind, label, value, source, source_ref, confidence "
+                "FROM evidence_items ORDER BY kind, label, source_ref"
             ).fetchall()
         return [dict(row) for row in rows]
