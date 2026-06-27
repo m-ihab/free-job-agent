@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from job_agent.config import AppConfig
 from job_agent.schemas.candidate import CandidateProfile
 from job_agent.schemas.job import JobListing
 
@@ -31,6 +32,14 @@ class WorkAuthAssessment:
     blocking: bool
     rationale: str
     notes: list[str]
+
+
+@dataclass(frozen=True)
+class GratificationFlag:
+    flagged: bool
+    reason: str = ""
+    threshold: float | None = None
+    observed: float | None = None
 
 
 _CONTRACT_SIGNALS: list[tuple[ContractKind, tuple[str, ...]]] = [
@@ -124,6 +133,25 @@ def classify_work_auth(job: JobListing, candidate: CandidateProfile) -> WorkAuth
         "No decisive work-authorization route detected; verify before applying.",
         ["Verify work authorization requirements"],
     )
+
+
+def check_gratification(job: JobListing, config: AppConfig) -> GratificationFlag:
+    threshold = config.france_gratification_min_hourly
+    if threshold is None or detect_contract_kind(job) != ContractKind.STAGE:
+        return GratificationFlag(False, threshold=threshold)
+    text = f"{job.title} {job.description} {' '.join(job.requirements or [])}".casefold()
+    unpaid_signals = ("unpaid", "non rémunéré", "non remunere", "sans gratification")
+    if any(signal in text for signal in unpaid_signals):
+        return GratificationFlag(True, "Stage appears unpaid or without gratification.", threshold, None)
+    observed = float(job.salary_min) if job.salary_min is not None else None
+    if observed is not None and observed < threshold:
+        return GratificationFlag(
+            True,
+            f"Stage gratification appears below configured threshold ({observed:g} < {threshold:g}).",
+            threshold,
+            observed,
+        )
+    return GratificationFlag(False, threshold=threshold, observed=observed)
 
 
 def _has_direct_eu_auth(auth_text: str) -> bool:

@@ -218,8 +218,9 @@ Tabs:
   multi-source search across free public APIs, deep API search, and a clean
   link builder.
 - **Jobs:** filter, sort, search, remove noisy jobs, batch enrich, batch
-  packet generation, CSV export, color-coded score badges, inline detail
-  panel, and a CV preview for packet-ready roles.
+  packet generation, CSV export, color-coded score badges, work-authorization
+  route badges, optional sponsorship-gated filtering, one-click Preflight
+  verdicts, inline detail panel, and a CV preview for packet-ready roles.
 - **CV Studio:** edit the LaTeX draft, inspect profile assets in a separate
   asset editor, compile a PDF preview, swap contact icon packs, upload/remove
   the photo, add/promote GitHub projects, run the one-page guard, and scan
@@ -236,6 +237,13 @@ Tabs:
 - **Profile & API:** profile validation, LaTeX/Ollama readiness, France
   Travail API request text (copy/paste-ready), internship workbook export,
   and local CV template/photo import.
+
+Preflight is evidence-backed: it compares each job's must-haves and ATS
+keywords against the local evidence index. Safe keywords are only shown when
+they map to profile/CV/QA proof; unsupported role keywords appear as "do not
+claim without proof." Generated packets also include `preflight.json` so every
+application folder has the verdict, coverage, manual blockers, and best
+evidence trace.
 
 Keyboard shortcuts (press `?` in the dashboard):
 
@@ -415,6 +423,9 @@ conversion pipeline features:
 ```
 
 Do not put secrets in `config.json`; keep API credentials in `.env.local`.
+Set `france_gratification_min_hourly` only when you want stage postings below a
+known current legal/business threshold to be flagged; the app deliberately does
+not hardcode a value that could go stale.
 
 ### 5. (Optional) Configure France Travail enrichment endpoints
 

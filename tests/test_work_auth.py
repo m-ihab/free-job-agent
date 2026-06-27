@@ -7,7 +7,14 @@ from job_agent.filters import FilterConfig, apply_filters
 from job_agent.schemas.candidate import CandidateProfile, ContactInfo
 from job_agent.schemas.job import JobListing
 from job_agent.scorer import score_job
-from job_agent.work_auth import ContractKind, WorkAuthClass, classify_work_auth, detect_contract_kind
+from job_agent.config import AppConfig
+from job_agent.work_auth import (
+    ContractKind,
+    WorkAuthClass,
+    check_gratification,
+    classify_work_auth,
+    detect_contract_kind,
+)
 
 
 @pytest.mark.parametrize(
@@ -88,3 +95,23 @@ def test_filters_can_hide_sponsorship_gated_roles():
     assert result.passed is False
     assert result.decision == "reject"
     assert "SPONSORSHIP_GATED" in result.risk_flags
+
+
+def test_gratification_flag_warns_for_under_threshold_stage(tmp_path):
+    config = AppConfig(data_dir=tmp_path / "data", france_gratification_min_hourly=4.35)
+    job = JobListing(title="Stage Data Scientist", company="ACME", salary_min=3, salary_currency="EUR")
+
+    flag = check_gratification(job, config)
+
+    assert flag.flagged is True
+    assert "below" in flag.reason.lower()
+    assert flag.threshold == 4.35
+
+
+def test_gratification_flag_ignores_unconfigured_threshold(tmp_path):
+    config = AppConfig(data_dir=tmp_path / "data")
+    job = JobListing(title="Stage Data Scientist", company="ACME", salary_min=3, salary_currency="EUR")
+
+    flag = check_gratification(job, config)
+
+    assert flag.flagged is False

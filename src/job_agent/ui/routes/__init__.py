@@ -20,6 +20,7 @@ from job_agent.ui.routes import (
     post_cv_studio,
     post_generate,
     post_portfolio,
+    post_preflight,
     post_search,
 )
 
@@ -80,6 +81,7 @@ POST_ROUTES: dict[str, Callable[[object, dict], None]] = {
     "/api/portfolio/github-repos": post_portfolio.post_portfolio_github_repos,
     "/api/portfolio/import-github": post_portfolio.post_portfolio_import_github,
     "/api/portfolio/publish-guide": post_portfolio.post_portfolio_publish_guide,
+    "/api/preflight": post_preflight.post_preflight,
     "/api/maintenance/rescan-companies": post_autopilot.post_maintenance_rescan_companies,
     "/api/maintenance/dedupe": post_autopilot.post_maintenance_dedupe,
     "/api/maintenance/validate-sources": post_autopilot.post_maintenance_validate_sources,

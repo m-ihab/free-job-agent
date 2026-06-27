@@ -128,6 +128,11 @@ def _list_jobs(config: AppConfig, status: str = "") -> list[dict]:
     enrichments = tracker.db.bulk_get_enrichments(job_ids)
     ai_caches = tracker.db.bulk_list_ai_cache(job_ids)
     latest_packets = tracker.db.bulk_latest_packets(job_ids)
+    try:
+        profile, _master_cv, _qa = load_profile_bundle(config)
+    except Exception as exc:
+        logger.debug("Could not load profile for work-auth badges: %s", exc)
+        profile = None
     results: list[dict] = []
     for job in jobs:
         results.append(job_to_dict(
@@ -135,6 +140,8 @@ def _list_jobs(config: AppConfig, status: str = "") -> list[dict]:
             latest_packets.get(job.id),
             enrichment=enrichments.get(job.id),
             ai_cache=ai_caches.get(job.id, {}),
+            profile=profile,
+            config=config,
         ))
     return results
 

@@ -1,3 +1,5 @@
+from job_agent.config import AppConfig
+from job_agent.schemas.candidate import CandidateProfile, ContactInfo
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.ui.services import (
     APP_DESCRIPTION,
@@ -64,4 +66,31 @@ def test_job_to_dict_uses_source_url_when_apply_url_missing():
     job = _job(apply_url=None, source_url="https://board/job/1")
 
     assert job_to_dict(job)["apply_url"] == "https://board/job/1"
+
+
+def test_job_to_dict_exposes_work_auth_badge_for_profile():
+    profile = CandidateProfile(
+        contact=ContactInfo(name="Candidate", email="candidate@example.com"),
+        work_auth_status="non_eu_student_visa",
+        can_do_stage=True,
+        convention_de_stage_available=True,
+        needs_sponsorship_for_cdi=True,
+    )
+    job = _job(title="Stage Data Scientist")
+
+    data = job_to_dict(job, profile=profile)
+
+    assert data["work_auth_class"] == "directly_applicable"
+    assert data["work_auth_contract"] == "stage"
+    assert data["work_auth_blocking"] is False
+
+
+def test_job_to_dict_exposes_gratification_warning(tmp_path):
+    config = AppConfig(data_dir=tmp_path / "data", france_gratification_min_hourly=4.35)
+    job = _job(title="Stage Data Scientist", salary_min=3, salary_currency="EUR")
+
+    data = job_to_dict(job, config=config)
+
+    assert data["gratification_warning"]["flagged"] is True
+    assert data["gratification_warning"]["threshold"] == 4.35
 

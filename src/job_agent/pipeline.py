@@ -1,6 +1,8 @@
 """End-to-end orchestration helpers used by the CLI."""
 from __future__ import annotations
 
+import json
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -11,6 +13,7 @@ from job_agent.ai_agent import (
 )
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
+from job_agent.evidence import EvidenceStore
 from job_agent.filters import FilterConfig, apply_filters
 from job_agent.fingerprint import set_fingerprint
 from job_agent.generator.application_brief import build_application_brief
@@ -18,6 +21,7 @@ from job_agent.generator.cover_letter import generate_cover_letter
 from job_agent.generator.cv import tailor_cv
 from job_agent.generator.interview_prep import generate_interview_prep
 from job_agent.generator.outreach_email import generate_outreach_email
+from job_agent.generator.preflight import run_preflight
 from job_agent.generator.qa import build_screening_answers_for_job, screening_answers_to_dict
 from job_agent.hashutil import sha256_file, sha256_json
 from job_agent.intake.file import ingest_file
@@ -42,6 +46,8 @@ from job_agent.schemas.packet import ApplicationPacket, DocumentArtifact, Packet
 from job_agent.scorer import score_job
 from job_agent.tracker import ApplicationTracker
 from job_agent.validators import load_profile_bundle
+
+logger = logging.getLogger(__name__)
 
 
 def _tracker(config: AppConfig) -> ApplicationTracker:
@@ -234,6 +240,26 @@ def _write_cv_pdf(cv_md: str, cv_tex_path: Path, cv_pdf_path: Path, master_cv_pd
             DocumentArtifact(kind="cv_pdf", path=str(cv_pdf_path), sha256=sha256_file(cv_pdf_path)),
             warning,
         )
+
+
+def _write_preflight_artifact(
+    config: AppConfig,
+    job: JobListing,
+    profile: CandidateProfile,
+    packet: ApplicationPacket,
+    out_dir: Path,
+) -> DocumentArtifact | None:
+    try:
+        evidence = EvidenceStore.load(config)
+        if not evidence.all():
+            evidence.rebuild(config)
+        result = run_preflight(job, profile, evidence, config, packet)
+        path = out_dir / "preflight.json"
+        path.write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        return DocumentArtifact(kind="preflight_json", path=str(path), sha256=sha256_file(path))
+    except Exception as exc:
+        logger.warning("Could not write preflight artifact for job %s: %s", job.id, exc)
+        return None
 
 
 def generate_packet_for_job(
@@ -468,6 +494,10 @@ def generate_packet_for_job(
         summary=brief["summary"],
         keywords=brief["keywords"],
     )
+    preflight_artifact = _write_preflight_artifact(config, job, profile, packet, out_dir)
+    if preflight_artifact is not None:
+        packet.artifacts.append(preflight_artifact)
+
     # In full mode, rewrite assistant page with the finalised packet ID.
     if not fast_mode:
         assistant_html = render_assistant_page(

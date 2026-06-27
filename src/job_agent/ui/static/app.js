@@ -13,6 +13,7 @@ const state = {
   aiStatus: null,
   chatJobId: null,
   chatHistory: [],
+  preflight: {},
   studioActiveAsset: null,
   studioActiveAssetKind: null,
 };
@@ -397,6 +398,7 @@ function jobActions(job) {
   const rejected = job.status === "REJECTED" ? "" : `<button data-action="status" data-status="REJECTED" data-job="${escapeHtml(job.id)}" title="Mark as rejected">Reject</button>`;
   const remove = `<button data-action="delete-job" data-job="${escapeHtml(job.id)}" title="Remove this job from the local tracker">Remove</button>`;
   return `<div class="row-actions">
+    <button data-action="preflight" data-job="${escapeHtml(job.id)}" title="Check fit, must-haves, ATS gaps, and manual blockers before applying">Preflight</button>
     <button data-action="packet" data-job="${escapeHtml(job.id)}" title="Generate a tailored CV + cover letter for this job">Tailor CV</button>
     <button data-action="brief" data-job="${escapeHtml(job.id)}" title="Write a headline, summary, and the most relevant keywords for this application">Brief</button>
     <button data-action="outreach" data-job="${escapeHtml(job.id)}" title="Draft a cold outreach email to the recruiter/hiring manager">Outreach</button>
@@ -421,6 +423,59 @@ function aiVerdictBadge(job) {
   if (!job.ai_verdict) return "";
   const tone = job.ai_verdict === "strong" ? "good" : job.ai_verdict === "weak" ? "bad" : "warn";
   return renderBadge(`AI: ${job.ai_verdict}`, tone);
+}
+
+function workAuthBadge(job) {
+  const value = job.work_auth_class || "";
+  if (value === "directly_applicable") return renderBadge("Work auth: direct", "good");
+  if (value === "sponsorship_gated") return renderBadge("Needs sponsorship", "warn");
+  if (value === "unknown") return renderBadge("Work auth: verify", "");
+  return "";
+}
+
+function gratificationBadge(job) {
+  const warning = job.gratification_warning || {};
+  if (!warning.flagged) return "";
+  return `<span class="badge warn" title="${escapeHtml(warning.reason || "Check stage gratification")}">Gratification</span>`;
+}
+
+function preflightVerdictBadge(result) {
+  if (!result || !result.verdict) return "";
+  const tone = result.verdict === "APPLY" ? "good"
+    : result.verdict === "SKIP" ? "bad"
+      : result.verdict === "NEEDS_MANUAL" ? "warn"
+        : "";
+  return renderBadge(`Preflight: ${result.verdict.replaceAll("_", " ")}`, tone);
+}
+
+function renderPreflightPanel(job) {
+  const result = state.preflight[job.id];
+  if (!result) {
+    return `<div class="detail-block">
+      <h4>Application preflight</h4>
+      <p class="muted">Run Preflight to check must-have coverage, ATS keywords, manual blockers, and defensible evidence before spending time on this role.</p>
+      <button data-action="preflight" data-job="${escapeHtml(job.id)}">Run preflight</button>
+    </div>`;
+  }
+  const safe = (result.safe_keywords_to_add || []).slice(0, 10);
+  const unsafe = (result.unsafe_claims_to_avoid || []).slice(0, 10);
+  const missing = (result.missing_must_haves || []).slice(0, 8);
+  const unknown = (result.unknown_screening_answers || []).slice(0, 5);
+  const evidence = (result.best_evidence_items || []).slice(0, 4);
+  return `<div class="detail-block">
+    <h4>Application preflight</h4>
+    <div class="detail-row"><span>Verdict</span>${preflightVerdictBadge(result)}</div>
+    <div class="detail-row"><span>Fit</span>${scorePill(result.fit_score)}</div>
+    <div class="detail-row"><span>Must-haves</span><strong>${Math.round((result.must_have_coverage || 0) * 100)}%</strong></div>
+    <div class="detail-row"><span>ATS keywords</span><strong>${Math.round((result.keyword_coverage || 0) * 100)}%</strong></div>
+    <div class="detail-row"><span>Effort</span><strong>${escapeHtml(result.application_effort || "-")}</strong></div>
+    <div class="detail-row"><span>Recruiter confidence</span><strong>${Math.round((result.recruiter_confidence || 0) * 100)}%</strong></div>
+    ${missing.length ? `<h4>Missing must-haves</h4><p>${missing.map(escapeHtml).join(", ")}</p>` : ""}
+    ${safe.length ? `<h4>Safe keywords</h4><p>${safe.map((item) => `<span class="badge good">${escapeHtml(item)}</span>`).join(" ")}</p>` : ""}
+    ${unsafe.length ? `<h4>Do not claim without proof</h4><p>${unsafe.map((item) => `<span class="badge bad">${escapeHtml(item)}</span>`).join(" ")}</p>` : ""}
+    ${unknown.length ? `<h4>Manual screening answers</h4><ul>${unknown.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+    ${evidence.length ? `<h4>Best evidence</h4><ul>${evidence.map((item) => `<li><strong>${escapeHtml(item.label || "")}</strong> - ${escapeHtml(item.value || "")}</li>`).join("")}</ul>` : ""}
+  </div>`;
 }
 
 function isInternship(job) {
@@ -467,11 +522,13 @@ function renderJobsMetrics(jobs) {
   const enriched = jobs.filter((job) => job.enriched).length;
   const internships = jobs.filter((job) => isInternship(job)).length;
   const applied = jobs.filter((job) => ["APPLIED", "MANUALLY_SUBMITTED"].includes(job.status)).length;
+  const sponsorship = jobs.filter((job) => job.work_auth_class === "sponsorship_gated").length;
   $("jobsMetrics").innerHTML = [
     metric("Visible", jobs.length),
     metric("Enriched", enriched),
     metric("Internships", internships),
     metric("Applied", applied),
+    metric("Sponsorship gated", sponsorship),
   ].join("");
 }
 
@@ -510,6 +567,8 @@ function renderEnrichmentDetails(job) {
       <div class="detail-row"><span>Score</span>${scorePill(job.fit_score)}</div>
       <div class="detail-row"><span>Decision</span><strong>${escapeHtml(job.fit_decision || "-")}</strong></div>
       <div class="detail-row"><span>Status</span><strong>${escapeHtml(job.status || "-")}</strong></div>
+      <div class="detail-row"><span>Work auth</span><strong>${workAuthBadge(job) || escapeHtml(job.work_auth_rationale || "Verify")}</strong></div>
+      ${job.gratification_warning?.flagged ? `<div class="detail-row"><span>Gratification</span><strong>${gratificationBadge(job)} ${escapeHtml(job.gratification_warning.reason || "")}</strong></div>` : ""}
       <div class="detail-row"><span>Apply</span>${apply}</div>
     </div>
     <div class="detail-block">
@@ -518,6 +577,7 @@ function renderEnrichmentDetails(job) {
       <h4>Missing requirements</h4>
       <p>${escapeHtml((job.missing_requirements || []).join(", ") || "None tracked.")}</p>
     </div>
+    ${renderPreflightPanel(job)}
     <div class="detail-block">
       <div class="detail-row"><span>Endpoints OK</span><strong>${okCount}/${Object.keys(sources).length}</strong></div>
       <div class="detail-row"><span>Anotea rating</span><strong>${escapeHtml(job.anotea_rating ?? "-")}</strong></div>
@@ -559,6 +619,8 @@ function renderJobs() {
   const contract = $("filterContract") ? $("filterContract").value : "";
   const roleFamily = $("filterRoleFamily") ? $("filterRoleFamily").value : "";
   const aiVerdictFilter = $("filterAiVerdict") ? $("filterAiVerdict").value : "";
+  const workAuthFilter = $("filterWorkAuth") ? $("filterWorkAuth").value : "";
+  const hideSponsorship = $("filterHideSponsorship") ? $("filterHideSponsorship").checked : false;
   const minScore = $("filterMinScore") ? Number($("filterMinScore").value || 0) : 0;
   const sortMode = $("jobsSortSelect").value;
 
@@ -570,6 +632,8 @@ function renderJobs() {
   if (hideRejected) jobs = jobs.filter((job) => job.status !== "REJECTED");
   if (contract) jobs = jobs.filter((job) => (job.ai_contract || "").toLowerCase() === contract);
   if (roleFamily) jobs = jobs.filter((job) => (job.ai_role_family || "") === roleFamily);
+  if (workAuthFilter) jobs = jobs.filter((job) => (job.work_auth_class || "unknown") === workAuthFilter);
+  if (hideSponsorship) jobs = jobs.filter((job) => job.work_auth_class !== "sponsorship_gated");
   if (aiVerdictFilter) {
     if (aiVerdictFilter === "unknown") jobs = jobs.filter((job) => !job.ai_verdict);
     else jobs = jobs.filter((job) => job.ai_verdict === aiVerdictFilter);
@@ -604,6 +668,9 @@ function renderJobs() {
         const activeClass = state.activeJobId === job.id ? "active-row" : "";
         const summary = job.ai_summary ? `<div class="row-summary">${escapeHtml(job.ai_summary)}</div>` : "";
         const aiBadge = aiVerdictBadge(job);
+        const authBadge = workAuthBadge(job);
+        const grantBadge = gratificationBadge(job);
+        const preflightBadge = preflightVerdictBadge(state.preflight[job.id]);
         const tags = aiTagsHtml(job);
         const langWarn = (job.risk_flags || []).includes("LANGUAGE_MISMATCH")
           ? `<span class="badge-lang-warn" title="This job requires French — your profile is English-only">⚠ French required</span>`
@@ -614,7 +681,7 @@ function renderJobs() {
           <td><strong>${escapeHtml(job.title)}</strong>${langWarn}<br>${companyLine(job)}${summary}${tags}</td>
           <td>${escapeHtml(job.location || "")}${job.remote ? ` ${renderBadge("Remote", "good")}` : ""}</td>
           <td>${statusBadge(job.status)}</td>
-          <td>${scorePill(job.fit_score)}${aiBadge ? `<br>${aiBadge}` : ""}</td>
+          <td>${scorePill(job.fit_score)}${preflightBadge ? `<br>${preflightBadge}` : ""}${aiBadge ? `<br>${aiBadge}` : ""}${authBadge ? `<br>${authBadge}` : ""}${grantBadge ? `<br>${grantBadge}` : ""}</td>
           <td>${escapeHtml((job.tech_stack || []).slice(0, 5).join(", "))}</td>
           <td>${escapeHtml(enrichLabel)}</td>
           <td class="actions">${jobActions(job)}</td>
@@ -1095,6 +1162,22 @@ async function enrichJob(jobId, button) {
     renderState();
   } catch (error) {
     toast(error.message);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function runPreflight(jobId, button) {
+  setBusy(button, true);
+  try {
+    const payload = await api("/api/preflight", { job_id: jobId }, "POST", 60000);
+    state.preflight[jobId] = payload.preflight || {};
+    const job = state.jobs.find((item) => item.id === jobId);
+    if (job) renderEnrichmentDetails(job);
+    renderJobs();
+    toast(`Preflight: ${(state.preflight[jobId].verdict || "ready").replaceAll("_", " ")}`);
+  } catch (error) {
+    toast(`Preflight failed: ${error.message}`);
   } finally {
     setBusy(button, false);
   }
@@ -3217,7 +3300,16 @@ function bindEvents() {
   $("filterRemote").addEventListener("change", renderJobs);
   $("filterInternship").addEventListener("change", renderJobs);
   $("filterEnriched").addEventListener("change", renderJobs);
-  const extraFilters = ["filterContract", "filterRoleFamily", "filterAiVerdict", "filterMinScore", "filterLocalOnly", "filterHideRejected"];
+  const extraFilters = [
+    "filterContract",
+    "filterRoleFamily",
+    "filterAiVerdict",
+    "filterWorkAuth",
+    "filterMinScore",
+    "filterLocalOnly",
+    "filterHideSponsorship",
+    "filterHideRejected",
+  ];
   extraFilters.forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.addEventListener("change", renderJobs);
@@ -3546,6 +3638,11 @@ function bindEvents() {
   });
 
   document.body.addEventListener("click", (event) => {
+    const preflightTarget = event.target.closest("[data-action='preflight']");
+    if (preflightTarget) {
+      runPreflight(preflightTarget.dataset.job, preflightTarget);
+      return;
+    }
     const target = event.target.closest("[data-action='packet']");
     if (target) {
       generatePacket(target.dataset.job, target);

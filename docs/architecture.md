@@ -113,10 +113,17 @@ Learning loop
 - `evidence.py` builds a local `evidence_items` index from existing profile,
   master CV, and locked QA facts. It does not synthesize facts; generators and
   preflight features should query this store before adding claims or keywords.
+- `generator/evidence_map.py`, `generator/ats_gap.py`, and
+  `generator/preflight.py` turn that evidence into a per-job verdict:
+  `APPLY`, `APPLY_WITH_EDITS`, `NEEDS_MANUAL`, or `SKIP`. The dashboard
+  exposes this through `/api/preflight`, and generated packet folders include
+  `preflight.json` as a defensibility trace.
 - `work_auth.py` routes jobs by contract kind (`stage`, `alternance`, `CDI`,
   `CDD`, etc.). For non-EU student profiles, stage/alternance can be directly
   applicable when the profile explicitly contains stage/convention facts, while
   CDI/permanent roles that need sponsorship are flagged as `SPONSORSHIP_GATED`.
+- Stage gratification warnings are opt-in via `france_gratification_min_hourly`;
+  the application does not hardcode statutory thresholds that can become stale.
 
 ## Apply-mode contract
 

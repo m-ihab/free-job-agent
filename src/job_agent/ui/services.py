@@ -22,6 +22,7 @@ from job_agent.search_quality import assess_search_quality
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.schemas.packet import ApplicationPacket
 from job_agent.validators import validate_profile_bundle
+from job_agent.work_auth import check_gratification, classify_work_auth
 
 
 APP_NAME = os.environ.get("JOB_AGENT_APP_NAME", "Paris Data Career Copilot")
@@ -167,7 +168,14 @@ def _read_latex_warning(packet: "ApplicationPacket | None") -> str:
         return ""
 
 
-def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None, enrichment: dict | None = None, ai_cache: dict | None = None) -> dict[str, Any]:
+def job_to_dict(
+    job: JobListing,
+    latest_packet: ApplicationPacket | None = None,
+    enrichment: dict | None = None,
+    ai_cache: dict | None = None,
+    profile: Any | None = None,
+    config: AppConfig | None = None,
+) -> dict[str, Any]:
     enrichment = enrichment or {}
     enrichment_sources = enrichment.get("sources") or {}
     anotea = enrichment.get("anotea") or {}
@@ -188,6 +196,8 @@ def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None,
             company_display = "Employer not disclosed"
             company_source = job.company
             company_unresolved = True
+    work_auth = classify_work_auth(job, profile) if profile is not None else None
+    gratification = check_gratification(job, config) if config is not None else None
     return {
         "id": job.id,
         "short_id": job.id[:8],
@@ -239,6 +249,17 @@ def job_to_dict(job: JobListing, latest_packet: ApplicationPacket | None = None,
         "search_contract": getattr(job, "search_contract", None) or quality.get("contract") or "",
         "risk_flags": job.risk_flags or [],
         "latex_warning": _read_latex_warning(latest_packet),
+        "work_auth_class": work_auth.work_auth_class.value if work_auth else "",
+        "work_auth_contract": work_auth.contract_kind.value if work_auth else "",
+        "work_auth_blocking": work_auth.blocking if work_auth else False,
+        "work_auth_rationale": work_auth.rationale if work_auth else "",
+        "work_auth_notes": work_auth.notes if work_auth else [],
+        "gratification_warning": {
+            "flagged": gratification.flagged if gratification else False,
+            "reason": gratification.reason if gratification else "",
+            "threshold": gratification.threshold if gratification else None,
+            "observed": gratification.observed if gratification else None,
+        },
     }
 
 

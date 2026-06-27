@@ -44,7 +44,17 @@ def test_packet_generation_writes_all_promised_files(tmp_path):
     from job_agent.fingerprint import set_fingerprint
     tracker.add_job(set_fingerprint(job))
     packet = generate_packet_for_job(config, job.id)
-    expected_names = {"cv.md", "cv.tex", "cv.html", "cv.pdf", "cover_letter.md", "cover_letter.html", "cover_letter.pdf", "assistant.html"}
+    expected_names = {
+        "cv.md",
+        "cv.tex",
+        "cv.html",
+        "cv.pdf",
+        "cover_letter.md",
+        "cover_letter.html",
+        "cover_letter.pdf",
+        "assistant.html",
+        "preflight.json",
+    }
     actual_names = {Path(a.path).name for a in packet.artifacts}
     assert expected_names.issubset(actual_names)
     for artifact in packet.artifacts:
@@ -53,6 +63,8 @@ def test_packet_generation_writes_all_promised_files(tmp_path):
     assistant = Path(next(a.path for a in packet.artifacts if a.kind == "assistant_html")).read_text(encoding="utf-8")
     assert "Locked Screening Answers" in assistant
     assert "Do not require visa sponsorship" in assistant or "visa sponsorship" in assistant
+    preflight = Path(next(a.path for a in packet.artifacts if a.kind == "preflight_json")).read_text(encoding="utf-8")
+    assert '"verdict"' in preflight
 
 
 def test_cover_letter_does_not_infer_sponsorship(sample_job, sample_master_cv, sample_profile):

@@ -198,6 +198,15 @@
             </select>
           </label>
           <label>
+            Work auth
+            <select id="filterWorkAuth">
+              <option value="">Any route</option>
+              <option value="directly_applicable">Directly applicable</option>
+              <option value="sponsorship_gated">Needs sponsorship</option>
+              <option value="unknown">Verify</option>
+            </select>
+          </label>
+          <label>
             Min score
             <input id="filterMinScore" type="number" min="0" max="100" value="0" />
           </label>
@@ -205,6 +214,7 @@
           <label class="check-row"><input id="filterInternship" type="checkbox" /> Internship only</label>
           <label class="check-row"><input id="filterEnriched" type="checkbox" /> Enriched only</label>
           <label class="check-row"><input id="filterLocalOnly" type="checkbox" /> France/EU only</label>
+          <label class="check-row"><input id="filterHideSponsorship" type="checkbox" /> Hide sponsorship-gated</label>
           <label class="check-row"><input id="filterHideRejected" type="checkbox" checked /> Hide rejected</label>
         </div>
 
