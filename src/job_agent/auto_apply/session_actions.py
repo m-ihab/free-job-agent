@@ -17,6 +17,8 @@ from job_agent.auto_apply.driver import (
     _fill_linkedin,
     _fill_standard_ats,
 )
+from job_agent.auto_apply.eligibility import evaluate_apply_candidate
+from job_agent.auto_apply.session_types import ApplyMode
 from job_agent.auto_apply.session_types import ApplyEvent, ApplyResult
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,21 @@ def load_candidates(session: Any) -> list:
     if session.job_ids is not None:
         allowed = set(session.job_ids)
         candidates = [c for c in candidates if c.job.id in allowed]
+    if session.mode == ApplyMode.FULL_AUTO:
+        filtered = []
+        for candidate in candidates:
+            result = evaluate_apply_candidate(candidate, config=session.config, mode=session.mode)
+            if result.eligible:
+                filtered.append(candidate)
+                continue
+            session._emit(ApplyEvent(
+                "progress",
+                job_id=candidate.job.id,
+                packet_id=candidate.packet.id,
+                message=f"Skipping full-auto ineligible job: {', '.join(result.reasons)}",
+                data={"eligibility": result.to_dict()},
+            ))
+        candidates = filtered
     return candidates
 
 
