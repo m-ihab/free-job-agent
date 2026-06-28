@@ -30,6 +30,10 @@ class DocumentArtifact(BaseModel):
     sha256: str
     created_at: str = Field(default_factory=utc_now)
 
+    class Config:
+        anystr_strip_whitespace = True
+        extra = "forbid"
+
 
 class ScreeningAnswer(BaseModel):
     question: str
@@ -37,6 +41,10 @@ class ScreeningAnswer(BaseModel):
     source: str = "master_qa_profile"
     confidence: float = Field(default=1.0, ge=0, le=1)
     needs_review: bool = False
+
+    class Config:
+        anystr_strip_whitespace = True
+        extra = "forbid"
 
 
 class ApplicationPacket(BaseModel):
@@ -76,4 +84,4 @@ class ApplicationPacket(BaseModel):
 
     class Config:
         anystr_strip_whitespace = True
-        extra = "allow"
+        extra = "forbid"

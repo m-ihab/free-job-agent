@@ -22,7 +22,7 @@ except Exception:  # pragma: no cover
 class _Base(BaseModel):
     class Config:
         anystr_strip_whitespace = True
-        extra = "allow"
+        extra = "forbid"
 
 
 class ContactInfo(_Base):
@@ -30,6 +30,8 @@ class ContactInfo(_Base):
     email: str
     phone: Optional[str] = None
     location: Optional[str] = None
+    nationality: Optional[str] = None
+    availability: Optional[str] = None
     linkedin_url: Optional[str] = None
     github_url: Optional[str] = None
     portfolio_url: Optional[str] = None
@@ -99,6 +101,9 @@ class CandidateProfile(_Base):
     summary: str = ""
     skills: list[Skill] = Field(default_factory=list)
     languages: list[str] = Field(default_factory=list)
+    language_levels: dict[str, str] = Field(default_factory=dict)
+    language_note: str = ""
+    availability: str = ""
     work_authorizations: list[str] = Field(default_factory=list)
     work_auth_status: str = ""
     can_do_stage: bool = False

@@ -2046,12 +2046,21 @@ async function loadStudioGithubProjects() {
     const data = await api(`/api/cv-studio/asset?name=master_cv.json`);
     if (!data.ok || data.kind !== "text") return;
     let parsed;
-    try { parsed = JSON.parse(data.text); } catch { return; }
+    try {
+      parsed = JSON.parse(data.text);
+    } catch (error) {
+      console.debug("Could not parse master_cv.json for project dropdown", error);
+      setNotice("studioNotice", "Could not parse master_cv.json, so the project dropdown was not refreshed.", true);
+      return;
+    }
     const projects = (parsed.projects || []).map((p) => p.name).filter(Boolean);
     const select = document.getElementById("studioGithubProjectSelect");
     if (!select) return;
     select.innerHTML = '<option value="">— select a project —</option>' + projects.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
-  } catch {}
+  } catch (error) {
+    console.debug("Could not load Studio project list", error);
+    setNotice("studioNotice", `Could not load project list: ${error.message}`, true);
+  }
 }
 
 async function checkSinglePage() {
@@ -2553,7 +2562,12 @@ async function generatePortfolio() {
     const data = await api("/api/portfolio/generate", portfolioPayload());
     state.portfolio = data;
     // Re-read full state to refresh the controls (themes, layouts, etc.)
-    try { state.portfolio = await api("/api/portfolio"); } catch {}
+    try {
+      state.portfolio = await api("/api/portfolio");
+    } catch (refreshError) {
+      console.debug("Could not refresh portfolio state after generation", refreshError);
+      state.portfolio = data;
+    }
     setPortfolioEditors(data);
     renderPortfolioOptions(state.portfolio || data);
     toast("Portfolio regenerated locally.");
@@ -2954,7 +2968,11 @@ function subscribeAutopilotSse() {
 
 function closeAutopilotSse() {
   if (state.autopilotStream) {
-    try { state.autopilotStream.close(); } catch {}
+    try {
+      state.autopilotStream.close();
+    } catch (error) {
+      console.debug("Autopilot SSE close failed", error);
+    }
     state.autopilotStream = null;
   }
 }
@@ -2998,7 +3016,11 @@ async function stopAutopilot() {
 
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  try { localStorage.setItem("job-agent-theme", theme); } catch {}
+  try {
+    localStorage.setItem("job-agent-theme", theme);
+  } catch (error) {
+    console.debug("Could not persist dashboard theme", error);
+  }
   // Charts must be re-drawn to pick up new CSS-variable colors
   if (state.insightsCache) renderInsights(state.insightsCache);
 }
@@ -3928,7 +3950,11 @@ function subscribeAutoApplySse() {
 
 function closeAutoApplySse() {
   if (autoApplyState.stream) {
-    try { autoApplyState.stream.close(); } catch {}
+    try {
+      autoApplyState.stream.close();
+    } catch (error) {
+      console.debug("Auto-apply SSE close failed", error);
+    }
     autoApplyState.stream = null;
   }
 }

@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 
+import pytest
 
 from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile
 from job_agent.schemas.job import JobListing, JobStatus
@@ -47,8 +48,24 @@ def test_job_listing_defaults():
     assert job.remote is False
     assert job.tech_stack == []
     assert job.requirements == []
+    assert job.search_quality_flags == []
     assert job.id != ""
     assert job.created_at != ""
+
+
+def test_job_listing_accepts_declared_search_quality_metadata():
+    job = JobListing(
+        title="Data Scientist",
+        company="ACME",
+        search_quality_score=88,
+        search_role_family="data_science",
+        search_contract="stage",
+        search_quality_flags=["strong_title_match"],
+    )
+    assert job.search_quality_score == 88
+    assert job.search_role_family == "data_science"
+    assert job.search_contract == "stage"
+    assert job.search_quality_flags == ["strong_title_match"]
 
 
 def test_job_status_enum_values():
@@ -80,3 +97,46 @@ def test_candidate_profile_str_strip():
     profile = CandidateProfile(**profile_data)
     assert profile.contact.name == "Test User"
     assert profile.contact.email == "test@example.com"
+
+
+def test_candidate_profile_accepts_declared_local_metadata():
+    profile = CandidateProfile(
+        contact={
+            "name": "Test",
+            "email": "t@example.com",
+            "nationality": "Declared locally",
+            "availability": "Declared locally",
+        },
+        skills=[],
+        availability="Available for internship",
+        language_levels={"English": "C1"},
+        language_note="Learning French",
+    )
+    assert profile.contact.nationality == "Declared locally"
+    assert profile.contact.availability == "Declared locally"
+    assert profile.availability == "Available for internship"
+    assert profile.language_levels == {"English": "C1"}
+    assert profile.language_note == "Learning French"
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    [
+        (CandidateProfile, {"contact": {"name": "Test", "email": "t@example.com"}, "skills": [], "unknown": "x"}),
+        (MasterCV, {"contact": {"name": "Test", "email": "t@example.com"}, "unknown": "x"}),
+        (QAProfile, {"entries": [], "unknown": "x"}),
+        (JobListing, {"title": "Engineer", "company": "ACME", "unknown": "x"}),
+        (ApplicationPacket, {"job_id": "job-1", "unknown": "x"}),
+    ],
+)
+def test_core_schemas_reject_unknown_top_level_fields(model, payload):
+    with pytest.raises(Exception):
+        model(**payload)
+
+
+def test_candidate_nested_schemas_reject_unknown_fields():
+    with pytest.raises(Exception):
+        CandidateProfile(
+            contact={"name": "Test", "email": "t@example.com", "unknown": "x"},
+            skills=[],
+        )

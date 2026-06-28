@@ -79,10 +79,14 @@ class JobListing(BaseModel):
     fit_decision: Optional[str] = None
     fit_notes: list[str] = Field(default_factory=list)
     missing_requirements: list[str] = Field(default_factory=list)
+    search_quality_score: Optional[float] = None
+    search_role_family: Optional[str] = None
+    search_contract: Optional[str] = None
+    search_quality_flags: list[str] = Field(default_factory=list)
     notes: str = ""
     created_at: str = Field(default_factory=utc_now)
     updated_at: str = Field(default_factory=utc_now)
 
     class Config:
         anystr_strip_whitespace = True
-        extra = "allow"
+        extra = "forbid"

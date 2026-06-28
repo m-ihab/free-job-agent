@@ -45,3 +45,7 @@ def test_pull_fast_model_uses_single_progress_watcher() -> None:
     assert "window.clearInterval(state.ollamaPullWatcher)" in body
     assert "state.ollamaPullWatcher = watcher" in body
     assert "state.ollamaPullWatcher = null" in body
+
+
+def test_dashboard_does_not_swallow_empty_catches() -> None:
+    assert "catch " + "{}" not in _source()
