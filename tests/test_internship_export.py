@@ -1,10 +1,10 @@
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
+from job_agent.db.database import Database
 from job_agent.config import AppConfig
-from job_agent.exporters.internship_workbook import DEFAULT_WORKBOOK_NAME, export_applied_internships
+from job_agent.exporters.internship_workbook import DEFAULT_WORKBOOK_NAME, EXPORT_COLUMNS, export_applied_internships
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.tracker import ApplicationTracker
-from job_agent.db.database import Database
 
 
 def test_export_applied_internships_writes_only_internships(tmp_path):
@@ -62,3 +62,46 @@ def test_export_applied_internships_writes_only_internships(tmp_path):
     assert worksheet.cell(row=2, column=6).value == "Applied"
     assert worksheet.cell(row=2, column=8).value
     assert worksheet.cell(row=3, column=1).value is None
+
+
+def test_export_applied_internships_preserves_manual_workbook_columns(tmp_path):
+    profiles_dir = tmp_path / "profiles"
+    profiles_dir.mkdir()
+    config = AppConfig(data_dir=tmp_path / "data", profiles_dir=profiles_dir, outputs_dir=tmp_path / "outputs")
+    Database(config.db_path).initialize()
+    tracker = ApplicationTracker(Database(config.db_path))
+
+    job = JobListing(
+        title="Data Science Intern",
+        company="ACME",
+        description="Stage data science in Paris.",
+        location="Paris",
+        apply_url="https://example.com/jobs/1",
+        job_type="Internship",
+    )
+    tracker.add_job(job)
+    tracker.update_status(job.id, JobStatus.APPLIED, note="submitted")
+
+    workbook_path = profiles_dir / DEFAULT_WORKBOOK_NAME
+    workbook = Workbook()
+    worksheet = workbook.active
+    for column, name in enumerate(EXPORT_COLUMNS, start=1):
+        worksheet.cell(row=1, column=column, value=name.title())
+    worksheet.cell(row=1, column=len(EXPORT_COLUMNS) + 1, value="Personal Notes")
+    worksheet.cell(row=1, column=len(EXPORT_COLUMNS) + 2, value="Referral Owner")
+    worksheet.cell(row=2, column=1, value="ACME")
+    worksheet.cell(row=2, column=2, value="Data Science Intern")
+    worksheet.cell(row=2, column=3, value="https://example.com/jobs/1")
+    worksheet.cell(row=2, column=len(EXPORT_COLUMNS) + 1, value="Ask Sam for referral")
+    worksheet.cell(row=2, column=len(EXPORT_COLUMNS) + 2, value="Sam")
+    workbook.save(workbook_path)
+
+    export_applied_internships(config)
+
+    reloaded = load_workbook(workbook_path)
+    sheet = reloaded.active
+    assert sheet.cell(row=1, column=9).value == "Personal Notes"
+    assert sheet.cell(row=1, column=10).value == "Referral Owner"
+    assert sheet.cell(row=2, column=1).value == "ACME"
+    assert sheet.cell(row=2, column=9).value == "Ask Sam for referral"
+    assert sheet.cell(row=2, column=10).value == "Sam"

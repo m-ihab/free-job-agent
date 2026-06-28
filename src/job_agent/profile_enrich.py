@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from job_agent.github_handle import normalise_github_handle
+
 try:
     import requests
 except Exception:  # pragma: no cover
@@ -61,9 +63,7 @@ def _github_get(path: str, params: dict[str, Any] | None = None, timeout: int = 
 
 def fetch_github_snapshot(handle: str, *, max_repos: int = 30) -> GithubSnapshot:
     """Pull profile + repos + per-repo language byte counts."""
-    handle = (handle or "").strip().rstrip("/").rsplit("/", 1)[-1]
-    if not handle:
-        raise ValueError("GitHub handle is required.")
+    handle = normalise_github_handle(handle)
     profile = _github_get(f"/users/{handle}")
     repos_raw = _github_get(f"/users/{handle}/repos", params={"sort": "updated", "per_page": max_repos})
     repos: list[dict[str, Any]] = []

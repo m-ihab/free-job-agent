@@ -242,6 +242,11 @@ Tabs:
   Travail API request text (copy/paste-ready), internship workbook export,
   and local CV template/photo import.
 
+The internship workbook is two-way for status and safe for custom columns:
+export refreshes the generated tracker columns from SQLite, while preserving
+manual columns such as notes, referral owner, contact reminders, or school
+follow-up context on matching rows.
+
 Preflight is evidence-backed: it compares each job's must-haves and ATS
 keywords against the local evidence index. Safe keywords are only shown when
 they map to profile/CV/QA proof; unsupported role keywords appear as "do not

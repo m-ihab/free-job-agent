@@ -16,6 +16,7 @@ const state = {
   preflight: {},
   studioActiveAsset: null,
   studioActiveAssetKind: null,
+  ollamaPullWatcher: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1205,11 +1206,15 @@ async function enrichBatch(jobIds) {
     toast("No jobs selected for enrichment.");
     return;
   }
-  const payload = await api("/api/enrich-batch", { job_ids: jobIds });
-  const okCount = payload.results?.filter((row) => row.ok).length || 0;
-  toast(`Batch enrichment complete: ${okCount}/${payload.count}`);
-  await loadJobs();
-  renderState();
+  try {
+    const payload = await api("/api/enrich-batch", { job_ids: jobIds });
+    const okCount = payload.results?.filter((row) => row.ok).length || 0;
+    toast(`Batch enrichment complete: ${okCount}/${payload.count}`);
+    await loadJobs();
+    renderState();
+  } catch (error) {
+    toast(`Batch enrichment failed: ${error.message}`);
+  }
 }
 
 async function updateJobStatus(jobId, status, button) {
@@ -1834,22 +1839,40 @@ async function studioSaveDraft() {
 
 async function studioReset() {
   if (!window.confirm("Discard the working draft and reload main.tex?")) return;
-  await api("/api/cv-studio/reset", {});
-  const textarea = document.getElementById("studioTextarea");
-  if (textarea) delete textarea.dataset.dirty;
-  await loadStudio();
+  const button = document.getElementById("studioResetBtn");
+  setBusy(button, true);
+  try {
+    await api("/api/cv-studio/reset", {});
+    const textarea = document.getElementById("studioTextarea");
+    if (textarea) delete textarea.dataset.dirty;
+    await loadStudio();
+    toast("Draft discarded.");
+  } catch (error) {
+    setNotice("studioNotice", `Discard failed: ${error.message}`, true);
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 async function studioPromote() {
   if (!window.confirm("Overwrite profiles/main.tex with the current draft? A snapshot of the current version is kept.")) return;
-  const result = await api("/api/cv-studio/promote", {});
-  if (result.ok) {
-    toast("Saved draft to main.tex.");
-    if (!document.getElementById("studioVersions").classList.contains("hidden")) {
-      studioLoadVersions();
+  const button = document.getElementById("studioPromoteBtn");
+  setBusy(button, true);
+  try {
+    const result = await api("/api/cv-studio/promote", {});
+    if (result.ok) {
+      toast("Saved draft to main.tex.");
+      const versions = document.getElementById("studioVersions");
+      if (versions && !versions.classList.contains("hidden")) {
+        await studioLoadVersions();
+      }
+    } else {
+      setNotice("studioNotice", result.log || `Could not save: ${result.reason}`, true);
     }
-  } else {
-    setNotice("studioNotice", result.log || `Could not save: ${result.reason}`, true);
+  } catch (error) {
+    setNotice("studioNotice", `Save as main.tex failed: ${error.message}`, true);
+  } finally {
+    setBusy(button, false);
   }
 }
 
@@ -2165,17 +2188,27 @@ async function analyzeStudioDefensibility() {
 async function studioApplyReorder() {
   const list = document.getElementById("studioSections");
   const textarea = document.getElementById("studioTextarea");
+  const button = document.getElementById("studioReorderApplyBtn");
   if (!list || !textarea) return;
   const order = Array.from(list.querySelectorAll("li")).map((li) => li.dataset.section).filter(Boolean);
   if (!order.length) {
     toast("No reorderable sections.");
     return;
   }
-  const result = await api("/api/cv-studio/reorder", { text: textarea.value, order });
-  if (result.ok) {
-    textarea.value = result.text;
-    textarea.dataset.dirty = "1";
-    toast("Reorder applied. Click Compile preview to verify.");
+  setBusy(button, true);
+  try {
+    const result = await api("/api/cv-studio/reorder", { text: textarea.value, order });
+    if (result.ok) {
+      textarea.value = result.text;
+      textarea.dataset.dirty = "1";
+      toast("Reorder applied. Click Compile preview to verify.");
+    } else {
+      setNotice("studioNotice", result.error || "Section reorder failed.", true);
+    }
+  } catch (error) {
+    setNotice("studioNotice", `Section reorder failed: ${error.message}`, true);
+  } finally {
+    setBusy(button, false);
   }
 }
 
@@ -3083,6 +3116,10 @@ async function launchOllama() {
 
 async function pullFastModel() {
   const btn = $("pullFastModelBtn");
+  if (state.ollamaPullWatcher) {
+    window.clearInterval(state.ollamaPullWatcher);
+    state.ollamaPullWatcher = null;
+  }
   setBusy(btn, true);
   setNotice("aiSetupNotice", "Checking llama3.2:3b...");
   try {
@@ -3105,22 +3142,30 @@ async function pullFastModel() {
         if (s.state === "running") {
           setNotice("aiSetupNotice", `Downloading… ${s.last_line || ""}`);
         } else if (s.state === "success") {
-          window.clearInterval(watcher);
+          window.clearInterval(state.ollamaPullWatcher || watcher);
+          state.ollamaPullWatcher = null;
           setNotice("aiSetupNotice", "Fast chat model installed.");
+          setBusy(btn, false);
           await Promise.all([loadAiSetup(), loadAiStatus()]);
         } else if (s.state === "failed") {
-          window.clearInterval(watcher);
+          window.clearInterval(state.ollamaPullWatcher || watcher);
+          state.ollamaPullWatcher = null;
           setNotice("aiSetupNotice", `Pull failed: ${s.error || "unknown"}`, true);
+          setBusy(btn, false);
         }
       } catch (error) {
-        window.clearInterval(watcher);
+        window.clearInterval(state.ollamaPullWatcher || watcher);
+        state.ollamaPullWatcher = null;
         setNotice("aiSetupNotice", error.message, true);
+        setBusy(btn, false);
       }
     }, 2500);
+    state.ollamaPullWatcher = watcher;
   } catch (error) {
     setNotice("aiSetupNotice", error.message, true);
-  } finally {
     setBusy(btn, false);
+  } finally {
+    if (!state.ollamaPullWatcher) setBusy(btn, false);
   }
 }
 

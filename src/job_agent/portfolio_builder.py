@@ -25,6 +25,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from job_agent.github_handle import normalise_github_handle
+
 try:
     import requests
 except Exception:  # pragma: no cover
@@ -361,10 +363,11 @@ def generate_tagline(config: AppConfig) -> dict[str, Any]:
 
 
 def fetch_github_repos(handle: str, *, limit: int = 12) -> list[dict[str, Any]]:
-    handle = (handle or "").strip().rstrip("/")
-    if "/" in handle:
-        handle = handle.rsplit("/", 1)[-1]
-    if not handle or requests is None:
+    try:
+        handle = normalise_github_handle(handle)
+    except ValueError:
+        return []
+    if requests is None:
         return []
     try:
         params: dict[str, Any] = {"sort": "updated", "per_page": min(limit, 30)}

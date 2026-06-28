@@ -106,11 +106,6 @@ _PAGE_HTML = """
 
 
 def test_discover_links_filters_and_dedupes(monkeypatch):
-    monkeypatch.setattr(
-        discover.requests, "get",
-        lambda url, **k: _FakeResp(_PAGE_HTML.encode("utf-8")),
-    )
-    # _FakeResp lacks .text; give discover what it needs via a richer fake.
     class Resp:
         text = _PAGE_HTML
         status_code = 200
@@ -118,13 +113,20 @@ def test_discover_links_filters_and_dedupes(monkeypatch):
         def raise_for_status(self):
             return None
 
-    monkeypatch.setattr(discover.requests, "get", lambda url, **k: Resp())
+    calls: list[dict] = []
+
+    def _safe_get(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        return Resp()
+
+    monkeypatch.setattr(discover, "safe_get", _safe_get)
     links = discover.discover_job_links("https://co.example.com")
     assert "https://co.example.com/careers/data-scientist" in links
     assert "https://boards.greenhouse.io/x/jobs/1" in links
     # /about is not a job link; duplicate is deduped.
     assert all("/about" not in link for link in links)
     assert len(links) == len(set(links))
+    assert calls == [{"url": "https://co.example.com", "headers": discover.HEADERS, "timeout": 15}]
 
 
 def test_discover_links_respects_limit(monkeypatch):
@@ -135,7 +137,7 @@ def test_discover_links_respects_limit(monkeypatch):
         def raise_for_status(self):
             return None
 
-    monkeypatch.setattr(discover.requests, "get", lambda url, **k: Resp())
+    monkeypatch.setattr(discover, "safe_get", lambda url, **kwargs: Resp())
     links = discover.discover_job_links("https://co.example.com", limit=1)
     assert len(links) == 1
 
@@ -148,7 +150,7 @@ def test_discover_links_propagates_http_error(monkeypatch):
         def raise_for_status(self):
             raise RuntimeError("HTTP 503")
 
-    monkeypatch.setattr(discover.requests, "get", lambda url, **k: Resp())
+    monkeypatch.setattr(discover, "safe_get", lambda url, **kwargs: Resp())
     with pytest.raises(RuntimeError):
         discover.discover_job_links("https://co.example.com")
 

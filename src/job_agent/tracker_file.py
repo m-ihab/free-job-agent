@@ -1,8 +1,9 @@
 """Import status edits from the internship tracking workbook back into the DB.
 
-The exporter (:mod:`job_agent.exporters.internship_workbook`) is one-way: every
-export clears the data rows and rewrites them from the database, so a status the
-user types into Excel is lost on the next export. ``import_tracker`` closes that
+Older exporter versions were one-way: every export cleared the data rows and
+rewrote them from the database, so a status the user typed into Excel could be
+lost on the next export. The exporter now preserves manual columns, and
+``import_tracker`` closes that
 loop — it reads the workbook, matches each row back to a tracked job (by link,
 then by company+title), and applies any changed status to the database via the
 tracker. That makes the workbook a genuine two-way surface: edit in Excel, import
@@ -17,11 +18,9 @@ from openpyxl import load_workbook
 
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
-from job_agent.exporters.internship_workbook import (
-    _default_workbook_path,
-    _normalise,
-    _sheet_and_header_row,
-)
+from job_agent.exporters.internship_workbook import EXPORT_COLUMNS, _default_workbook_path
+from job_agent.exporters.internship_workbook_values import normalise_text
+from job_agent.exporters.workbook_preserve import sheet_and_header_row
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.tracker import ApplicationTracker
 
@@ -49,7 +48,7 @@ _STATUS_LABELS: dict[str, JobStatus] = {
 
 def parse_status_label(label: object) -> Optional[JobStatus]:
     """Map a human/Excel status label to a :class:`JobStatus`, or ``None``."""
-    key = _normalise(label)
+    key = normalise_text(label)
     if not key:
         return None
     if key in _STATUS_LABELS:
@@ -68,7 +67,7 @@ def _job_index(jobs: list[JobListing]) -> tuple[dict[str, JobListing], dict[tupl
         for link in (job.apply_url, job.source_url):
             if link:
                 by_link.setdefault(link.strip().casefold(), job)
-        by_company_title.setdefault((_normalise(job.company), _normalise(job.title)), job)
+        by_company_title.setdefault((normalise_text(job.company), normalise_text(job.title)), job)
     return by_link, by_company_title
 
 
@@ -88,8 +87,8 @@ def import_tracker(config: AppConfig, *, workbook_path: Path | str | None = None
 
     workbook = load_workbook(workbook_file, read_only=True, data_only=True)
     worksheet = workbook.active
-    header_row, header_map = _sheet_and_header_row(worksheet)
-    col = {name: header_map.get(_normalise(label)) for name, label in (
+    header_row, header_map = sheet_and_header_row(worksheet, EXPORT_COLUMNS)
+    col = {name: header_map.get(normalise_text(label)) for name, label in (
         ("link", "link to job"), ("company", "company name"),
         ("title", "job title"), ("status", "status"),
     )}
@@ -118,7 +117,7 @@ def import_tracker(config: AppConfig, *, workbook_path: Path | str | None = None
             continue
         job = by_link.get(link.casefold()) if link else None
         if job is None:
-            job = by_company_title.get((_normalise(company), _normalise(title)))
+            job = by_company_title.get((normalise_text(company), normalise_text(title)))
         if job is None:
             unmatched += 1
             continue
