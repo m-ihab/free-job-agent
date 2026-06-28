@@ -7,6 +7,7 @@ Database``) and every method name stay exactly as before:
   * :mod:`job_agent.db.database_jobs` — job rows (``JobsMixin``)
   * :mod:`job_agent.db.database_packets` — packet rows (``PacketsMixin``)
   * :mod:`job_agent.db.database_meta` — events, enrichment, AI cache, broken sources
+  * :mod:`job_agent.db.database_conversion` — follow-up tasks and conversion state
 
 This file keeps the connection management + schema bootstrap that the mixins
 rely on (``self._connect`` / ``initialize``).
@@ -19,6 +20,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
+from job_agent.db.database_conversion import ConversionMixin
 from job_agent.db.database_jobs import JobsMixin
 from job_agent.db.database_meta import MetaMixin
 from job_agent.db.database_packets import PacketsMixin
@@ -27,7 +29,7 @@ from job_agent.db.database_schema import MIGRATIONS, SCHEMA_SQL
 logger = logging.getLogger(__name__)
 
 
-class Database(JobsMixin, PacketsMixin, MetaMixin):
+class Database(JobsMixin, PacketsMixin, MetaMixin, ConversionMixin):
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
 

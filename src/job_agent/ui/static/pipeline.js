@@ -19,6 +19,21 @@
     </button>`;
   }
 
+  function followupRow(item) {
+    return `<div class="pipeline-row compact-row">
+      <span><strong>${escapeHtml(item.kind)}</strong><small>${escapeHtml(item.title)} &middot; ${escapeHtml(item.company)}</small></span>
+      <span>${escapeHtml(item.days_overdue)}d overdue</span>
+      <button class="ghost" data-followup-done="${escapeHtml(item.task_id)}">Done</button>
+    </div>`;
+  }
+
+  function signalRow(item) {
+    return `<div class="pipeline-row compact-row">
+      <span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.submitted)} submitted &middot; ${escapeHtml(item.interviews)} interview(s)</small></span>
+      <span>${Math.round((item.conversion_rate || 0) * 100)}%</span>
+    </div>`;
+  }
+
   function contactRow(item) {
     return `<div class="pipeline-row compact-row">
       <span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml([item.company, item.role, item.relationship].filter(Boolean).join(" Â· "))}</small></span>
@@ -48,10 +63,12 @@
   }
 
   async function load() {
-    const [today, stale, metrics] = await Promise.all([
+    const [today, stale, metrics, followups, learning] = await Promise.all([
       api("/api/pipeline/today?limit=8"),
       api("/api/pipeline/stale"),
       api("/api/pipeline/metrics"),
+      api("/api/pipeline/followups"),
+      api("/api/pipeline/learning"),
     ]);
     const metricNode = $("pipelineMetrics");
     if (metricNode) {
@@ -74,6 +91,19 @@
       staleNode.innerHTML = (stale.jobs || []).length
         ? (stale.jobs || []).map(staleRow).join("")
         : `<p class="muted">No stale jobs.</p>`;
+    }
+    const followupsNode = $("pipelineFollowups");
+    if (followupsNode) {
+      followupsNode.innerHTML = (followups.items || []).length
+        ? (followups.items || []).map(followupRow).join("")
+        : `<p class="muted">No follow-ups due.</p>`;
+    }
+    const learningNode = $("pipelineLearning");
+    if (learningNode) {
+      const signals = [...(learning.sources || []).slice(0, 4), ...(learning.skills || []).slice(0, 4)];
+      learningNode.innerHTML = signals.length
+        ? signals.map(signalRow).join("")
+        : `<p class="muted">No conversion signals yet. Submit and update outcomes to teach the queue.</p>`;
     }
     await loadContacts(false);
   }
@@ -173,6 +203,14 @@
   }
 
   document.addEventListener("click", (event) => {
+    const followup = event.target.closest("[data-followup-done]");
+    if (followup) {
+      api("/api/pipeline/followup-done", { task_id: followup.dataset.followupDone })
+        .then(() => load())
+        .then(() => toast("Follow-up marked done."))
+        .catch((error) => setNotice(error.message, true));
+      return;
+    }
     const referral = event.target.closest("[data-referral-contact]");
     if (referral) {
       draftReferral(referral.dataset.referralContact || "");

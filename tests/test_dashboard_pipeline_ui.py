@@ -23,6 +23,9 @@ def test_pipeline_js_uses_pipeline_routes():
     assert "/api/pipeline/today" in js
     assert "/api/pipeline/stale" in js
     assert "/api/pipeline/metrics" in js
+    assert "/api/pipeline/followups" in js
+    assert "/api/pipeline/learning" in js
+    assert "/api/pipeline/followup-done" in js
     assert "/api/job-notes" in js
     assert "/api/contacts" in js
     assert "/api/referrals" in js

@@ -1,10 +1,11 @@
 """Pipeline / conversion cockpit helpers."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 from job_agent.config import AppConfig
+from job_agent.conversion_learning import learned_priority_boost
 from job_agent.db.database import Database
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.timing import job_timing_signal
@@ -138,7 +139,11 @@ def build_today_queue(
     limit: int = 10,
 ) -> list[PipelineAction]:
     now = now or datetime.now(timezone.utc)
-    actions = [next_best_action(job, config, now) for job in jobs]
+    actions = [
+        replace(action, priority=action.priority + learned_priority_boost(job, jobs))
+        for job in jobs
+        for action in [next_best_action(job, config, now)]
+    ]
     actionable = [item for item in actions if item.action != "No action"]
     actionable.sort(key=lambda item: (item.priority, item.fit_score or 0), reverse=True)
     return actionable[:limit]

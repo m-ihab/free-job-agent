@@ -9,6 +9,8 @@ from job_agent.conversion import (
     detect_stale,
     get_job_notes,
 )
+from job_agent.conversion_followups import list_due_followups, sync_followup_tasks
+from job_agent.conversion_learning import learning_summary
 from job_agent.ui.route_helpers import _safe_int, _tracker
 
 
@@ -31,6 +33,23 @@ def get_pipeline_metrics(h) -> None:
     config = h._config()
     jobs = _tracker(config).list_jobs(limit=None)
     h._send_json(conversion_metrics(jobs).to_dict())
+
+
+def get_pipeline_followups(h) -> None:
+    config = h._config()
+    tracker = _tracker(config)
+    jobs = tracker.list_jobs(limit=None)
+    created = sync_followup_tasks(tracker.db, jobs)
+    h._send_json({
+        "created": created,
+        "items": [item.to_dict() for item in list_due_followups(tracker.db, jobs)],
+    })
+
+
+def get_pipeline_learning(h) -> None:
+    config = h._config()
+    jobs = _tracker(config).list_jobs(limit=None)
+    h._send_json(learning_summary(jobs))
 
 
 def get_job_notes_route(h) -> None:

@@ -24,6 +24,7 @@ from job_agent.intake.free_apis import (
     search_all_free_sources,
     search_free_api_jobs,
 )
+from job_agent.manual_reasons import categorize_manual_reason
 from job_agent.pipeline import add_job_to_tracker, generate_packet_for_job
 from job_agent.schemas.job import JobStatus
 from job_agent.timeutil import utc_now
@@ -163,6 +164,7 @@ def _needs_manual_jobs(config: AppConfig) -> list[dict]:
             if event.get("event_type") == "NEEDS_MANUAL":
                 reason = str((event.get("event_data") or {}).get("reason") or "")
         job["needs_manual_reason"] = reason
+        job["needs_manual_reason_category"] = categorize_manual_reason(reason)
     return jobs
 
 

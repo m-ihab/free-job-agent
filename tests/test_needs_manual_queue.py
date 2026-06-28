@@ -41,6 +41,7 @@ def test_needs_manual_dashboard_payload_carries_wall_reason(monkeypatch, tmp_pat
     payload = _needs_manual_jobs(config)
     assert [j["id"] for j in payload] == [job.id]
     assert payload[0]["needs_manual_reason"] == "reCAPTCHA challenge"
+    assert payload[0]["needs_manual_reason_category"]["category"] == "CAPTCHA"
 
 
 def test_needs_manual_payload_reason_blank_without_event(monkeypatch, tmp_path):
@@ -59,3 +60,4 @@ def test_needs_manual_payload_reason_blank_without_event(monkeypatch, tmp_path):
     payload = _needs_manual_jobs(config)
     assert [j["id"] for j in payload] == [job.id]
     assert payload[0]["needs_manual_reason"] == ""
+    assert payload[0]["needs_manual_reason_category"]["category"] == "UNSPECIFIED"

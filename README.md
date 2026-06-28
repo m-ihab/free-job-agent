@@ -222,8 +222,9 @@ Tabs:
   route badges, optional sponsorship-gated filtering, one-click Preflight
   verdicts, inline detail panel, and a CV preview for packet-ready roles.
 - **Pipeline:** daily next-best-action queue, freshness-aware timing signals,
-  stale-job detection, conversion metrics, local notes per job, and local
-  warm-path/referral matching.
+  auto-scheduled week-1/week-2 follow-ups, stale-job detection, conversion
+  metrics, local notes per job, local warm-path/referral matching, and a
+  learning loop that highlights which sources/skills are converting best.
 - **CV Studio:** edit the LaTeX draft, inspect profile assets in a separate
   asset editor, compile a PDF preview, swap contact icon packs, upload/remove
   the photo, add/promote GitHub projects, run the one-page guard, scan
@@ -267,10 +268,13 @@ The Pipeline tab is local conversion management: it does not submit anything.
 It forward-maps older tracker statuses into a clearer funnel (`DISCOVERED`,
 `QUALIFIED`, `PACKET_READY`, `SUBMITTED`, `INTERVIEWING`, `OFFER`, etc.),
 prioritizes today's queue, boosts fresh postings using `freshness_recent_hours`,
-flags stale jobs using `stale_days`, and stores private per-job notes in SQLite.
-Its Warm paths panel stores contacts locally, matches them to tracked jobs by
-company/role context, and drafts a grounded referral ask without scraping logged-in
-LinkedIn or sending anything automatically.
+flags stale jobs using `stale_days`, auto-creates follow-up tasks for submitted
+applications, and stores private per-job notes in SQLite. Its learning panel
+summarizes the sources and skills that are producing replies/interviews/offers
+in your own tracker, then gives the daily queue a small transparent boost for
+similar future jobs. Its Warm paths panel stores contacts locally, matches them
+to tracked jobs by company/role context, and drafts a grounded referral ask
+without scraping logged-in LinkedIn or sending anything automatically.
 
 Keyboard shortcuts (press `?` in the dashboard):
 
