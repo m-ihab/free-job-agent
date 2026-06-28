@@ -51,6 +51,7 @@ class JobsMixin:
             "fit_decision": job.fit_decision,
             "fit_notes_json": json.dumps(job.fit_notes, ensure_ascii=False),
             "missing_requirements_json": json.dumps(job.missing_requirements, ensure_ascii=False),
+            "notes": job.notes,
             "recruiter_name": job.recruiter_name,
             "recruiter_email": job.recruiter_email,
             "created_at": job.created_at,
@@ -77,6 +78,7 @@ class JobsMixin:
         d["risk_flags"] = json.loads(d.pop("risk_flags_json", "[]"))
         d["fit_notes"] = json.loads(d.pop("fit_notes_json"))
         d["missing_requirements"] = json.loads(d.pop("missing_requirements_json", "[]"))
+        d.setdefault("notes", "")
         d.setdefault("recruiter_name", None)
         d.setdefault("recruiter_email", None)
         return JobListing(**d)
@@ -145,6 +147,11 @@ class JobsMixin:
     def update_job_status(self, job_id: str, status: JobStatus) -> bool:
         with self._connect() as conn:
             cur = conn.execute("UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?", (status.value, utc_now(), job_id))
+            return cur.rowcount > 0
+
+    def update_job_notes(self, job_id: str, notes: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute("UPDATE jobs SET notes = ?, updated_at = ? WHERE id = ?", (notes, utc_now(), job_id))
             return cur.rowcount > 0
 
     def delete_job(self, job_id: str) -> None:

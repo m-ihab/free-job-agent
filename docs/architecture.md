@@ -92,8 +92,11 @@ SQLite tracker + application events
         v
 Pipeline / Conversion cockpit
   - next-best action
+  - freshness / timing urgency
   - follow-up due
   - outreach sent
+  - local referral contacts and warm paths
+  - local job notes
   - reply / interview / offer tracking
   - needs-manual queue
   - stale detection
@@ -118,12 +121,20 @@ Learning loop
   `APPLY`, `APPLY_WITH_EDITS`, `NEEDS_MANUAL`, or `SKIP`. The dashboard
   exposes this through `/api/preflight`, and generated packet folders include
   `preflight.json` as a defensibility trace.
+- `generator/proof_pack.py` turns the same preflight result into
+  `proof_pack.md`, a local recruiter/interview prep artifact with defensible
+  strengths, safe keywords, missing must-haves, and unsupported claims to avoid.
 - `work_auth.py` routes jobs by contract kind (`stage`, `alternance`, `CDI`,
   `CDD`, etc.). For non-EU student profiles, stage/alternance can be directly
   applicable when the profile explicitly contains stage/convention facts, while
   CDI/permanent roles that need sponsorship are flagged as `SPONSORSHIP_GATED`.
 - Stage gratification warnings are opt-in via `france_gratification_min_hourly`;
   the application does not hardcode statutory thresholds that can become stale.
+- `timing.py`, `referral.py`, and `conversion.py` build the local Pipeline
+  cockpit: forward status mapping, freshness-aware next-best actions, stale
+  detection, conversion metrics, private job notes, local contacts, warm-path
+  matching, and grounded referral asks. They read existing tracker/profile data
+  and do not drive browser submission.
 
 ## Apply-mode contract
 

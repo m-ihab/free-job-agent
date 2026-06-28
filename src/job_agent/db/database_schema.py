@@ -38,6 +38,7 @@ SCHEMA_SQL = """
         fit_decision TEXT,
         fit_notes_json TEXT NOT NULL DEFAULT '[]',
         missing_requirements_json TEXT NOT NULL DEFAULT '[]',
+        notes TEXT NOT NULL DEFAULT '',
         recruiter_name TEXT,
         recruiter_email TEXT,
         created_at TEXT NOT NULL,
@@ -46,6 +47,31 @@ SCHEMA_SQL = """
     CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_fingerprint_unique
         ON jobs(fingerprint) WHERE fingerprint != '';
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+
+    CREATE TABLE IF NOT EXISTS application_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id TEXT,
+        event_type TEXT NOT NULL,
+        stage TEXT NOT NULL DEFAULT '',
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_application_events_job ON application_events(job_id);
+    CREATE INDEX IF NOT EXISTS idx_application_events_stage ON application_events(stage);
+
+    CREATE TABLE IF NOT EXISTS followup_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        due_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'due',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(job_id, kind, due_at),
+        FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_followup_tasks_due ON followup_tasks(status, due_at);
 
     CREATE TABLE IF NOT EXISTS packets (
         id TEXT PRIMARY KEY,
@@ -133,6 +159,19 @@ SCHEMA_SQL = """
     );
     CREATE INDEX IF NOT EXISTS idx_evidence_kind_label ON evidence_items(kind, label);
     CREATE INDEX IF NOT EXISTS idx_evidence_source ON evidence_items(source);
+
+    CREATE TABLE IF NOT EXISTS contacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        company TEXT NOT NULL DEFAULT '',
+        role TEXT NOT NULL DEFAULT '',
+        relationship TEXT NOT NULL DEFAULT '',
+        shared_school TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT 'manual',
+        notes TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_contacts_company ON contacts(company);
 """
 
 # Additive column migrations — run after CREATE TABLE so new DBs get the column
@@ -141,4 +180,5 @@ SCHEMA_SQL = """
 MIGRATIONS = [
     "ALTER TABLE jobs ADD COLUMN recruiter_name TEXT",
     "ALTER TABLE jobs ADD COLUMN recruiter_email TEXT",
+    "ALTER TABLE jobs ADD COLUMN notes TEXT NOT NULL DEFAULT ''",
 ]

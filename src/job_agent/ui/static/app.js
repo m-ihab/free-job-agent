@@ -1628,6 +1628,7 @@ function activateTab(name) {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === name));
   document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `tab-${name}`));
   if (name === "jobs") renderJobs();
+  if (name === "pipeline" && window.JobAgentPipeline) window.JobAgentPipeline.load();
   if (name === "tracker") loadTracker();
   if (name === "insights" && !state.insightsCache) loadInsights();
   if (name === "autopilot") {

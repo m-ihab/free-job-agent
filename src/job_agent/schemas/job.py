@@ -14,6 +14,8 @@ from job_agent.timeutil import utc_now
 
 
 class JobStatus(str, Enum):
+    DISCOVERED = "DISCOVERED"
+    QUALIFIED = "QUALIFIED"
     NEW = "NEW"
     DUPLICATE = "DUPLICATE"
     FILTERED = "FILTERED"
@@ -23,13 +25,23 @@ class JobStatus(str, Enum):
     APPLYING = "APPLYING"
     NEEDS_MANUAL = "NEEDS_MANUAL"  # full-auto hit a human-presence wall; draft queued for manual apply
     ASSISTED_APPLY_OPENED = "ASSISTED_APPLY_OPENED"
+    APPLY_ATTEMPTED = "APPLY_ATTEMPTED"
     APPLIED = "APPLIED"  # kept for backward compatibility
+    SUBMITTED = "SUBMITTED"
     MANUALLY_SUBMITTED = "MANUALLY_SUBMITTED"
+    OUTREACH_DRAFTED = "OUTREACH_DRAFTED"
+    OUTREACH_SENT = "OUTREACH_SENT"
+    FOLLOWUP_DUE = "FOLLOWUP_DUE"
+    FOLLOWUP_SENT = "FOLLOWUP_SENT"
+    REPLIED = "REPLIED"
     REJECTED = "REJECTED"
     INTERVIEW = "INTERVIEW"
+    INTERVIEWING = "INTERVIEWING"
     OFFERED = "OFFERED"
+    OFFER = "OFFER"
     ACCEPTED = "ACCEPTED"
     WITHDRAWN = "WITHDRAWN"
+    STALE = "STALE"
     FAILED = "FAILED"
 
 
@@ -67,6 +79,7 @@ class JobListing(BaseModel):
     fit_decision: Optional[str] = None
     fit_notes: list[str] = Field(default_factory=list)
     missing_requirements: list[str] = Field(default_factory=list)
+    notes: str = ""
     created_at: str = Field(default_factory=utc_now)
     updated_at: str = Field(default_factory=utc_now)
 

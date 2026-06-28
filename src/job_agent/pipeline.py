@@ -22,6 +22,7 @@ from job_agent.generator.cv import tailor_cv
 from job_agent.generator.interview_prep import generate_interview_prep
 from job_agent.generator.outreach_email import generate_outreach_email
 from job_agent.generator.preflight import run_preflight
+from job_agent.generator.proof_pack import render_proof_pack_markdown
 from job_agent.generator.qa import build_screening_answers_for_job, screening_answers_to_dict
 from job_agent.hashutil import sha256_file, sha256_json
 from job_agent.intake.file import ingest_file
@@ -262,6 +263,26 @@ def _write_preflight_artifact(
         return None
 
 
+def _write_proof_pack_artifact(
+    config: AppConfig,
+    job: JobListing,
+    profile: CandidateProfile,
+    packet: ApplicationPacket,
+    out_dir: Path,
+) -> DocumentArtifact | None:
+    try:
+        evidence = EvidenceStore.load(config)
+        if not evidence.all():
+            evidence.rebuild(config)
+        preflight = run_preflight(job, profile, evidence, config, packet)
+        path = out_dir / "proof_pack.md"
+        path.write_text(render_proof_pack_markdown(job, preflight), encoding="utf-8")
+        return DocumentArtifact(kind="proof_pack_markdown", path=str(path), sha256=sha256_file(path))
+    except Exception as exc:
+        logger.warning("Could not write proof pack artifact for job %s: %s", job.id, exc)
+        return None
+
+
 def generate_packet_for_job(
     config: AppConfig,
     job_id: str,
@@ -497,6 +518,9 @@ def generate_packet_for_job(
     preflight_artifact = _write_preflight_artifact(config, job, profile, packet, out_dir)
     if preflight_artifact is not None:
         packet.artifacts.append(preflight_artifact)
+    proof_pack_artifact = _write_proof_pack_artifact(config, job, profile, packet, out_dir)
+    if proof_pack_artifact is not None:
+        packet.artifacts.append(proof_pack_artifact)
 
     # In full mode, rewrite assistant page with the finalised packet ID.
     if not fast_mode:

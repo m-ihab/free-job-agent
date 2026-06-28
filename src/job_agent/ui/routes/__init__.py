@@ -14,13 +14,17 @@ from typing import Callable
 
 from job_agent.ui.routes import (
     get_core,
+    get_pipeline,
     get_portfolio,
+    get_referral,
     post_ai,
     post_autopilot,
     post_cv_studio,
     post_generate,
     post_portfolio,
     post_preflight,
+    post_pipeline,
+    post_referral,
     post_search,
 )
 
@@ -57,6 +61,12 @@ GET_ROUTES: dict[str, Callable[[object], None]] = {
     "/api/ai-cache": get_core.get_ai_cache,
     "/api/stats": get_core.get_stats,
     "/api/export-csv": get_core.get_export_csv,
+    "/api/pipeline/today": get_pipeline.get_pipeline_today,
+    "/api/pipeline/stale": get_pipeline.get_pipeline_stale,
+    "/api/pipeline/metrics": get_pipeline.get_pipeline_metrics,
+    "/api/job-notes": get_pipeline.get_job_notes_route,
+    "/api/contacts": get_referral.get_contacts,
+    "/api/referrals": get_referral.get_referrals,
 }
 
 
@@ -82,6 +92,10 @@ POST_ROUTES: dict[str, Callable[[object, dict], None]] = {
     "/api/portfolio/import-github": post_portfolio.post_portfolio_import_github,
     "/api/portfolio/publish-guide": post_portfolio.post_portfolio_publish_guide,
     "/api/preflight": post_preflight.post_preflight,
+    "/api/next-action": post_pipeline.post_next_action,
+    "/api/job-notes": post_pipeline.post_job_notes,
+    "/api/contacts/import": post_referral.post_contacts_import,
+    "/api/referral-ask": post_referral.post_referral_ask,
     "/api/maintenance/rescan-companies": post_autopilot.post_maintenance_rescan_companies,
     "/api/maintenance/dedupe": post_autopilot.post_maintenance_dedupe,
     "/api/maintenance/validate-sources": post_autopilot.post_maintenance_validate_sources,

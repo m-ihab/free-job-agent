@@ -221,6 +221,9 @@ Tabs:
   packet generation, CSV export, color-coded score badges, work-authorization
   route badges, optional sponsorship-gated filtering, one-click Preflight
   verdicts, inline detail panel, and a CV preview for packet-ready roles.
+- **Pipeline:** daily next-best-action queue, freshness-aware timing signals,
+  stale-job detection, conversion metrics, local notes per job, and local
+  warm-path/referral matching.
 - **CV Studio:** edit the LaTeX draft, inspect profile assets in a separate
   asset editor, compile a PDF preview, swap contact icon packs, upload/remove
   the photo, add/promote GitHub projects, run the one-page guard, and scan
@@ -243,7 +246,18 @@ keywords against the local evidence index. Safe keywords are only shown when
 they map to profile/CV/QA proof; unsupported role keywords appear as "do not
 claim without proof." Generated packets also include `preflight.json` so every
 application folder has the verdict, coverage, manual blockers, and best
-evidence trace.
+evidence trace. Packet folders also include `proof_pack.md`: a recruiter and
+interview prep sheet that summarizes defensible evidence, safe keywords,
+missing must-haves, and unsupported claims to avoid.
+
+The Pipeline tab is local conversion management: it does not submit anything.
+It forward-maps older tracker statuses into a clearer funnel (`DISCOVERED`,
+`QUALIFIED`, `PACKET_READY`, `SUBMITTED`, `INTERVIEWING`, `OFFER`, etc.),
+prioritizes today's queue, boosts fresh postings using `freshness_recent_hours`,
+flags stale jobs using `stale_days`, and stores private per-job notes in SQLite.
+Its Warm paths panel stores contacts locally, matches them to tracked jobs by
+company/role context, and drafts a grounded referral ask without scraping logged-in
+LinkedIn or sending anything automatically.
 
 Keyboard shortcuts (press `?` in the dashboard):
 

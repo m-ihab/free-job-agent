@@ -890,6 +890,51 @@ html[data-theme="dark"] .detail-block {
   line-height: 1.45;
 }
 
+.pipeline-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem 0.9rem;
+  text-align: left;
+  margin: 0.45rem 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.pipeline-row:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.pipeline-row small,
+.pipeline-row em {
+  display: block;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.pipeline-row em {
+  grid-column: 1 / -1;
+  font-style: normal;
+}
+
+.pipeline-row.warn {
+  border-color: rgba(180, 83, 9, 0.32);
+}
+
+.pipeline-list {
+  margin-top: 0.7rem;
+}
+
+.compact-row {
+  padding: 0.62rem 0.75rem;
+  margin: 0.35rem 0;
+}
+
 .notice {
   border-radius: var(--radius-sm);
   padding: 0.75rem 0.95rem;

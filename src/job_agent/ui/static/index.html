@@ -21,6 +21,7 @@
     <nav class="tabs" aria-label="Main sections">
       <button class="tab active" data-tab="search">Search</button>
       <button class="tab" data-tab="jobs">Jobs</button>
+      <button class="tab" data-tab="pipeline">Pipeline</button>
       <button class="tab" data-tab="tracker">Tracker</button>
       <button class="tab" data-tab="autopilot">Autopilot</button>
       <button class="tab" data-tab="studio">CV Studio</button>
@@ -250,6 +251,68 @@
             </div>
           </aside>
         </div>
+      </section>
+
+      <section id="tab-pipeline" class="tab-panel">
+        <div class="section-header">
+          <div>
+            <h2>Pipeline cockpit</h2>
+            <p class="hint">One daily view for what to do next: apply, follow up, revive, or prepare.</p>
+          </div>
+          <div class="toolbar">
+            <button id="pipelineRefreshBtn">Refresh</button>
+          </div>
+        </div>
+        <div class="metric-grid" id="pipelineMetrics"></div>
+        <div class="split">
+          <section class="panel">
+            <h3>Today queue</h3>
+            <div id="pipelineToday"></div>
+          </section>
+          <section class="panel">
+            <h3>Stale / needs action</h3>
+            <div id="pipelineStale"></div>
+          </section>
+        </div>
+        <section class="panel">
+          <h3>Notes</h3>
+          <div class="control-grid compact">
+            <label>
+              Job ID
+              <input id="pipelineNotesJobId" placeholder="Paste a job id or click a queue item" />
+            </label>
+            <label>
+              Local notes
+              <textarea id="pipelineNotesText" rows="3" placeholder="Referral idea, follow-up context, recruiter notes..."></textarea>
+            </label>
+          </div>
+          <div class="action-row">
+            <button id="pipelineLoadNotesBtn">Load notes</button>
+            <button class="primary" id="pipelineSaveNotesBtn">Save notes</button>
+          </div>
+          <div class="notice hidden" id="pipelineNotice"></div>
+        </section>
+        <section class="panel">
+          <h3>Warm paths</h3>
+          <p class="hint">Local contact matching. Paste contacts as: name | company | role | relationship | notes.</p>
+          <div class="control-grid compact">
+            <label>
+              Contacts
+              <textarea id="pipelineContactsText" rows="4" placeholder="Amina | DataCorp | ML Engineer | alumni | met at school"></textarea>
+            </label>
+            <label>
+              Referral draft
+              <textarea id="pipelineReferralDraft" rows="4" placeholder="Click a queue item, load matches, then draft an ask."></textarea>
+            </label>
+          </div>
+          <div class="action-row">
+            <button id="pipelineImportContactsBtn">Import contacts</button>
+            <button id="pipelineLoadContactsBtn">Load contacts</button>
+            <button id="pipelineFindReferralsBtn">Find warm paths</button>
+          </div>
+          <div id="pipelineContacts" class="pipeline-list"></div>
+          <div id="pipelineReferrals" class="pipeline-list"></div>
+        </section>
       </section>
 
       <section id="tab-tracker" class="tab-panel">
@@ -1099,5 +1162,6 @@ SQL
 
     <div id="toast" class="toast hidden" role="status"></div>
     <script src="/static/app.js"></script>
+    <script src="/static/pipeline.js"></script>
   </body>
 </html>

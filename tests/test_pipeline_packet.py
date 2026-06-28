@@ -54,6 +54,7 @@ def test_packet_generation_writes_all_promised_files(tmp_path):
         "cover_letter.pdf",
         "assistant.html",
         "preflight.json",
+        "proof_pack.md",
     }
     actual_names = {Path(a.path).name for a in packet.artifacts}
     assert expected_names.issubset(actual_names)
@@ -65,6 +66,8 @@ def test_packet_generation_writes_all_promised_files(tmp_path):
     assert "Do not require visa sponsorship" in assistant or "visa sponsorship" in assistant
     preflight = Path(next(a.path for a in packet.artifacts if a.kind == "preflight_json")).read_text(encoding="utf-8")
     assert '"verdict"' in preflight
+    proof = Path(next(a.path for a in packet.artifacts if a.kind == "proof_pack_markdown")).read_text(encoding="utf-8")
+    assert "# Proof Pack" in proof
 
 
 def test_cover_letter_does_not_infer_sponsorship(sample_job, sample_master_cv, sample_profile):
