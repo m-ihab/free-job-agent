@@ -1,0 +1,36 @@
+"""Dashboard cover-letter on-demand wiring."""
+from __future__ import annotations
+
+from pathlib import Path
+
+
+APP_JS = Path("src/job_agent/ui/static/app.js")
+INDEX_HTML = Path("src/job_agent/ui/static/index.html")
+ROUTES = Path("src/job_agent/ui/routes/__init__.py")
+
+
+def test_dashboard_has_generate_letter_action():
+    js = APP_JS.read_text(encoding="utf-8")
+
+    assert 'data-action="cover-letter"' in js
+    assert "/api/cover-letter" in js
+    assert "Generate letter" in js
+
+
+def test_cover_letter_route_registered():
+    routes = ROUTES.read_text(encoding="utf-8")
+
+    assert "post_cover_letter" in routes
+    assert '"/api/cover-letter"' in routes
+
+
+def test_cv_studio_defensibility_ui_wiring():
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    js = APP_JS.read_text(encoding="utf-8")
+    routes = ROUTES.read_text(encoding="utf-8")
+
+    assert "studioDefensibilityBtn" in html
+    assert "studioDefensibilityResult" in html
+    assert "/api/cv-studio/defensibility" in js
+    assert "analyzeStudioDefensibility" in js
+    assert '"/api/cv-studio/defensibility"' in routes

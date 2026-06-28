@@ -394,6 +394,9 @@ function jobActions(job) {
   const assistant = job.assistant_page ? `<a href="${fileHref(job.assistant_page)}" target="_blank">Assistant</a>` : "";
   const cv = job.cv_pdf ? `<a href="${fileHref(job.cv_pdf)}" target="_blank">CV</a>` : "";
   const letter = job.cover_letter_pdf ? `<a href="${fileHref(job.cover_letter_pdf)}" target="_blank">Letter</a>` : "";
+  const letterButton = job.latest_packet_id && !job.cover_letter_pdf
+    ? `<button data-action="cover-letter" data-job="${escapeHtml(job.id)}" title="Generate the cover letter only if you actually need it">Generate letter</button>`
+    : "";
   const submitted = job.status === "MANUALLY_SUBMITTED" ? "" : `<button data-action="status" data-status="MANUALLY_SUBMITTED" data-job="${escapeHtml(job.id)}" title="Mark as manually submitted">Submitted</button>`;
   const rejected = job.status === "REJECTED" ? "" : `<button data-action="status" data-status="REJECTED" data-job="${escapeHtml(job.id)}" title="Mark as rejected">Reject</button>`;
   const remove = `<button data-action="delete-job" data-job="${escapeHtml(job.id)}" title="Remove this job from the local tracker">Remove</button>`;
@@ -408,7 +411,7 @@ function jobActions(job) {
     <button data-action="ai-analyze" data-job="${escapeHtml(job.id)}" title="AI fit analysis">AI fit</button>
     <button data-action="ai-chat" data-job="${escapeHtml(job.id)}" title="Chat about this role">Chat</button>
     <button data-action="enrich" data-job="${escapeHtml(job.id)}" title="Enrich with France Travail data">Enrich</button>
-    ${submitted}${rejected}${remove}
+    ${letterButton}${submitted}${rejected}${remove}
     ${apply}${assistant}${cv}${letter}
   </div>`;
 }
@@ -1104,10 +1107,10 @@ function openOutreachModal(payload) {
 async function generatePacket(jobId, button) {
   const force = $("forcePackets") ? $("forcePackets").checked : false;
   setBusy(button, true);
-  toast("Tailoring CV + cover letter…");
+  toast("Tailoring application packet…");
   try {
     const payload = await api("/api/generate-packet", { job_id: jobId, force });
-    toast(`Packet ready: open the CV / Letter links on this row.`);
+    toast("Packet ready: open the available document links on this row.");
     await loadJobs();
     renderState();
     return payload;
@@ -1162,6 +1165,20 @@ async function enrichJob(jobId, button) {
     renderState();
   } catch (error) {
     toast(error.message);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function generateCoverLetter(jobId, button) {
+  setBusy(button, true);
+  try {
+    await api("/api/cover-letter", { job_id: jobId }, "POST", 120000);
+    toast("Cover letter generated.");
+    await loadJobs();
+    renderState();
+  } catch (error) {
+    toast(`Cover letter failed: ${error.message}`);
   } finally {
     setBusy(button, false);
   }
@@ -2102,6 +2119,42 @@ async function analyzeStudioAtsKeywords() {
       <p class="muted" style="margin:0.5rem 0 0.25rem">Present</p><div class="chips">${chips || "<span class='muted'>None yet.</span>"}</div>
       <p class="muted" style="margin:0.7rem 0 0.25rem">Missing / optional</p><div class="chips">${missing || "<span class='muted'>No obvious gaps.</span>"}</div>
       <ol class="coach-list" style="margin-top:0.7rem">${suggestions}</ol>`;
+  } catch (error) {
+    target.innerHTML = `<span class="notice error">${escapeHtml(error.message)}</span>`;
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function analyzeStudioDefensibility() {
+  const button = document.getElementById("studioDefensibilityBtn");
+  const textarea = document.getElementById("studioTextarea");
+  const target = document.getElementById("studioDefensibilityResult");
+  if (!textarea || !target) return;
+  setBusy(button, true);
+  target.innerHTML = "Checking claims against local evidence...";
+  try {
+    const result = await api("/api/cv-studio/defensibility", { text: textarea.value });
+    if (!result.ok) {
+      target.innerHTML = `<span class="notice error">${escapeHtml(result.reason || "Defensibility check failed")}</span>`;
+      return;
+    }
+    const badgeClass = result.score >= 85 ? "good" : (result.score >= 65 ? "warn" : "bad");
+    const unbacked = (result.unbacked_lines || []).slice(0, 8).map((row) => `<li>
+      <div>
+        <span class="coach-title">Line ${escapeHtml(row.line)}: ${escapeHtml(row.text)}</span>
+        <span class="coach-sub">${escapeHtml(row.reason || "No strong local evidence match found.")}</span>
+      </div>
+      <strong>fix</strong>
+    </li>`).join("");
+    const backed = (result.backed_lines || []).slice(0, 5).map((row) => `<span class="chip good" title="line ${escapeHtml(row.line)}">${escapeHtml(row.text.slice(0, 56))}${row.text.length > 56 ? "..." : ""}</span>`).join("");
+    target.innerHTML = `
+      <div><span class="badge ${badgeClass}">${escapeHtml(result.score)}% defensible</span>
+      <span class="muted">${escapeHtml(result.backed)} backed / ${escapeHtml(result.checked)} checked</span></div>
+      <p class="muted" style="margin:0.6rem 0 0.25rem">Backed evidence</p>
+      <div class="chips">${backed || "<span class='muted'>No claim-like lines detected yet.</span>"}</div>
+      <p class="muted" style="margin:0.8rem 0 0.25rem">Needs evidence or softer wording</p>
+      <ol class="coach-list" style="margin-top:0.4rem">${unbacked || "<li><div><span class='coach-title'>Everything checked is supported.</span></div><strong>ok</strong></li>"}</ol>`;
   } catch (error) {
     target.innerHTML = `<span class="notice error">${escapeHtml(error.message)}</span>`;
   } finally {
@@ -3459,6 +3512,8 @@ function bindEvents() {
   if (studioAutoFitBtn) studioAutoFitBtn.addEventListener("click", autoFitStudioDraft);
   const studioAtsBtn = document.getElementById("studioAtsBtn");
   if (studioAtsBtn) studioAtsBtn.addEventListener("click", analyzeStudioAtsKeywords);
+  const studioDefensibilityBtn = document.getElementById("studioDefensibilityBtn");
+  if (studioDefensibilityBtn) studioDefensibilityBtn.addEventListener("click", analyzeStudioDefensibility);
   const studioAssetTextarea = document.getElementById("studioAssetTextarea");
   if (studioAssetTextarea) studioAssetTextarea.addEventListener("input", () => { studioAssetTextarea.dataset.dirty = "1"; });
   const studioProjectAddBtn = document.getElementById("studioProjectAddBtn");
@@ -3647,6 +3702,11 @@ function bindEvents() {
     const target = event.target.closest("[data-action='packet']");
     if (target) {
       generatePacket(target.dataset.job, target);
+      return;
+    }
+    const coverLetterTarget = event.target.closest("[data-action='cover-letter']");
+    if (coverLetterTarget) {
+      generateCoverLetter(coverLetterTarget.dataset.job, coverLetterTarget);
       return;
     }
     const enrichTarget = event.target.closest("[data-action='enrich']");

@@ -124,6 +124,12 @@ Learning loop
 - `generator/proof_pack.py` turns the same preflight result into
   `proof_pack.md`, a local recruiter/interview prep artifact with defensible
   strengths, safe keywords, missing must-haves, and unsupported claims to avoid.
+- `cv_studio_defensibility.py` runs the same grounding principle inside CV
+  Studio by checking the editable LaTeX draft against local evidence before it
+  is promoted to `main.tex`.
+- `cover_letter_gate.py` decides when a cover letter is worth auto-generating
+  and exposes on-demand generation for lower-fit generic roles. This keeps the
+  packet path lighter while preserving formal/stage/alternance coverage.
 - `work_auth.py` routes jobs by contract kind (`stage`, `alternance`, `CDI`,
   `CDD`, etc.). For non-EU student profiles, stage/alternance can be directly
   applicable when the profile explicitly contains stage/convention facts, while

@@ -67,6 +67,7 @@ from job_agent.cv_studio_fit import (  # noqa: F401  (public re-export seam)
     single_page_guard,
 )
 from job_agent.cv_studio_ats import ats_keyword_radar  # noqa: F401  (public re-export seam)
+from job_agent.cv_studio_defensibility import defensibility_report  # noqa: F401  (public re-export seam)
 
 __all__ = [
     "load_studio",
@@ -83,6 +84,7 @@ __all__ = [
     "swap_studio_sections",
     "auto_fit_one_page",
     "ats_keyword_radar",
+    "defensibility_report",
     "single_page_guard",
     "list_assets",
     "read_asset",

@@ -226,8 +226,9 @@ Tabs:
   warm-path/referral matching.
 - **CV Studio:** edit the LaTeX draft, inspect profile assets in a separate
   asset editor, compile a PDF preview, swap contact icon packs, upload/remove
-  the photo, add/promote GitHub projects, run the one-page guard, and scan
-  ATS keyword coverage.
+  the photo, add/promote GitHub projects, run the one-page guard, scan
+  ATS keyword coverage, and audit whether CV claims are backed by local
+  evidence before saving to `main.tex`.
 - **Portfolio:** generate a local static portfolio, preview it, edit the
   HTML/CSS, switch themes and fonts, export ZIP, and create a publish
   checklist.
@@ -249,6 +250,13 @@ application folder has the verdict, coverage, manual blockers, and best
 evidence trace. Packet folders also include `proof_pack.md`: a recruiter and
 interview prep sheet that summarizes defensible evidence, safe keywords,
 missing must-haves, and unsupported claims to avoid.
+
+Cover letters are intentionally on-demand for lower-fit generic roles. Packet
+generation auto-includes a cover letter when the fit score meets
+`cover_letter_auto_threshold` or the job matches an always-context such as
+`stage`, `alternance`, `bank`, or `formal_fr`. Otherwise the dashboard shows
+**Generate letter** after the CV/proof packet exists, saving time and local AI
+work until a letter is actually useful.
 
 The Pipeline tab is local conversion management: it does not submit anything.
 It forward-maps older tracker statuses into a clearer funnel (`DISCOVERED`,
@@ -286,6 +294,13 @@ If you add a team project that is not under your own GitHub account, use
 **Import a GitHub project -> Add / update a project locally**, then promote it.
 The project is saved only in your local `profiles/master_cv.json`, and the
 active Studio draft is updated immediately so **Compile preview** shows it.
+
+Use **Evidence guard** before promoting the draft. It reads the current LaTeX
+editor, extracts claim-like lines, and compares them with the local evidence
+store built from `candidate_profile.json`, `master_cv.json`, and locked QA
+answers. Unsupported numbers such as fake percentages are flagged first. Fix
+those by softening the wording or adding real local evidence; do not invent
+metrics just to make the score green.
 
 ### Portfolio Builder
 

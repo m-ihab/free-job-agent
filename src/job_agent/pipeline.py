@@ -12,6 +12,7 @@ from job_agent.ai_agent import (
     summarize_job,
 )
 from job_agent.config import AppConfig
+from job_agent.cover_letter_gate import should_generate_cover_letter
 from job_agent.db.database import Database
 from job_agent.evidence import EvidenceStore
 from job_agent.filters import FilterConfig, apply_filters
@@ -394,7 +395,8 @@ def generate_packet_for_job(
         master_cv=master_cv,
         profile=profile,
     )
-    letter_md = generate_cover_letter(job, master_cv, profile)
+    include_cover_letter = should_generate_cover_letter(job, job.fit_score, config)
+    letter_md = generate_cover_letter(job, master_cv, profile) if include_cover_letter else ""
     screening_answers = build_screening_answers_for_job(job, qa_profile)
     qa_answers = screening_answers_to_dict(screening_answers)
     needs_screening_review = any(answer.needs_review for answer in screening_answers)
@@ -405,7 +407,7 @@ def generate_packet_for_job(
         outreach_md = generate_outreach_email(job, master_cv, profile)
         interview_md = generate_interview_prep(job, master_cv, profile)
         cv_html = render_html(cv_md, title=f"CV - {job.title}")
-        letter_html = render_html(letter_md, title=f"Cover Letter - {job.title}")
+        letter_html = render_html(letter_md, title=f"Cover Letter - {job.title}") if letter_md else ""
     else:
         outreach_md = ""
         interview_md = ""
@@ -452,11 +454,15 @@ def generate_packet_for_job(
         cv_pdf_artifact, latex_warning = _write_cv_pdf(cv_md, cv_tex_path, cv_pdf_path, master_cv_pdf=master_cv_pdf)
         artifacts.append(cv_pdf_artifact)
 
-    artifacts.append(_write_text(letter_md_path, letter_md))
+    if letter_md:
+        artifacts.append(_write_text(letter_md_path, letter_md))
 
-    if not fast_mode:
+    if not fast_mode and letter_md:
         artifacts.append(_write_text(letter_html_path, letter_html))
         artifacts.append(_write_pdf(letter_md, letter_pdf_path, "cover_letter_pdf", "Cover Letter"))
+        artifacts.append(_write_text(out_dir / "outreach_email.md", outreach_md))
+        artifacts.append(_write_text(out_dir / "interview_prep.md", interview_md))
+    elif not fast_mode:
         artifacts.append(_write_text(out_dir / "outreach_email.md", outreach_md))
         artifacts.append(_write_text(out_dir / "interview_prep.md", interview_md))
 
@@ -508,7 +514,7 @@ def generate_packet_for_job(
         tailored_cv_pdf_path=str(cv_pdf_path),
         cover_letter_md=letter_md,
         cover_letter_html=letter_html,
-        cover_letter_pdf_path=str(letter_pdf_path) if not fast_mode else "",
+        cover_letter_pdf_path=str(letter_pdf_path) if (letter_md and not fast_mode) else "",
         qa_answers=qa_answers,
         assistant_page_html=assistant_html,
         headline=brief["headline"],

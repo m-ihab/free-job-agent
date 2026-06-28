@@ -27,6 +27,7 @@ def _copy_profiles(tmp_path: Path) -> AppConfig:
 
 def test_packet_generation_writes_all_promised_files(tmp_path):
     config = _copy_profiles(tmp_path)
+    config.cover_letter_auto_threshold = 0
     db = Database(config.db_path)
     db.initialize()
     tracker = ApplicationTracker(db)

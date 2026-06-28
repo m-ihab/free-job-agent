@@ -6,6 +6,7 @@ from job_agent.cv_studio import (
     auto_fit_one_page as _studio_auto_fit,
     apply_icon_pack as _studio_apply_icon_pack,
     compile_preview as _studio_compile_preview,
+    defensibility_report as _studio_defensibility,
     import_github_project as _studio_import_project,
     list_main_versions as _studio_list_versions,
     promote_draft_to_main as _studio_promote_main,
@@ -79,6 +80,11 @@ def post_ats_keywords(h, payload) -> None:
     text = str(payload.get("text") or "")
     role = str(payload.get("role") or "data_scientist")
     h._send_json(_studio_ats_radar(h._config(), text, role))
+
+
+def post_defensibility(h, payload) -> None:
+    text = payload.get("text")
+    h._send_json(_studio_defensibility(h._config(), text if isinstance(text, str) else None))
 
 
 def post_save(h, payload) -> None:

@@ -502,6 +502,23 @@ def test_cv_studio_ats_keywords_success(server, monkeypatch):
     assert payload["role"] == "ml_engineer"
 
 
+def test_cv_studio_defensibility_route_success(server, monkeypatch):
+    from job_agent.ui.routes import post_cv_studio
+
+    monkeypatch.setattr(
+        post_cv_studio, "_studio_defensibility",
+        lambda config, text=None: {"ok": True, "score": 91, "echoed": text},
+    )
+    port, token, _ = server
+
+    status, payload = _post(
+        port, token, "/api/cv-studio/defensibility", {"text": "candidate claim"}
+    )
+    assert status == 200
+    assert payload["score"] == 91
+    assert payload["echoed"] == "candidate claim"
+
+
 def test_cv_studio_compile_calls_preview(server, monkeypatch):
     from job_agent.ui.routes import post_cv_studio
 
