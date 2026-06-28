@@ -291,22 +291,22 @@ def run_server(
             "fetch URLs, so exposing it to the network is opt-in."
         )
     if not is_loopback_host(host):
-        print(
+        logger.warning(
             "WARNING: binding a non-loopback host exposes this dashboard "
             "(auto-apply, URL fetch, job data) to your network."
         )
     config = configured_app()
     server = JobAgentServer((host, port), JobAgentHandler, config)
     url = f"http://{host}:{port}"
-    print(f"Starting {APP_NAME} at {url}")
-    print(f"Data: {config.data_dir}")
-    print("Press Ctrl+C to stop.")
+    logger.info("Starting %s at %s", APP_NAME, url)
+    logger.info("Data: %s", config.data_dir)
+    logger.info("Press Ctrl+C to stop.")
     if open_browser:
         webbrowser.open(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping job-agent UI.")
+        logger.info("Stopping job-agent UI.")
     finally:
         server.server_close()
 

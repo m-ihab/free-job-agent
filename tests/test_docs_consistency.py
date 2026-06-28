@@ -9,9 +9,14 @@ DOCS = [
     Path("AGENTS.md"),
     Path("PLAN.md"),
     Path("SESSION-HISTORY.md"),
+    Path("docs/AI-TOOLING.md"),
+    Path("docs/architecture.md"),
     Path("docs/FULL_AUTO_CONTRACT.md"),
-    Path("docs/SECURITY-AUDIT.md"),
+    Path("docs/france_market.md"),
+    Path("docs/free_sources.md"),
     Path("docs/HEALTH-REPORT.md"),
+    Path("docs/merge_notes.md"),
+    Path("docs/SECURITY-AUDIT.md"),
 ]
 
 BLOCKED = [

@@ -46,6 +46,7 @@ def _click_postuler(page: Any) -> str | None:
                 new_url = page.url
                 return _detect_ats(new_url) or None
         except Exception:
+            logger.debug("France Travail apply-button probe failed for selector %s", sel, exc_info=True)
             continue
     return None
 
@@ -207,4 +208,5 @@ def _screenshot_b64(page: Any) -> str:
         data = page.screenshot(type="png")
         return base64.b64encode(data).decode("ascii")
     except Exception:
+        logger.debug("Auto-apply screenshot capture failed", exc_info=True)
         return ""

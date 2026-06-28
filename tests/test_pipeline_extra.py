@@ -8,6 +8,7 @@ status/history/enrichment/delete paths.
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 
 import pytest
 
@@ -141,6 +142,40 @@ def test_generate_packet_for_job_blocks_duplicate_without_force(config, sample_p
 def test_generate_packet_for_job_unknown_job_raises(config):
     with pytest.raises(ValueError, match="Job not found"):
         pipeline.generate_packet_for_job(config, "no-such-id")
+
+
+def test_generate_packet_logs_ai_future_failures(
+    config,
+    sample_profile,
+    sample_master_cv,
+    sample_qa_profile,
+    monkeypatch,
+    caplog,
+):
+    job, _ = pipeline.add_job_to_tracker(config, _job())
+    config.cover_letter_auto_threshold = 101
+
+    def _raise_ai(*args, **kwargs):
+        raise RuntimeError("local ai exploded")
+
+    monkeypatch.setattr(pipeline, "analyze_fit", _raise_ai)
+    monkeypatch.setattr(pipeline, "classify_job", _raise_ai)
+    monkeypatch.setattr(pipeline, "summarize_job", _raise_ai)
+
+    caplog.set_level(logging.WARNING, logger="job_agent.pipeline")
+
+    packet = pipeline.generate_packet_for_job(
+        config,
+        job.id,
+        fast_mode=True,
+        profile_bundle=(sample_profile, sample_master_cv, sample_qa_profile),
+    )
+
+    assert packet.job_id == job.id
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "AI fit analysis failed" in messages
+    assert "AI job classification failed" in messages
+    assert "AI job summary failed" in messages
 
 
 # ── tracker behaviour ────────────────────────────────────────────────────────

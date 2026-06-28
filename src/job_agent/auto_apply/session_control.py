@@ -93,6 +93,11 @@ def start(
     global _active, _state
     from job_agent.auto_apply.session import AutoApplySession
 
+    try:
+        apply_mode = ApplyMode(mode)
+    except ValueError:
+        return {"ok": False, "error": f"Unsupported auto-apply mode: {mode}"}
+
     with _session_lock:
         if _state["running"]:
             return {"ok": False, "error": "A session is already running."}
@@ -112,7 +117,7 @@ def start(
 
         _active = AutoApplySession(
             config=config,
-            mode=ApplyMode(mode),
+            mode=apply_mode,
             min_score=min_score,
             limit=limit,
             job_ids=job_ids if job_ids else None,

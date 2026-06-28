@@ -16,6 +16,7 @@ import io
 import json
 import threading
 from contextlib import closing
+import inspect
 
 import pytest
 
@@ -106,6 +107,12 @@ def test_run_server_loopback_does_not_trip_guard(monkeypatch):
 
     assert constructed["addr"] == ("127.0.0.1", 8765)
     assert constructed["closed"] is True
+
+
+def test_run_server_uses_logging_not_prints():
+    source = inspect.getsource(server_mod.run_server)
+    assert "print(" not in source
+    assert "logger." in source
 
 
 def test_main_parses_args_and_calls_run_server(monkeypatch):

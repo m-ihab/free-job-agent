@@ -18,6 +18,7 @@ this module's namespace — the seam the coach tests monkeypatch.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from job_agent.coach_catalog import _COACH_PROMPT
@@ -47,6 +48,8 @@ from job_agent.coach_suggestions import (  # noqa: F401  (re-export)
 from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.validators import load_profile_bundle
+
+logger = logging.getLogger(__name__)
 
 try:
     from job_agent.ai_agent import (
@@ -125,7 +128,7 @@ def build_coach_plan(config: AppConfig) -> dict[str, Any]:
                         ]
                     plan["source"] = "ai"
         except Exception:
-            pass
+            logger.warning("Career Coach AI polish failed; using deterministic plan.", exc_info=True)
 
     if not plan["headline"]:
         if gaps:

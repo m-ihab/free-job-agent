@@ -26,8 +26,10 @@ from job_agent.auto_apply.driver import _field_label
 from job_agent.auto_apply.driver import (
     _AUTO_APPLY_PROFILE_ENV,
     _USE_REAL_CHROME_PROFILE_ENV,
+    _click_postuler,
     _click_submit,
     _fill_visible_fields,
+    _screenshot_b64,
 )
 
 
@@ -274,6 +276,44 @@ def test_click_submit_logs_click_failures(caplog):
         assert _click_submit(PageWithFailingSubmit(), "greenhouse") is False
 
     assert any("Auto-apply submit click failed" in rec.message for rec in caplog.records)
+
+
+def test_click_postuler_logs_button_probe_failures(caplog):
+    class FailingApplyLocator:
+        @property
+        def first(self):
+            return self
+
+        def count(self) -> int:
+            return 1
+
+        def is_visible(self) -> bool:
+            return True
+
+        def click(self) -> None:
+            raise RuntimeError("apply click intercepted")
+
+    class PageWithFailingApplyButton:
+        url = "https://candidat.francetravail.fr/offres/recherche/detail/123"
+
+        def locator(self, _selector: str):
+            return FailingApplyLocator()
+
+    with caplog.at_level(logging.DEBUG, logger="job_agent.auto_apply.driver_fill"):
+        assert _click_postuler(PageWithFailingApplyButton()) is None
+
+    assert any("France Travail apply-button probe failed" in rec.message for rec in caplog.records)
+
+
+def test_screenshot_b64_logs_capture_failures(caplog):
+    class PageWithFailingScreenshot:
+        def screenshot(self, **_kwargs):
+            raise RuntimeError("screenshot failed")
+
+    with caplog.at_level(logging.DEBUG, logger="job_agent.auto_apply.driver_fill"):
+        assert _screenshot_b64(PageWithFailingScreenshot()) == ""
+
+    assert any("Auto-apply screenshot capture failed" in rec.message for rec in caplog.records)
 
 
 # ── _build_summary ────────────────────────────────────────────────────────────

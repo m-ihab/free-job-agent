@@ -13,6 +13,7 @@ from job_agent.auto_apply import (
     AutoApplySession,
     get_candidates_preview,
 )
+from job_agent.auto_apply import session_control
 from job_agent.config import AppConfig
 from job_agent.schemas.candidate import CandidateProfile, ContactInfo
 
@@ -124,6 +125,27 @@ def test_auto_apply_session_accepts_job_id_filter(tmp_path):
     assert "job_aaa" in ids
     assert "job_bbb" in ids
     assert "job_ccc" not in ids
+
+
+def test_auto_apply_start_rejects_invalid_mode_without_poisoning_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        session_control,
+        "_state",
+        {
+            "running": False,
+            "mode": "fill_and_confirm",
+            "started_at": None,
+            "results_count": {"submitted": 0, "skipped": 0, "errors": 0},
+            "error": None,
+        },
+    )
+    monkeypatch.setattr(session_control, "_active", None)
+
+    result = session_control.start(_config(tmp_path), "submit_everything", 70, 5)
+
+    assert result["ok"] is False
+    assert "Unsupported auto-apply mode" in result["error"]
+    assert session_control.get_state()["running"] is False
 
 
 # ── Phase 6: contact info injected into QA ───────────────────────────────────

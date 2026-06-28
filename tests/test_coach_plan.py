@@ -7,6 +7,7 @@ orchestrator with the AI path disabled so the deterministic plan is exercised.
 from __future__ import annotations
 
 from datetime import date
+import logging
 from pathlib import Path
 
 import job_agent.coach as coach
@@ -213,6 +214,20 @@ def test_build_coach_plan_includes_gap_driven_sections_with_jobs(tmp_path, monke
     market_names = {m["name"] for m in plan["market_skills"]}
     assert "MLOps" in market_names or "Kubernetes" in market_names
     assert plan["total_tracked"] == 3
+
+
+def test_build_coach_plan_logs_ai_polish_failure(tmp_path, monkeypatch, caplog):
+    config = _make_config(tmp_path)
+    _seed_profile_bundle(config)
+    monkeypatch.setattr(coach, "_ai_is_available", lambda *a, **k: True)
+    monkeypatch.setattr(coach, "_ai_call_json", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("coach ai down")))
+    caplog.set_level(logging.WARNING, logger="job_agent.coach")
+
+    plan = build_coach_plan(config)
+
+    assert plan["source"] == "deterministic"
+    assert plan["headline"]
+    assert "Career Coach AI polish failed" in caplog.text
 
 
 # --- regression: no profile bundle must not crash (WP-9) ------------------

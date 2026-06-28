@@ -356,14 +356,17 @@ def generate_packet_for_job(
         try:
             fit_analysis = f_fit.result()
         except Exception:
+            logger.warning("AI fit analysis failed for job %s; continuing without it.", job.id, exc_info=True)
             fit_analysis = None
         try:
             classification = f_cls.result()
         except Exception:
+            logger.warning("AI job classification failed for job %s; continuing without it.", job.id, exc_info=True)
             classification = None
         try:
             tldr = f_tldr.result()
         except Exception:
+            logger.warning("AI job summary failed for job %s; continuing without it.", job.id, exc_info=True)
             tldr = None
 
     if fit_analysis is not None:

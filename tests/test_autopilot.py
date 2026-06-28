@@ -6,6 +6,7 @@ summary correctly.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -203,13 +204,14 @@ def test_run_cycle_filters_dead_board_noise_from_errors(tmp_path, monkeypatch):
 # ── _planned_queries ──────────────────────────────────────────────────────────
 
 
-def test_planned_queries_dedupe_and_cap(tmp_path, monkeypatch):
+def test_planned_queries_dedupe_and_cap(tmp_path, monkeypatch, caplog):
     pilot = Autopilot(_config(tmp_path), AutopilotConfig(queries=["data scientist"]))
     monkeypatch.setattr(ap, "expand_role_family", lambda seed: [seed, "data engineer"])
     monkeypatch.setattr(ap, "expand_france_search_queries",
                         lambda seed, limit, language: ["stage data", "data scientist"])
-    # AI plan unreachable -> falls into the except branch quietly.
+    # AI plan unreachable -> deterministic fallback still works, with a log breadcrumb.
     monkeypatch.setattr(ap, "load_profile_bundle", lambda config: (_ for _ in ()).throw(RuntimeError()))
+    caplog.set_level(logging.WARNING, logger="job_agent.autopilot_queries")
 
     planned = pilot._planned_queries()
 
@@ -217,6 +219,7 @@ def test_planned_queries_dedupe_and_cap(tmp_path, monkeypatch):
     assert "data engineer" in planned
     assert len(planned) == len(set(p.casefold() for p in planned))  # no dupes
     assert len(planned) <= 24
+    assert "Autopilot AI query planning failed" in caplog.text
 
 
 def test_planned_queries_includes_ai_suggestions(tmp_path, monkeypatch):

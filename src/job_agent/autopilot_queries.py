@@ -7,12 +7,14 @@ the :mod:`job_agent.autopilot` module object so the autopilot tests'
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import job_agent.autopilot as ap
 
 # Hard cap so cycles stay reasonably fast.
 _MAX_PLANNED_QUERIES = 24
+logger = logging.getLogger(__name__)
 
 
 def plan_queries(pilot: Any) -> list[str]:
@@ -58,7 +60,7 @@ def plan_queries(pilot: Any) -> list[str]:
             for query in plan.get("queries", []):
                 _add(str(query))
     except Exception:
-        pass
+        logger.warning("Autopilot AI query planning failed; using deterministic query expansion.", exc_info=True)
 
     # 3) French stage/alternance variants as the final safety net.
     for seed in pilot.opts.queries[:4]:
