@@ -143,7 +143,9 @@ function renderState() {
     renderBadge(`${state.jobs.length} jobs`, "good"),
   ].filter(Boolean).join("");
   const themeButton = document.getElementById("themeToggleBtn");
+  const cmdkButton = document.getElementById("cmdkOpenBtn");
   $("statusStrip").innerHTML = badgesHtml;
+  if (cmdkButton) $("statusStrip").prepend(cmdkButton);
   if (themeButton) $("statusStrip").appendChild(themeButton);
 
   $("statusFilter").innerHTML = `<option value="">All statuses</option>${state.statuses
@@ -3026,11 +3028,13 @@ function applyTheme(theme) {
 }
 
 function initTheme() {
-  let theme = "light";
+  // Dark-first: the premium glass direction is designed dark; light remains a
+  // deliberate "frosted daylight" variant for users who prefer it.
+  let theme = "dark";
   try {
-    theme = localStorage.getItem("job-agent-theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    theme = localStorage.getItem("job-agent-theme") || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
   } catch {
-    theme = "light";
+    theme = "dark";
   }
   applyTheme(theme);
 }

@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Paris Data Career Copilot</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235e6ad2'/%3E%3Cpath d='M16 7l7 5v8l-7 5-7-5v-8z' fill='none' stroke='white' stroke-width='2.4'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/static/app.css" />
     <script src="/static/vendor/chart.umd.min.js" defer></script>
   </head>
@@ -13,27 +14,72 @@
         <h1>Paris Data Career Copilot</h1>
       </div>
       <div class="status-strip" id="statusStrip">
+        <button class="cmdk-btn" id="cmdkOpenBtn" title="Command palette" aria-label="Open command palette">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          Search anything… <kbd>Ctrl K</kbd>
+        </button>
         <span class="muted kbd-hint">Press <kbd>?</kbd> for shortcuts</span>
         <button class="theme-toggle ghost" id="themeToggleBtn" title="Toggle dark mode" aria-label="Toggle theme">Theme</button>
       </div>
     </header>
 
     <nav class="tabs" aria-label="Main sections">
-      <button class="tab active" data-tab="search">Search</button>
-      <button class="tab" data-tab="jobs">Jobs</button>
-      <button class="tab" data-tab="pipeline">Pipeline</button>
-      <button class="tab" data-tab="tracker">Tracker</button>
-      <button class="tab" data-tab="autopilot">Autopilot</button>
-      <button class="tab" data-tab="studio">CV Studio</button>
-      <button class="tab" data-tab="portfolio">Portfolio</button>
-      <button class="tab" data-tab="coach">Career Coach</button>
-      <button class="tab" data-tab="insights">Insights</button>
-      <button class="tab" data-tab="add">Add Job</button>
-      <button class="tab" data-tab="profile">Profile &amp; API</button>
+      <div class="rail-brand"><span class="brand-mark">◆</span> Career Copilot</div>
+      <div class="rail-group">Work</div>
+      <button class="tab active" data-tab="overview"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Overview</button>
+      <button class="tab" data-tab="search"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Search</button>
+      <button class="tab" data-tab="jobs"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Jobs</button>
+      <button class="tab" data-tab="pipeline"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>Pipeline</button>
+      <button class="tab" data-tab="tracker"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="13" rx="1.5"/></svg>Tracker</button>
+      <div class="rail-group">Create</div>
+      <button class="tab" data-tab="autopilot"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/><circle cx="12" cy="12" r="5"/></svg>Autopilot</button>
+      <button class="tab" data-tab="studio"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>CV Studio</button>
+      <button class="tab" data-tab="portfolio"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3.5 9h17M3.5 15h17M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>Portfolio</button>
+      <div class="rail-group">Grow</div>
+      <button class="tab" data-tab="coach"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12v9M12 12L4 7.5M12 12l8-4.5"/></svg>Career Coach</button>
+      <button class="tab" data-tab="insights"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19V10M10 19V4M16 19v-7M21 19H3"/></svg>Insights</button>
+      <div class="rail-group">Setup</div>
+      <button class="tab" data-tab="add"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Add Job</button>
+      <button class="tab" data-tab="profile"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>Profile &amp; API</button>
+      <div class="rail-foot">
+        <span>Local-first · your data stays here</span>
+      </div>
     </nav>
 
     <main>
-      <section id="tab-search" class="tab-panel active">
+      <section id="tab-overview" class="tab-panel active">
+        <div class="section-header">
+          <div>
+            <h2>Overview</h2>
+            <p>Your whole search at a glance — matches, momentum, and what to do next.</p>
+          </div>
+          <div class="action-row">
+            <button class="primary" id="ovHuntBtn" title="France Travail + curated board links">1-click hunt</button>
+            <button id="ovRefreshBtn" title="Reload overview data">Refresh</button>
+          </div>
+        </div>
+        <div class="ov-hero" id="ovHero"></div>
+        <div class="ov-grid" id="ovGrid">
+          <div class="ov-card span-7">
+            <h3>Today's queue <span class="muted" id="ovQueueCount"></span></h3>
+            <ul class="ov-list" id="ovQueue"><li class="muted">Loading…</li></ul>
+          </div>
+          <div class="ov-card span-5">
+            <h3>Readiness</h3>
+            <div id="ovChecklist"></div>
+          </div>
+          <div class="ov-card span-7">
+            <h3>Top matches</h3>
+            <ul class="ov-list" id="ovMatches"><li class="muted">Loading…</li></ul>
+          </div>
+          <div class="ov-card span-5">
+            <h3>Funnel</h3>
+            <div id="ovFunnel"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-search" class="tab-panel">
         <div class="section-header">
           <div>
             <h2>1-click search</h2>
@@ -131,6 +177,22 @@
         <div id="multiSourceResults" class="results-stack"></div>
         <div id="manualResults" class="results-stack"></div>
         <div id="apiResults" class="results-stack"></div>
+
+        <section class="panel" id="discoverBoardsPanel">
+          <div class="panel-header-row">
+            <h3>Discover company career boards</h3>
+            <span class="badge-ai">Free ATS APIs</span>
+          </div>
+          <p class="muted" style="margin-top:0.2rem">Probe Greenhouse, Lever, Ashby, Recruitee, Workable, SmartRecruiters, and Personio for a company list (max 10 per run). Verified boards are saved locally for future hunts.</p>
+          <textarea id="discoverCompaniesInput" rows="3" placeholder="One company per line, e.g.&#10;Dataiku&#10;Alan&#10;Back Market"></textarea>
+          <div class="action-row" style="margin-top:0.55rem">
+            <button class="primary" id="discoverBoardsBtn">Discover boards</button>
+            <button id="discoverPackBtn" title="Fill with a curated French tech/data company pack">French tech pack</button>
+            <button id="discoverRegistryBtn" title="Show boards already discovered and saved locally">Saved boards</button>
+          </div>
+          <div class="notice hidden" id="discoverNotice"></div>
+          <div id="discoverResults" class="results-stack" style="margin-top:0.6rem"></div>
+        </section>
       </section>
 
       <section id="tab-jobs" class="tab-panel">
@@ -334,6 +396,10 @@
             <p class="hint">Your application funnel. Change a status inline — it saves to the local tracker and feeds the Excel export/import.</p>
           </div>
           <div class="toolbar">
+            <div class="kb-toggle mode-toggle" role="group" aria-label="Tracker view">
+              <button class="mode-btn active" id="trackerViewTable" title="Table view">Table</button>
+              <button class="mode-btn" id="trackerViewBoard" title="Kanban board view">Board</button>
+            </div>
             <button id="trackerRefreshBtn" title="Reload from the local tracker">Refresh</button>
             <button id="trackerExportBtn" title="Write applied internships into your Excel workbook">Export to Excel</button>
             <button id="trackerImportBtn" title="Read status edits from the Excel workbook back into the tracker">Import status edits</button>
@@ -342,6 +408,7 @@
         <div class="metric-grid" id="trackerFunnel"></div>
         <div class="notice hidden" id="trackerNotice"></div>
         <div id="trackerTableWrap"></div>
+        <div id="trackerBoardWrap" class="kb-board hidden" aria-label="Application kanban board"></div>
       </section>
 
       <section id="tab-autopilot" class="tab-panel">
@@ -947,6 +1014,19 @@ data engineer</textarea>
           </div>
         </section>
 
+        <section class="panel" id="storyBankPanel">
+          <div class="panel-header-row">
+            <h3>Interview story bank</h3>
+            <div class="action-row">
+              <button class="primary" id="storyAddBtn">Add story</button>
+              <button id="storySyncBtn" title="Seed missing STAR stories from your master CV (never overwrites your edits)">Seed from CV</button>
+            </div>
+          </div>
+          <p class="muted" style="margin-top:0.2rem">STAR(+Reflection) stories grounded in your real CV. The 5 most relevant are attached to every packet's interview prep.</p>
+          <div class="notice hidden" id="storyNotice"></div>
+          <div class="story-grid" id="storyGrid"></div>
+        </section>
+
         <div class="notice hidden" id="coachNotice"></div>
       </section>
 
@@ -1168,6 +1248,7 @@ SQL
         </div>
         <dl class="shortcuts-list">
           <dt><kbd>?</kbd></dt><dd>Show this help</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>K</kbd></dt><dd>Command palette — jump anywhere</dd>
           <dt><kbd>1</kbd>-<kbd>9</kbd></dt><dd>Switch tabs</dd>
           <dt><kbd>/</kbd></dt><dd>Focus job search</dd>
           <dt><kbd>g</kbd> <kbd>h</kbd></dt><dd>1-click hunt</dd>
@@ -1181,7 +1262,78 @@ SQL
     </div>
 
     <div id="toast" class="toast hidden" role="status"></div>
+
+    <div id="cmdkOverlay" class="cmdk-overlay hidden" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="cmdk-card">
+        <input id="cmdkInput" class="cmdk-input" type="text" placeholder="Jump to a tab, job, or action…" autocomplete="off" spellcheck="false" />
+        <ul id="cmdkList" class="cmdk-list" role="listbox"></ul>
+        <div class="cmdk-hint"><span>↑↓ navigate</span><span>↵ run</span><span>esc close</span></div>
+      </div>
+    </div>
+
+    <div id="drawerOverlay" class="drawer-overlay hidden"></div>
+    <aside id="jobDrawer" class="drawer hidden" role="dialog" aria-modal="true" aria-label="Job details">
+      <div class="drawer-head">
+        <div class="score-ring ring-lg" id="drawerRing">–</div>
+        <div style="min-width:0">
+          <h3 id="drawerTitle">Job</h3>
+          <div class="muted" id="drawerCompany"></div>
+          <div class="row-tags" id="drawerTags" style="margin-top:0.35rem"></div>
+        </div>
+        <button class="ghost drawer-close" id="drawerCloseBtn" aria-label="Close details">&times;</button>
+      </div>
+      <div class="drawer-body">
+        <div class="drawer-actions" id="drawerActions"></div>
+        <section class="drawer-section">
+          <h4>Evaluation <span id="drawerGrade"></span></h4>
+          <div id="drawerDims"><span class="muted">Loading evaluation…</span></div>
+        </section>
+        <section class="drawer-section">
+          <h4>Salary context (local evidence)</h4>
+          <div id="drawerSalary" class="muted"></div>
+        </section>
+        <section class="drawer-section">
+          <h4>AI read</h4>
+          <div id="drawerAi" class="muted">No cached AI analysis yet.</div>
+        </section>
+        <section class="drawer-section">
+          <h4>Interview stories to rehearse</h4>
+          <div id="drawerStories" class="muted"></div>
+        </section>
+        <section class="drawer-section">
+          <h4>Description</h4>
+          <div id="drawerDescription" class="doc-preview"></div>
+        </section>
+      </div>
+    </aside>
+
+    <div id="storyModal" class="shortcuts-modal hidden" role="dialog" aria-modal="true">
+      <div class="shortcuts-card" style="width: min(620px, 94vw);">
+        <div class="shortcuts-header">
+          <h3 id="storyModalTitle">Add story</h3>
+          <button id="storyModalClose" aria-label="Close">&times;</button>
+        </div>
+        <input type="hidden" id="storyId" />
+        <label>Title <input id="storyTitle" placeholder="Churn model launch @ DataCorp" /></label>
+        <label>Skills (comma-separated) <input id="storySkills" placeholder="python, xgboost, airflow" /></label>
+        <label>Situation <textarea id="storySituation" rows="2"></textarea></label>
+        <label>Task <textarea id="storyTask" rows="2"></textarea></label>
+        <label>Action <textarea id="storyAction" rows="3"></textarea></label>
+        <label>Result <textarea id="storyResult" rows="2"></textarea></label>
+        <label>Reflection <textarea id="storyReflection" rows="2"></textarea></label>
+        <div class="action-row" style="margin-top:0.6rem">
+          <button class="primary" id="storySaveBtn">Save story</button>
+          <button id="storyCancelBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <script src="/static/app.js"></script>
     <script src="/static/pipeline.js"></script>
+    <script src="/static/overview.js" defer></script>
+    <script src="/static/palette.js" defer></script>
+    <script src="/static/drawer.js" defer></script>
+    <script src="/static/kanban.js" defer></script>
+    <script src="/static/features.js" defer></script>
   </body>
 </html>

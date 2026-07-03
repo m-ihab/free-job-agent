@@ -238,8 +238,18 @@ Override locations explicitly with `JOB_AGENT_DATA_DIR` and
 .\launch.ps1
 ```
 
+The dashboard uses a premium dark-glass design (dark-first, with a frosted
+light theme via the Theme toggle): aurora gradient canvas, frosted surfaces,
+score rings, and A-F grade chips. Press **Ctrl+K** anywhere for the command
+palette — fuzzy-jump to any tab, tracked job, or action. Click any job row to
+open the detail drawer (score ring, A-F evaluation dimensions, salary context,
+relevant STAR stories, all actions).
+
 Tabs:
 
+- **Overview:** the home tab — metric hero (tracked/strong/submitted/rates),
+  today's next-best-action queue, top matches with score rings, funnel bars,
+  and a readiness checklist that doubles as first-run onboarding.
 - **Search:** 1-click hunt (France Travail + curated board links),
   multi-source search across free public APIs, deep API search, and a clean
   link builder.
@@ -247,6 +257,9 @@ Tabs:
   packet generation, CSV export, color-coded score badges, work-authorization
   route badges, optional sponsorship-gated filtering, one-click Preflight
   verdicts, inline detail panel, and a CV preview for packet-ready roles.
+- **Tracker:** table view plus a drag-and-drop kanban **Board** view
+  (Discovered → Qualified → Packet ready → Needs manual → Submitted →
+  Interviewing → Offer); dragging a card updates the tracked status.
 - **Pipeline:** daily next-best-action queue, freshness-aware timing signals,
   auto-scheduled week-1/week-2 follow-ups, stale-job detection, conversion
   metrics, local notes per job, local warm-path/referral matching, and a
