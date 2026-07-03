@@ -22,6 +22,7 @@ _ATS_SIGNATURES = {
     "smartrecruiters": ["jobs.smartrecruiters.com"],
     "recruitee":     [".recruitee.com"],
     "personio":      [".jobs.personio"],
+    "workable":      ["apply.workable.com", ".workable.com/j/", "workable.com/j/"],
 }
 
 
@@ -31,6 +32,24 @@ def _detect_ats(url: str) -> str:
         if any(p in url_lower for p in patterns):
             return ats
     return "generic"
+
+
+# ── Structured hand-off reason codes ──────────────────────────────────────────
+
+# Stable machine-readable codes for the human-readable wall reasons, so the
+# dashboard "Needs manual apply" queue and the events log can group hand-offs.
+_REASON_CODES = {
+    "reCAPTCHA": "captcha",
+    "hCaptcha": "captcha",
+    "Cloudflare Turnstile": "anti_bot",
+    "Cloudflare challenge": "anti_bot",
+    "login required": "login_wall",
+    "wall detection unavailable": "detection_failed",
+}
+
+
+def reason_code(reason: str) -> str:
+    return _REASON_CODES.get(reason, "other")
 
 
 # ── Human-presence wall detection (detection only — never bypassed) ───────────

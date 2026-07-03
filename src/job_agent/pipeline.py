@@ -1,4 +1,4 @@
-"""End-to-end orchestration helpers used by the CLI."""
+"""End-to-end orchestration helpers used by the CLI and dashboard."""
 from __future__ import annotations
 
 import json
@@ -27,6 +27,8 @@ from job_agent.generator.proof_pack import render_proof_pack_markdown
 from job_agent.generator.qa import build_screening_answers_for_job, screening_answers_to_dict
 from job_agent.hashutil import sha256_file, sha256_json
 from job_agent.intake.file import ingest_file
+from job_agent import embeddings, story_bank
+from job_agent.generator.evaluation import evaluate_job, salary_comparables
 from job_agent.intake.paste import ingest_paste
 from job_agent.intake.url import ingest_url
 from job_agent.normalizer import normalize
@@ -58,11 +60,31 @@ def _tracker(config: AppConfig) -> ApplicationTracker:
     return ApplicationTracker(db)
 
 
+def _semantic_duplicate(tracker: ApplicationTracker, job: JobListing) -> JobListing | None:
+    """Fail-soft near-duplicate lookup via local embeddings. Never raises."""
+    try:
+        dupe_id = embeddings.find_near_duplicate(tracker.db, job)
+        if dupe_id:
+            existing = tracker.db.get_job(dupe_id)
+            if existing:
+                logger.info(
+                    "Semantic near-duplicate: '%s' @ %s matches tracked job %s",
+                    job.title, job.company, dupe_id,
+                )
+                return existing
+    except Exception:
+        logger.debug("Semantic duplicate check skipped", exc_info=True)
+    return None
+
+
 def add_job_to_tracker(config: AppConfig, job: JobListing) -> tuple[JobListing, bool]:
     tracker = _tracker(config)
     job = normalize(job)
     job = set_fingerprint(job)
     existing = tracker.db.get_job_by_fingerprint(job.fingerprint) if job.fingerprint else None
+    if existing:
+        return existing, False
+    existing = _semantic_duplicate(tracker, job)
     if existing:
         return existing, False
     tracker.add_job(job)
@@ -83,7 +105,12 @@ def add_url_job(config: AppConfig, url: str) -> tuple[JobListing, bool]:
 
 def score_and_save(config: AppConfig, job: JobListing, profile: CandidateProfile) -> JobListing:
     tracker = _tracker(config)
-    breakdown = score_job(job, profile)
+    try:
+        semantic = embeddings.semantic_similarity(job, profile, tracker.db)
+    except Exception:
+        logger.debug("Semantic similarity skipped", exc_info=True)
+        semantic = None
+    breakdown = score_job(job, profile, semantic_score=semantic)
     job.fit_score = breakdown.total_score
     job.fit_confidence = breakdown.confidence
     job.fit_decision = breakdown.decision
@@ -264,6 +291,58 @@ def _write_preflight_artifact(
         return None
 
 
+def _story_bank_section(tracker: ApplicationTracker, master_cv, job: JobListing) -> str:
+    """Seed the persistent story bank from the CV, then render the most relevant
+    STAR stories for this job. Fail-soft: packet generation never depends on it."""
+    try:
+        story_bank.sync_story_bank(tracker.db, master_cv)
+        stories = [story_bank.Story.from_row(row) for row in tracker.db.list_stories()]
+        picked = story_bank.relevant_stories(job, stories, limit=5)
+        return "\n" + story_bank.render_story_bank_markdown(job, picked, job.missing_requirements)
+    except Exception:
+        logger.warning("Story bank section skipped for job %s", job.id, exc_info=True)
+        return ""
+
+
+def _write_evaluation_artifacts(
+    config: AppConfig,
+    job: JobListing,
+    profile: CandidateProfile,
+    packet: ApplicationPacket,
+    out_dir: Path,
+    tracker: ApplicationTracker,
+) -> list[DocumentArtifact]:
+    """Write evaluation.md + evaluation.json (A-F rubric + local salary context)."""
+    try:
+        preflight = None
+        try:
+            evidence = EvidenceStore.load(config)
+            if not evidence.all():
+                evidence.rebuild(config)
+            preflight = run_preflight(job, profile, evidence, config, packet)
+        except Exception:
+            logger.debug("Evaluation runs without preflight coverage", exc_info=True)
+        semantic = None
+        try:
+            semantic = embeddings.semantic_similarity(job, profile, tracker.db)
+        except Exception:
+            semantic = None
+        evaluation = evaluate_job(job, profile, preflight=preflight, semantic_score=semantic, config=config)
+        salary_lines = salary_comparables(tracker.db, job)
+        md_path = out_dir / "evaluation.md"
+        md_path.write_text(evaluation.to_markdown(salary_lines), encoding="utf-8")
+        json_path = out_dir / "evaluation.json"
+        payload = {**evaluation.to_dict(), "salary_context": salary_lines}
+        json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return [
+            DocumentArtifact(kind="evaluation_markdown", path=str(md_path), sha256=sha256_file(md_path)),
+            DocumentArtifact(kind="evaluation_json", path=str(json_path), sha256=sha256_file(json_path)),
+        ]
+    except Exception as exc:
+        logger.warning("Could not write evaluation artifacts for job %s: %s", job.id, exc)
+        return []
+
+
 def _write_proof_pack_artifact(
     config: AppConfig,
     job: JobListing,
@@ -409,6 +488,7 @@ def generate_packet_for_job(
     if not fast_mode:
         outreach_md = generate_outreach_email(job, master_cv, profile)
         interview_md = generate_interview_prep(job, master_cv, profile)
+        interview_md += _story_bank_section(tracker, master_cv, job)
         cv_html = render_html(cv_md, title=f"CV - {job.title}")
         letter_html = render_html(letter_md, title=f"Cover Letter - {job.title}") if letter_md else ""
     else:
@@ -530,6 +610,7 @@ def generate_packet_for_job(
     proof_pack_artifact = _write_proof_pack_artifact(config, job, profile, packet, out_dir)
     if proof_pack_artifact is not None:
         packet.artifacts.append(proof_pack_artifact)
+    packet.artifacts.extend(_write_evaluation_artifacts(config, job, profile, packet, out_dir, tracker))
 
     # In full mode, rewrite assistant page with the finalised packet ID.
     if not fast_mode:

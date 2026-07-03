@@ -9,10 +9,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from job_agent.auto_apply.ats_profiles import heuristic_keys_for
+
 logger = logging.getLogger(__name__)
 
 
-def _fill_visible_fields(page: Any, qa: dict, filled: list[str]) -> None:
+def _fill_visible_fields(page: Any, qa: dict, filled: list[str], ats: str = "generic") -> None:
     """Match visible form fields to QA answers by label proximity."""
     from rapidfuzz import process as fuzz_process
 
@@ -36,7 +38,7 @@ def _fill_visible_fields(page: Any, qa: dict, filled: list[str]) -> None:
             match = fuzz_process.extractOne(label_text, qa_keys, score_cutoff=55)
             if not match:
                 # Also try matching directly against QA values by common field names
-                heuristic = _heuristic_match(label_text, qa)
+                heuristic = _heuristic_match(label_text, qa, ats=ats)
                 if not heuristic:
                     continue
                 key, answer = heuristic
@@ -149,20 +151,9 @@ def _field_label(page: Any, field: Any) -> str:
         return ""
 
 
-_HEURISTIC_KEYS = {
-    "first name": ["first_name", "given_name", "prenom", "prénom", "firstname"],
-    "last name": ["last_name", "family_name", "nom", "surname", "lastname"],
-    "email": ["email", "e-mail", "courriel", "adresse email"],
-    "phone": ["phone", "telephone", "téléphone", "mobile", "portable"],
-    "linkedin": ["linkedin_url", "linkedin", "profil linkedin"],
-    "github": ["github_url", "github"],
-    "city": ["city", "ville", "location"],
-    "cover letter": ["cover_letter", "lettre de motivation", "motivation"],
-    "why": ["cover_letter", "motivation_text"],
-    "salary": ["salary_expectation", "salaire", "pretentions salariales"],
-    "work authorization": ["work_authorization", "autorisation travail", "eligible to work"],
-    "start date": ["start_date", "availability", "disponibilité", "date de début"],
-}
+# The base table now lives in ats_profiles (family tables extend it); this
+# alias keeps the historical import path working.
+_HEURISTIC_KEYS = heuristic_keys_for("generic")
 
 
 def _build_apply_qa(profile: Any, job_qa: dict) -> dict:
@@ -190,6 +181,8 @@ def _build_apply_qa(profile: Any, job_qa: dict) -> dict:
                 base["linkedin_url"] = contact.linkedin_url
             if getattr(contact, "github_url", None):
                 base["github_url"] = contact.github_url
+            if getattr(contact, "portfolio_url", None):
+                base["portfolio_url"] = contact.portfolio_url
             if getattr(contact, "work_authorization", None):
                 base["work_authorization"] = contact.work_authorization
             if getattr(contact, "location", None):
@@ -198,9 +191,9 @@ def _build_apply_qa(profile: Any, job_qa: dict) -> dict:
     return {**base, **{k: v for k, v in (job_qa or {}).items() if v}}
 
 
-def _heuristic_match(label: str, qa: dict) -> tuple[str, str] | None:
+def _heuristic_match(label: str, qa: dict, ats: str = "generic") -> tuple[str, str] | None:
     label_l = label.lower()
-    for keyword, candidate_keys in _HEURISTIC_KEYS.items():
+    for keyword, candidate_keys in heuristic_keys_for(ats).items():
         if keyword in label_l:
             for ck in candidate_keys:
                 for qa_key, qa_val in qa.items():

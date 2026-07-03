@@ -77,6 +77,32 @@ That token is used with `Authorization: Bearer ...` against
 - **CAC 40 targeting:** lists career pages for large French companies
   including BNP Paribas, AXA, Orange, Schneider Electric, Capgemini, L'Oréal,
   LVMH, Sanofi, TotalEnergies, Thales, Safran, Airbus, and more.
+- **Semantic matching (local embeddings):** when Ollama has an embedding model
+  installed (e.g. `nomic-embed-text`), jobs and your profile are embedded
+  locally and a semantic similarity signal is blended into the fit score at
+  15% weight. Also powers near-duplicate detection: the same role posted on
+  two sources is recognized even when the fingerprint differs. Fully optional —
+  without an embedding model the deterministic scorer runs unchanged. Disable
+  with `JOB_AGENT_DISABLE_EMBEDDINGS=1`; pin a model with
+  `JOB_AGENT_OLLAMA_EMBED_MODEL`.
+- **A-F evaluation rubric:** every packet includes `evaluation.md` +
+  `evaluation.json` grading the job across ~10 weighted dimensions (skills,
+  title, location, seniority, language, salary, work authorization, freshness,
+  semantic fit, evidence coverage) with an overall letter grade, a
+  recommendation, and a grounded salary-context block built only from salaries
+  you have already tracked locally. Also available on demand via
+  `POST /api/evaluate`.
+- **Interview story bank:** STAR stories are seeded verbatim from your
+  `master_cv.json` (no invented facts), stored in SQLite, and editable via
+  `/api/stories`, `/api/story-save`, `/api/story-delete`, `/api/story-sync`.
+  Each packet's `interview_prep.md` appends the 5 most relevant stories for
+  that job plus an explicit "do not claim without proof" gap list.
+- **Career-page discovery:** `POST /api/discover-boards` probes the free public
+  ATS APIs (Greenhouse, Lever, Ashby, Recruitee, Workable, SmartRecruiters,
+  Personio) with likely slugs for a company list (a curated French tech pack is
+  built in), saves verified boards to a local `company_boards` registry
+  (`GET /api/company-boards`), and negative-caches misses for a week so probing
+  stays polite. Discovered boards can then be hunted with `search-api`.
 - **Normalization & scoring:** extracts tech stack, salary, remote/hybrid,
   seniority, language signals, requirements, responsibilities, and benefits;
   deterministic 0-100 fit score with notes, confidence, decision, missing

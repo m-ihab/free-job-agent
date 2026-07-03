@@ -71,6 +71,43 @@ def test_packet_generation_writes_all_promised_files(tmp_path):
     assert "# Proof Pack" in proof
 
 
+def test_packet_includes_evaluation_and_story_bank(tmp_path):
+    config = _copy_profiles(tmp_path)
+    config.cover_letter_auto_threshold = 0
+    db = Database(config.db_path)
+    db.initialize()
+    tracker = ApplicationTracker(db)
+    job = JobListing(
+        title="Senior Python Engineer",
+        company="Example Analytics",
+        location="San Francisco, CA",
+        remote=True,
+        raw_text="Senior Python Engineer\nRequirements:\n- Python\n- FastAPI",
+        description="Build APIs and data systems.",
+        requirements=["Python", "FastAPI"],
+        tech_stack=["python", "fastapi"],
+        apply_url="https://example.com/apply",
+    )
+    from job_agent.fingerprint import set_fingerprint
+    tracker.add_job(set_fingerprint(job))
+    packet = generate_packet_for_job(config, job.id)
+
+    names = {Path(a.path).name for a in packet.artifacts}
+    assert "evaluation.md" in names
+    assert "evaluation.json" in names
+    evaluation_md = Path(next(a.path for a in packet.artifacts if a.kind == "evaluation_markdown")).read_text(encoding="utf-8")
+    assert "# Job evaluation" in evaluation_md
+    assert "Overall" in evaluation_md
+    assert "Salary context" in evaluation_md
+    evaluation_json = Path(next(a.path for a in packet.artifacts if a.kind == "evaluation_json")).read_text(encoding="utf-8")
+    assert '"overall_grade"' in evaluation_json
+
+    interview = Path(next(a.path for a in packet.artifacts if Path(a.path).name == "interview_prep.md")).read_text(encoding="utf-8")
+    assert "Interview story bank" in interview
+    # Seeding happened as a side effect and is persistent + idempotent.
+    assert db.list_stories()
+
+
 def test_cover_letter_does_not_infer_sponsorship(sample_job, sample_master_cv, sample_profile):
     letter = generate_cover_letter(sample_job, sample_master_cv, sample_profile).lower()
     assert "do not require visa sponsorship" not in letter

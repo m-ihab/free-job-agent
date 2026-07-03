@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 import job_agent.auto_apply as _pkg
+from job_agent.auto_apply.detect import reason_code
 from job_agent.auto_apply.driver import (
     _build_apply_qa,
     _fill_generic,
@@ -33,9 +34,9 @@ def fill_form(session: Any, page: Any, candidate: Any, ats: str) -> tuple[bool, 
 
     if ats == "linkedin":
         return _fill_linkedin(page, qa, cv_path, cover_md)
-    if ats in ("greenhouse", "lever", "ashby", "recruitee", "smartrecruiters"):
-        return _fill_standard_ats(page, qa, cv_path, cover_md)
-    return _fill_generic(page, qa, cv_path, cover_md)
+    if ats in ("greenhouse", "lever", "ashby", "recruitee", "smartrecruiters", "workable", "personio"):
+        return _fill_standard_ats(page, qa, cv_path, cover_md, ats)
+    return _fill_generic(page, qa, cv_path, cover_md, ats)
 
 
 def get_profile(session: Any) -> Any:
@@ -111,7 +112,12 @@ def mark_needs_manual(session: Any, candidate: Any, reason: str) -> None:
     db.log_event(
         candidate.job.id,
         "NEEDS_MANUAL",
-        {"packet_id": candidate.packet.id, "reason": reason, "note": "Full-auto hand-off"},
+        {
+            "packet_id": candidate.packet.id,
+            "reason": reason,
+            "reason_code": reason_code(reason),
+            "note": "Full-auto hand-off",
+        },
         packet_id=candidate.packet.id,
     )
 
@@ -140,7 +146,7 @@ def queue_needs_manual(session: Any, candidate: Any, summary: str, reason: str) 
             packet_id=packet.id,
             message=f"{label} needs manual apply ({reason}). Draft saved; continuing.",
             summary=summary,
-            data={"reason": reason},
+            data={"reason": reason, "reason_code": reason_code(reason)},
         ))
         return ApplyResult(
             job.id, packet.id, "needs_manual",
@@ -157,7 +163,7 @@ def queue_needs_manual(session: Any, candidate: Any, summary: str, reason: str) 
             f"({persist_error}). Apply manually — it is NOT queued."
         ),
         summary=summary,
-        data={"reason": reason, "persist_error": persist_error},
+        data={"reason": reason, "reason_code": reason_code(reason), "persist_error": persist_error},
     ))
     return ApplyResult(
         job.id, packet.id, "error",

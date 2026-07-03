@@ -12,6 +12,7 @@ class ScoreBreakdown:
     seniority_score: int = 50
     language_score: int = 50
     salary_score: int = 50
+    semantic_score: int | None = None
     total_score: int = 0
     confidence: float = 0.0
     decision: str = "hold"

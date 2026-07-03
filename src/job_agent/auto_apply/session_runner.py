@@ -151,6 +151,9 @@ def apply_one(session: Any, page: Any, candidate: Any, index: int, total: int) -
         # Gate before submit
         if session.mode == ApplyMode.FILL_AND_CONFIRM:
             screenshot = _pkg._screenshot_b64(page)
+            # Clear BEFORE emitting: a confirm landing the instant the prompt
+            # appears must not be wiped by a late clear.
+            session._confirm_event.clear()
             session._emit(ApplyEvent(
                 "pending_confirm",
                 job_id=job.id,
@@ -159,12 +162,16 @@ def apply_one(session: Any, page: Any, candidate: Any, index: int, total: int) -
                 summary=summary,
                 screenshot_b64=screenshot,
             ))
-            session._confirm_event.clear()
-            session._confirm_event.wait(timeout=300)
+            confirmed = session._confirm_event.wait(timeout=session.confirm_timeout_s)
             if session._cancel_flag:
                 return ApplyResult(job.id, packet.id, "skipped", "Session cancelled.")
             if session._skip_flag:
                 return ApplyResult(job.id, packet.id, "skipped", f"Skipped {label}.")
+            if not confirmed:
+                return ApplyResult(
+                    job.id, packet.id, "skipped",
+                    f"Skipped {label}: timed out after {session.confirm_timeout_s:.0f}s waiting for your confirmation.",
+                )
         else:
             # FULL_AUTO — genuinely hands-off; the run never blocks. Detect
             # (never defeat) a human-presence wall and hand off to the manual

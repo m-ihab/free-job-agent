@@ -64,6 +64,7 @@ MASTER_PROMPT.md
 #   .gitnexus/     ~73MB graph DB (gitnexus analyze)
 graphify-out/
 .gitnexus/
+/mythos-review
 
 # Node / Playwright
 node_modules/

@@ -127,7 +127,7 @@ def _work_auth_score(job: JobListing, profile: CandidateProfile) -> tuple[int, l
     return 75, [note, *assessment.notes], []
 
 
-def score_job(job: JobListing, profile: CandidateProfile) -> ScoreBreakdown:
+def score_job(job: JobListing, profile: CandidateProfile, *, semantic_score: int | None = None) -> ScoreBreakdown:
     """Score a job listing against a candidate profile.
 
     Scores are integers from 0 to 100. This is intentionally approximate; the
@@ -135,6 +135,11 @@ def score_job(job: JobListing, profile: CandidateProfile) -> ScoreBreakdown:
 
     Weight breakdown:
       skill 38%, title 22%, location 15%, seniority 10%, language 10%, salary 5%
+
+    ``semantic_score`` is an optional 0-100 local-embedding similarity signal.
+    When present, the deterministic components are rescaled to 85% and the
+    semantic signal contributes the remaining 15%. When absent (Ollama down,
+    no embedding model installed), the deterministic weights apply unchanged.
     """
     candidate_skill_names = profile.all_skill_names()
     skill_score, skill_notes, missing = _skill_overlap(job.tech_stack, candidate_skill_names)
@@ -153,7 +158,7 @@ def score_job(job: JobListing, profile: CandidateProfile) -> ScoreBreakdown:
         "language": 0.10,
         "salary": 0.05,
     }
-    total = round(
+    deterministic = (
         skill_score * weights["skill"]
         + title_score * weights["title"]
         + loc_score * weights["location"]
@@ -161,6 +166,13 @@ def score_job(job: JobListing, profile: CandidateProfile) -> ScoreBreakdown:
         + lang_score * weights["language"]
         + salary_score * weights["salary"]
     )
+    semantic_notes: list[str] = []
+    if semantic_score is None:
+        total = round(deterministic)
+    else:
+        semantic_score = max(0, min(100, int(semantic_score)))
+        total = round(deterministic * 0.85 + semantic_score * 0.15)
+        semantic_notes = [f"Semantic similarity: {semantic_score}/100 (local embedding, 15% weight)"]
 
     # Hard penalties: work auth and language are dealbreakers
     if "FRENCH_REQUIRED" in lang_risks:
@@ -188,6 +200,7 @@ def score_job(job: JobListing, profile: CandidateProfile) -> ScoreBreakdown:
     all_notes = (
         skill_notes + title_notes + loc_notes
         + seniority_notes + lang_notes + auth_notes + salary_notes
+        + semantic_notes
     )
     return ScoreBreakdown(
         skill_score=skill_score,
@@ -196,6 +209,7 @@ def score_job(job: JobListing, profile: CandidateProfile) -> ScoreBreakdown:
         seniority_score=seniority_score,
         language_score=lang_score,
         salary_score=salary_score,
+        semantic_score=semantic_score,
         total_score=total,
         confidence=confidence,
         decision=decision,

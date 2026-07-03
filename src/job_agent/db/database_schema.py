@@ -160,6 +160,47 @@ SCHEMA_SQL = """
     CREATE INDEX IF NOT EXISTS idx_evidence_kind_label ON evidence_items(kind, label);
     CREATE INDEX IF NOT EXISTS idx_evidence_source ON evidence_items(source);
 
+    -- Local semantic vectors for jobs ('job' kind, owner_id = job id) and the
+    -- candidate profile ('profile' kind). No FK: vectors may be computed for
+    -- jobs before they are tracked, and the profile has no jobs row.
+    CREATE TABLE IF NOT EXISTS embeddings (
+        owner_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        model TEXT NOT NULL DEFAULT '',
+        text_hash TEXT NOT NULL DEFAULT '',
+        vector_json TEXT NOT NULL DEFAULT '[]',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (owner_id, kind)
+    );
+    CREATE INDEX IF NOT EXISTS idx_embeddings_kind ON embeddings(kind);
+
+    -- ATS boards discovered by slug probing (intake/discovery.py). One row per
+    -- verified (source, slug); re-discovery refreshes verified_at.
+    CREATE TABLE IF NOT EXISTS company_boards (
+        company TEXT NOT NULL,
+        source TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        verified_at TEXT NOT NULL,
+        PRIMARY KEY (source, slug)
+    );
+    CREATE INDEX IF NOT EXISTS idx_company_boards_company ON company_boards(company);
+
+    -- STAR(+Reflection) interview stories. Seeded verbatim from master_cv.json
+    -- and then user-editable; sync only inserts missing ids.
+    CREATE TABLE IF NOT EXISTS stories (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL DEFAULT '',
+        skills_json TEXT NOT NULL DEFAULT '[]',
+        situation TEXT NOT NULL DEFAULT '',
+        task TEXT NOT NULL DEFAULT '',
+        action TEXT NOT NULL DEFAULT '',
+        result TEXT NOT NULL DEFAULT '',
+        reflection TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT 'manual',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS contacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,

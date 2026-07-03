@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Callable
 
 from job_agent.ui.routes import (
+    boards,
     get_core,
     get_pipeline,
     get_portfolio,
@@ -27,6 +28,7 @@ from job_agent.ui.routes import (
     post_pipeline,
     post_referral,
     post_search,
+    stories,
 )
 
 
@@ -70,6 +72,8 @@ GET_ROUTES: dict[str, Callable[[object], None]] = {
     "/api/job-notes": get_pipeline.get_job_notes_route,
     "/api/contacts": get_referral.get_contacts,
     "/api/referrals": get_referral.get_referrals,
+    "/api/stories": stories.get_stories,
+    "/api/company-boards": boards.get_company_boards,
 }
 
 
@@ -156,6 +160,11 @@ POST_ROUTES: dict[str, Callable[[object, dict], None]] = {
     "/api/auto-apply/skip": post_autopilot.post_auto_apply_skip,
     "/api/auto-apply/cancel": post_autopilot.post_auto_apply_cancel,
     "/api/auto-apply/open-browser": post_autopilot.post_auto_apply_open_browser,
+    "/api/story-save": stories.post_story_save,
+    "/api/story-delete": stories.post_story_delete,
+    "/api/story-sync": stories.post_story_sync,
+    "/api/evaluate": stories.post_evaluate,
+    "/api/discover-boards": boards.post_discover_boards,
 }
 
 

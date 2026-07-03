@@ -23,6 +23,10 @@ from job_agent.auto_apply.session_types import ApplyEvent, ApplyMode, ApplyResul
 
 logger = logging.getLogger(__name__)
 
+# How long FILL_AND_CONFIRM waits for the user to click Submit/Skip before
+# giving up on the job. Timing out must SKIP, never submit.
+DEFAULT_CONFIRM_TIMEOUT_S = 300.0
+
 
 class AutoApplySession:
     """One session: iterates N candidates using Playwright."""
@@ -42,6 +46,7 @@ class AutoApplySession:
         self.limit = limit
         self.headless = headless
         self.job_ids = job_ids  # if set, only apply to these job IDs
+        self.confirm_timeout_s: float = DEFAULT_CONFIRM_TIMEOUT_S
 
         self._progress_queue: queue.Queue[ApplyEvent] = queue.Queue()
         self._confirm_event = threading.Event()

@@ -40,6 +40,14 @@ from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile  #
 from job_agent.schemas.job import JobListing  # noqa: E402
 from job_agent.db.database import Database  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _disable_embeddings_autodetect(monkeypatch):
+    """Keep the suite hermetic: pipeline embedding hooks must never probe a live
+    Ollama server during tests. Tests that exercise embeddings pass an explicit
+    model/embedder, which bypasses env-based auto-detection entirely."""
+    monkeypatch.setenv("JOB_AGENT_DISABLE_EMBEDDINGS", "1")
+
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 
 

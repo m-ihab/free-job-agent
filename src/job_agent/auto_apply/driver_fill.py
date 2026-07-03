@@ -66,7 +66,7 @@ def _fill_linkedin(page: Any, qa: dict, cv_path: str, cover_md: str) -> tuple[bo
 
         # Walk up to 8 modal pages
         for _step in range(8):
-            _fill_visible_fields(page, qa, filled_fields)
+            _fill_visible_fields(page, qa, filled_fields, ats="linkedin")
             # Upload resume if prompted
             if cv_path:
                 _upload_file(page, cv_path, "resume")
@@ -89,11 +89,12 @@ def _fill_linkedin(page: Any, qa: dict, cv_path: str, cover_md: str) -> tuple[bo
         return False, f"LinkedIn fill error: {exc}"
 
 
-def _fill_standard_ats(page: Any, qa: dict, cv_path: str, cover_md: str) -> tuple[bool, str]:
-    """Fill Greenhouse / Lever / Ashby / SmartRecruiters standard forms."""
+def _fill_standard_ats(page: Any, qa: dict, cv_path: str, cover_md: str, ats: str = "generic") -> tuple[bool, str]:
+    """Fill Greenhouse / Lever / Ashby / SmartRecruiters / Recruitee / Workable /
+    Personio standard forms, using the family's label-synonym table."""
     filled_fields: list[str] = []
     try:
-        _fill_visible_fields(page, qa, filled_fields)
+        _fill_visible_fields(page, qa, filled_fields, ats=ats)
         if cv_path:
             _upload_file(page, cv_path, "resume")
         _fill_cover_letter(page, cover_md)
@@ -103,11 +104,11 @@ def _fill_standard_ats(page: Any, qa: dict, cv_path: str, cover_md: str) -> tupl
         return False, f"ATS fill error: {exc}"
 
 
-def _fill_generic(page: Any, qa: dict, cv_path: str, cover_md: str) -> tuple[bool, str]:
+def _fill_generic(page: Any, qa: dict, cv_path: str, cover_md: str, ats: str = "generic") -> tuple[bool, str]:
     """Best-effort filler for any HTML form."""
     filled_fields: list[str] = []
     try:
-        _fill_visible_fields(page, qa, filled_fields)
+        _fill_visible_fields(page, qa, filled_fields, ats=ats)
         if cv_path:
             _upload_file(page, cv_path, "resume")
         _fill_cover_letter(page, cover_md)

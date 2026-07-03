@@ -20,16 +20,19 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
+from job_agent.db.database_boards import BoardsMixin
 from job_agent.db.database_conversion import ConversionMixin
+from job_agent.db.database_embeddings import EmbeddingsMixin
 from job_agent.db.database_jobs import JobsMixin
 from job_agent.db.database_meta import MetaMixin
 from job_agent.db.database_packets import PacketsMixin
 from job_agent.db.database_schema import MIGRATIONS, SCHEMA_SQL
+from job_agent.db.database_stories import StoriesMixin
 
 logger = logging.getLogger(__name__)
 
 
-class Database(JobsMixin, PacketsMixin, MetaMixin, ConversionMixin):
+class Database(JobsMixin, PacketsMixin, MetaMixin, ConversionMixin, EmbeddingsMixin, StoriesMixin, BoardsMixin):
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
 
