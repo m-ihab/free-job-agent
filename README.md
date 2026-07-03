@@ -1,4 +1,6 @@
-# free-job-agent — Paris Data Career Copilot
+<p align="center"><img src="docs/logo.svg" alt="Career Copilot logo" width="88" /></p>
+
+# Career Copilot (free-job-agent)
 
 A completely **free, local-first** job-search and application copilot focused
 on **Paris, France, and Europe** for **data science, machine learning, AI,

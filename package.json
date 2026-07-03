@@ -2,7 +2,7 @@
   "name": "free-job-agent-frontend",
   "version": "0.2.0",
   "private": true,
-  "description": "Optional frontend tooling for the Paris Data Career Copilot dashboard. The Python app runs without npm; this package only adds local end-to-end testing and lint utilities.",
+  "description": "Optional frontend tooling for the Career Copilot dashboard. The Python app runs without npm; this package only adds local end-to-end testing and lint utilities.",
   "scripts": {
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",

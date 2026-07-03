@@ -32,7 +32,7 @@ def _latex_escape_text(value: Any) -> str:
     return "".join(replacements.get(ch, ch) for ch in text)
 
 
-def _project_to_projone_line(project: dict[str, Any]) -> str:
+def _project_cvitem(project: dict[str, Any], *, max_bullets: int = 3) -> str:
     name = _latex_escape_text(project.get("name") or "Selected project")
     desc = _latex_escape_text(project.get("description") or "")
     bullets = [_latex_escape_text(item) for item in (project.get("bullet_points") or []) if str(item).strip()]
@@ -40,18 +40,24 @@ def _project_to_projone_line(project: dict[str, Any]) -> str:
     pieces: list[str] = []
     if desc:
         pieces.append(desc.rstrip(".") + ".")
-    pieces.extend(item.rstrip(".") + "." for item in bullets[:3])
+    pieces.extend(item.rstrip(".") + "." for item in bullets[:max_bullets])
     if tech:
         pieces.append(r"\textit{Stack: " + ", ".join(tech[:8]) + ".}")
     body = " ".join(pieces) or "Relevant data/AI project selected from the local profile."
-    return rf"\newcommand{{\projone}}{{\cvitem{{\textbf{{{name}}}}}{{{body}}}}}"
+    return rf"\cvitem{{\textbf{{{name}}}}}{{{body}}}"
 
 
-def _sync_project_into_draft(config: AppConfig, project: dict[str, Any]) -> tuple[bool, str, str]:
-    text, _, _ = _active_cv_text(config)
-    if not text:
-        return False, "", "no_cv_source"
-    line = _project_to_projone_line(project)
+def _projone_command(projects: list[dict[str, Any]], *, max_bullets: int = 3) -> str:
+    inner = "".join(_project_cvitem(project, max_bullets=max_bullets) for project in projects)
+    return rf"\newcommand{{\projone}}{{{inner}}}"
+
+
+def _project_to_projone_line(project: dict[str, Any]) -> str:
+    return _projone_command([project])
+
+
+def _replace_projone(text: str, line: str) -> tuple[str, int]:
+    """Replace every ``\\projone`` definition with ``line`` (or inject one)."""
     # Remove any previous fallback line we may have injected before the
     # document. The real template defines \projone inside language branches.
     text = re.sub(r"(?m)^\\newcommand\{\\projone\}\{.*\}\n?", "", text)
@@ -62,10 +68,59 @@ def _sync_project_into_draft(config: AppConfig, project: dict[str, Any]) -> tupl
         if marker in text:
             rewritten = text.replace(marker, line + "\n" + marker, 1)
             count = 1
-        else:
-            return False, text, "projone_not_found"
+    return rewritten, count
+
+
+def _sync_project_into_draft(config: AppConfig, project: dict[str, Any]) -> tuple[bool, str, str]:
+    text, _, _ = _active_cv_text(config)
+    if not text:
+        return False, "", "no_cv_source"
+    rewritten, count = _replace_projone(text, _project_to_projone_line(project))
+    if count == 0:
+        return False, text, "projone_not_found"
     _write_draft(config, rewritten)
     return True, rewritten, f"updated_{count}_projone_command"
+
+
+def set_key_projects(config: AppConfig, count: int) -> dict[str, Any]:
+    """Pack the top-N ``master_cv.json`` projects into the draft's ``\\projone``.
+
+    Uses the master_cv ordering (promote a project first to feature it), the
+    same packing shape the per-job LaTeX renderer uses. The caller should run
+    the one-page check afterwards — more projects means tighter space.
+    """
+    count = max(1, min(3, int(count or 1)))
+    try:
+        root = _profiles_root(config)
+    except ValueError as exc:
+        return {"ok": False, "reason": str(exc)}
+    master_cv_path = root / "master_cv.json"
+    if not master_cv_path.exists():
+        return {"ok": False, "reason": "no_master_cv"}
+    try:
+        master = json.loads(master_cv_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"ok": False, "reason": f"bad_json: {exc}"}
+    projects = [p for p in master.get("projects", []) if isinstance(p, dict)]
+    if not projects:
+        return {"ok": False, "reason": "no_projects"}
+    chosen = projects[:count]
+    text, _, _ = _active_cv_text(config)
+    if not text:
+        return {"ok": False, "reason": "no_cv_source"}
+    # Tighter bullet budget when stacking several projects into one slot.
+    max_bullets = 3 if len(chosen) == 1 else 1
+    rewritten, replaced = _replace_projone(text, _projone_command(chosen, max_bullets=max_bullets))
+    if replaced == 0:
+        return {"ok": False, "reason": "projone_not_found"}
+    _write_draft(config, rewritten)
+    return {
+        "ok": True,
+        "count": len(chosen),
+        "projects": [p.get("name") for p in chosen],
+        "text": rewritten,
+        "note": f"packed_{len(chosen)}_projects_into_projone",
+    }
 
 
 def import_github_project(config: AppConfig, project_name: str) -> dict[str, Any]:

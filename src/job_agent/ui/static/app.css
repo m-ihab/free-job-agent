@@ -415,14 +415,10 @@ h4 {
   font-size: clamp(1.05rem, 1.4vw, 1.3rem);
 }
 
-.app-header h1::before {
-  content: "";
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-3) 100%);
-  box-shadow: 0 0 18px var(--accent-soft);
-  display: inline-block;
+.app-header h1 .brand-logo {
+  width: 18px;
+  height: 18px;
+  flex: none;
 }
 
 .eyebrow {
@@ -706,6 +702,25 @@ textarea {
   color: var(--ink);
   padding: 0.55rem 0.7rem;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+/* Native <select> popups can't use translucent glass fills: the OS paints the
+   dropdown itself, and an rgba background falls back to white — producing
+   white-on-white options in dark mode. Give selects a solid surface and tell
+   the browser which palette the popup should use. */
+select {
+  background-color: var(--surface-solid);
+  color-scheme: light;
+}
+
+html[data-theme="dark"] select {
+  color-scheme: dark;
+}
+
+select option,
+select optgroup {
+  background: var(--surface-solid);
+  color: var(--ink);
 }
 
 input:hover,
@@ -1686,17 +1701,20 @@ html[data-theme="dark"] .chat-bubble.thinking {
   box-shadow: var(--shadow-ring);
 }
 
-.studio-preview iframe {
-  flex: 1;
-  width: 100%;
-  height: min(82vh, 920px);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-}
+/* Height comes from .studio-preview (clamp) + flex; keep the frame itself
+   unconstrained so the panel stays a natural size. */
 
 .studio-preview {
-  min-height: min(84vh, 960px);
+  height: clamp(420px, 62vh, 720px);
+}
+
+.studio-preview iframe {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
 }
 
 .studio-section-list {
@@ -1932,9 +1950,9 @@ html[data-theme="dark"] .coach-list li {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.58;
-  color: #dbeafe;
-  background: linear-gradient(180deg, #0f172a, #111827);
-  border: 1px solid rgba(96, 165, 250, 0.28);
+  color: var(--ink);
+  background: var(--surface-3);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   padding: 0.8rem 0.9rem;
   tab-size: 2;
@@ -2344,18 +2362,11 @@ html {
   color: var(--ink);
 }
 
-.rail-brand .brand-mark {
+.rail-brand .brand-mark-svg {
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  background: var(--accent-grad);
   box-shadow: var(--glow-soft);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 800;
   flex: none;
 }
 
@@ -2398,16 +2409,31 @@ html {
 .cmdk-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  min-height: 34px;
-  padding: 0.3rem 0.7rem;
-  border-radius: 10px;
+  gap: 0.55rem;
+  height: 32px;
+  min-height: 32px;
+  min-width: clamp(200px, 26vw, 360px);
+  padding: 0 0.4rem 0 0.75rem;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cmdk-btn .tab-icon {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex: none;
+}
+
+.cmdk-btn kbd {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .cmdk-btn:hover {
@@ -3038,4 +3064,93 @@ html {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+/* ── Jobs table v2: 4 columns, no horizontal scroll ── */
+#jobsTableWrap table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+#jobsTableWrap th:nth-child(1),
+#jobsTableWrap td:nth-child(1) { width: 2.2rem; }
+#jobsTableWrap th:nth-child(3),
+#jobsTableWrap td:nth-child(3) { width: 7.5rem; }
+#jobsTableWrap th:nth-child(4),
+#jobsTableWrap td:nth-child(4) { width: 15rem; }
+
+#jobsTableWrap td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.job-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.pin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  margin-left: 0.35rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  vertical-align: -6px;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.pin-btn:hover {
+  color: var(--ink);
+  background: var(--surface-3);
+  border-color: var(--line);
+}
+
+.pin-btn.pinned {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+  box-shadow: var(--glow-soft);
+}
+
+.pin-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ── Profile editor chips ── */
+.chip .chip-x {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  min-height: 0;
+  padding: 0 0 0 0.35rem;
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.chip .chip-x:hover {
+  opacity: 1;
+  color: var(--bad);
+  transform: none;
+  box-shadow: none;
+}
+
+.pf-chips-block + .pf-chips-block {
+  margin-top: 0.8rem;
 }

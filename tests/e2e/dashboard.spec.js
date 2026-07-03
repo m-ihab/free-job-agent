@@ -4,7 +4,7 @@ const { test, expect } = require("@playwright/test");
 
 test("dashboard loads and tabs are navigable", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("h1")).toContainText("Paris Data Career Copilot");
+  await expect(page.locator("h1")).toContainText("Career Copilot");
 
   const tabs = ["search", "jobs", "autopilot", "studio", "portfolio", "coach", "insights", "add", "profile"];
   for (const name of tabs) {

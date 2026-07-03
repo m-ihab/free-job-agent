@@ -46,6 +46,7 @@ from job_agent.cv_studio_assets import (  # noqa: F401  (public re-export seam)
 from job_agent.cv_studio_projects import (  # noqa: F401  (public re-export seam)
     import_github_project,
     save_project,
+    set_key_projects,
 )
 from job_agent.cv_studio_draft import (  # noqa: F401  (public re-export seam)
     load_studio,
@@ -95,4 +96,5 @@ __all__ = [
     "ICON_PACKS",
     "import_github_project",
     "save_project",
+    "set_key_projects",
 ]

@@ -17,6 +17,7 @@ from job_agent.cv_studio import (
     reset_studio_draft as _studio_reset,
     save_studio_draft as _studio_save,
     save_project as _studio_save_project,
+    set_key_projects as _studio_set_key_projects,
     set_studio_language as _studio_set_language,
     single_page_guard as _studio_single_page,
     suggest_edits as _studio_suggest,
@@ -52,6 +53,14 @@ def post_icon_pack(h, payload) -> None:
 
 def post_import_github_project(h, payload) -> None:
     h._send_json(_studio_import_project(h._config(), str(payload.get("name") or "")))
+
+
+def post_key_projects(h, payload) -> None:
+    try:
+        count = int(payload.get("count") or 1)
+    except (TypeError, ValueError):
+        return h._send_error_json("count must be a number between 1 and 3.")
+    h._send_json(_studio_set_key_projects(h._config(), count))
 
 
 def post_project_save(h, payload) -> None:

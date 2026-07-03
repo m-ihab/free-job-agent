@@ -54,7 +54,7 @@ def _post_json(page: Page, live_server_url: str, path: str, payload: dict):
 
 def test_page_title(page: Page, live_server_url: str) -> None:
     page.goto(live_server_url)
-    expect(page).to_have_title("Paris Data Career Copilot")
+    expect(page).to_have_title("Career Copilot")
 
 
 def test_page_header_visible(page: Page, live_server_url: str) -> None:
@@ -169,11 +169,14 @@ def test_search_query_input_has_default(page: Page, live_server_url: str) -> Non
 
 def test_search_location_input_visible(page: Page, live_server_url: str) -> None:
     page.goto(live_server_url)
+    # Overview is the default tab now; the Search panel must be activated first.
+    page.locator("button[data-tab='search']").click()
     expect(page.locator("#locationInput")).to_be_visible()
 
 
 def test_search_language_select_visible(page: Page, live_server_url: str) -> None:
     page.goto(live_server_url)
+    page.locator("button[data-tab='search']").click()
     expect(page.locator("#languageSelect")).to_be_visible()
 
 

@@ -25,7 +25,7 @@ from job_agent.validators import validate_profile_bundle
 from job_agent.work_auth import check_gratification, classify_work_auth
 
 
-APP_NAME = os.environ.get("JOB_AGENT_APP_NAME", "Paris Data Career Copilot")
+APP_NAME = os.environ.get("JOB_AGENT_APP_NAME", "Career Copilot")
 APP_URL_PLACEHOLDER = os.environ.get(
     "JOB_AGENT_APP_URL",
     "https://github.com/your-username/free-job-agent",

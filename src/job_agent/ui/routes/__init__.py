@@ -15,6 +15,7 @@ from typing import Callable
 from job_agent.ui.routes import (
     boards,
     get_core,
+    profile_facts,
     get_pipeline,
     get_portfolio,
     get_referral,
@@ -74,6 +75,7 @@ GET_ROUTES: dict[str, Callable[[object], None]] = {
     "/api/referrals": get_referral.get_referrals,
     "/api/stories": stories.get_stories,
     "/api/company-boards": boards.get_company_boards,
+    "/api/profile-facts": profile_facts.get_profile_facts,
 }
 
 
@@ -115,6 +117,7 @@ POST_ROUTES: dict[str, Callable[[object, dict], None]] = {
     "/api/cv-studio/remove-photo": post_cv_studio.post_remove_photo,
     "/api/cv-studio/icon-pack": post_cv_studio.post_icon_pack,
     "/api/cv-studio/import-github-project": post_cv_studio.post_import_github_project,
+    "/api/cv-studio/key-projects": post_cv_studio.post_key_projects,
     "/api/cv-studio/project-save": post_cv_studio.post_project_save,
     "/api/cv-studio/single-page-check": post_cv_studio.post_single_page_check,
     "/api/cv-studio/auto-fit": post_cv_studio.post_auto_fit,
@@ -165,6 +168,7 @@ POST_ROUTES: dict[str, Callable[[object, dict], None]] = {
     "/api/story-sync": stories.post_story_sync,
     "/api/evaluate": stories.post_evaluate,
     "/api/discover-boards": boards.post_discover_boards,
+    "/api/profile-facts": profile_facts.post_profile_facts,
 }
 
 

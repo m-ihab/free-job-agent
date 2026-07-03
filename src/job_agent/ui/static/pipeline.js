@@ -4,19 +4,25 @@
   const escapeHtml = (value) => window.escapeHtml(value);
   const toast = (message) => window.toast(message);
 
+  function noteBtn(jobId) {
+    return `<button class="ghost" data-pipeline-note="${escapeHtml(jobId)}" title="Open this job in the notes editor">📝</button>`;
+  }
+
   function row(item) {
-    return `<button class="pipeline-row" data-pipeline-job="${escapeHtml(item.job_id)}" title="Use this job in the notes editor">
+    return `<div class="pipeline-row" role="button" tabindex="0" data-pipeline-job="${escapeHtml(item.job_id)}" title="Open job details and act on it">
       <span><strong>${escapeHtml(item.action)}</strong><small>${escapeHtml(item.title)} · ${escapeHtml(item.company)}</small></span>
       <span>${escapeHtml(item.stage)} ${item.fit_score === null || item.fit_score === undefined ? "" : `· ${Math.round(item.fit_score)}`}</span>
       <em>${escapeHtml(item.reason)}</em>
-    </button>`;
+      ${noteBtn(item.job_id)}
+    </div>`;
   }
 
   function staleRow(item) {
-    return `<button class="pipeline-row warn" data-pipeline-job="${escapeHtml(item.job_id)}">
+    return `<div class="pipeline-row warn" role="button" tabindex="0" data-pipeline-job="${escapeHtml(item.job_id)}" title="Open job details and act on it">
       <span><strong>${escapeHtml(item.next_action)}</strong><small>${escapeHtml(item.title)} · ${escapeHtml(item.company)}</small></span>
       <span>${escapeHtml(item.status)} · ${item.days_idle}d</span>
-    </button>`;
+      ${noteBtn(item.job_id)}
+    </div>`;
   }
 
   function followupRow(item) {
@@ -216,11 +222,24 @@
       draftReferral(referral.dataset.referralContact || "");
       return;
     }
+    // A queue row's small 📝 button routes to the notes editor; clicking the
+    // row itself opens the job drawer so the action can actually be taken.
+    const note = event.target.closest("[data-pipeline-note]");
+    if (note) {
+      const input = $("pipelineNotesJobId");
+      if (input) input.value = note.dataset.pipelineNote || "";
+      loadNotes();
+      return;
+    }
     const item = event.target.closest("[data-pipeline-job]");
     if (!item) return;
-    const input = $("pipelineNotesJobId");
-    if (input) input.value = item.dataset.pipelineJob || "";
-    loadNotes();
+    if (window.JobDrawer && typeof window.JobDrawer.open === "function") {
+      window.JobDrawer.open(item.dataset.pipelineJob);
+    } else {
+      const input = $("pipelineNotesJobId");
+      if (input) input.value = item.dataset.pipelineJob || "";
+      loadNotes();
+    }
   });
 
   document.addEventListener("DOMContentLoaded", () => {

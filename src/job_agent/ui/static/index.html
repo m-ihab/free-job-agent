@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Paris Data Career Copilot</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235e6ad2'/%3E%3Cpath d='M16 7l7 5v8l-7 5-7-5v-8z' fill='none' stroke='white' stroke-width='2.4'/%3E%3C/svg%3E" />
+    <title>Career Copilot</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%235e6ad2'/%3E%3Cstop offset='.55' stop-color='%237c8aff'/%3E%3Cstop offset='1' stop-color='%23b06ab3'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M 24.2 15.4 A 18 18 0 1 0 39.8 15.4' fill='none' stroke='white' stroke-opacity='.5' stroke-width='3.4' stroke-linecap='round'/%3E%3Cpath d='M32 46 V14 M22.5 23.5 L32 14 l9.5 9.5' fill='none' stroke='white' stroke-width='5.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/static/app.css" />
     <script src="/static/vendor/chart.umd.min.js" defer></script>
   </head>
   <body>
     <header class="app-header">
       <div>
-        <h1>Paris Data Career Copilot</h1>
+        <h1><svg class="brand-logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="ccGradH" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5e6ad2"/><stop offset=".55" stop-color="#7c8aff"/><stop offset="1" stop-color="#b06ab3"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#ccGradH)"/><path d="M 24.2 15.4 A 18 18 0 1 0 39.8 15.4" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="3.4" stroke-linecap="round"/><path d="M32 46 V14 M22.5 23.5 L32 14 l9.5 9.5" fill="none" stroke="#fff" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Career Copilot</h1>
       </div>
       <div class="status-strip" id="statusStrip">
         <button class="cmdk-btn" id="cmdkOpenBtn" title="Command palette" aria-label="Open command palette">
@@ -24,7 +24,7 @@
     </header>
 
     <nav class="tabs" aria-label="Main sections">
-      <div class="rail-brand"><span class="brand-mark">◆</span> Career Copilot</div>
+      <div class="rail-brand"><svg class="brand-mark-svg" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="ccGradR" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5e6ad2"/><stop offset=".55" stop-color="#7c8aff"/><stop offset="1" stop-color="#b06ab3"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#ccGradR)"/><path d="M 24.2 15.4 A 18 18 0 1 0 39.8 15.4" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="3.4" stroke-linecap="round"/><path d="M32 46 V14 M22.5 23.5 L32 14 l9.5 9.5" fill="none" stroke="#fff" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round"/></svg> Career Copilot</div>
       <div class="rail-group">Work</div>
       <button class="tab active" data-tab="overview"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Overview</button>
       <button class="tab" data-tab="search"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Search</button>
@@ -39,8 +39,9 @@
       <button class="tab" data-tab="coach"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12v9M12 12L4 7.5M12 12l8-4.5"/></svg>Career Coach</button>
       <button class="tab" data-tab="insights"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19V10M10 19V4M16 19v-7M21 19H3"/></svg>Insights</button>
       <div class="rail-group">Setup</div>
+      <button class="tab" data-tab="myprofile"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>My Profile</button>
       <button class="tab" data-tab="add"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Add Job</button>
-      <button class="tab" data-tab="profile"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>Profile &amp; API</button>
+      <button class="tab" data-tab="profile"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.3 4.3a1.7 1.7 0 0 1 3.4 0l.2 1.2a7 7 0 0 1 1.7 1l1.2-.5a1.7 1.7 0 0 1 1.7 3l-1 .7a7 7 0 0 1 0 2l1 .7a1.7 1.7 0 0 1-1.7 3l-1.2-.5a7 7 0 0 1-1.7 1l-.2 1.2a1.7 1.7 0 0 1-3.4 0l-.2-1.2a7 7 0 0 1-1.7-1l-1.2.5a1.7 1.7 0 0 1-1.7-3l1-.7a7 7 0 0 1 0-2l-1-.7a1.7 1.7 0 0 1 1.7-3l1.2.5a7 7 0 0 1 1.7-1z"/><circle cx="12" cy="12" r="2.5"/></svg>Setup &amp; API</button>
       <div class="rail-foot">
         <span>Local-first · your data stays here</span>
       </div>
@@ -711,12 +712,6 @@ data engineer</textarea>
           <section class="panel studio-preview">
             <div class="studio-toolbar">
               <h3 style="margin:0">Live preview</h3>
-              <div class="zoom-controls" role="group" aria-label="Preview zoom">
-                <button type="button" data-zoom="page-width" class="active">Fit</button>
-                <button type="button" data-zoom="100">100%</button>
-                <button type="button" data-zoom="125">125%</button>
-                <button type="button" data-zoom="150">150%</button>
-              </div>
               <a class="button-link" href="/api/cv-studio/preview-pdf" target="_blank" rel="noreferrer">Open full PDF</a>
             </div>
             <iframe id="studioPreview" title="CV preview"></iframe>
@@ -806,6 +801,16 @@ data engineer</textarea>
             </select>
             <button class="primary-soft" id="studioIconPackApplyBtn" style="margin-left:0.4rem">Apply to main.tex</button>
             <div id="studioIconPackNotice" class="muted" style="margin-top:0.4rem">A <code>.bak</code> is saved each time.</div>
+            <hr />
+            <h3>Key projects on the CV</h3>
+            <p class="muted" style="margin-bottom:0.5rem">Pack your top 1–3 <code>master_cv.json</code> projects into the Projects slot (promote a project first to feature it). The one-page guard runs automatically after applying.</p>
+            <select id="studioKeyProjectsCount" style="max-width:12rem">
+              <option value="1">1 project (detailed)</option>
+              <option value="2">2 projects (compact)</option>
+              <option value="3">3 projects (compact)</option>
+            </select>
+            <button class="primary-soft" id="studioKeyProjectsApplyBtn" style="margin-left:0.4rem">Apply to draft</button>
+            <div id="studioKeyProjectsNotice" class="muted" style="margin-top:0.4rem"></div>
           </section>
         </div>
 
@@ -920,6 +925,7 @@ data engineer</textarea>
               <h3 style="margin:0">Live site preview</h3>
               <span class="muted">Static HTML/CSS in <code>.job_agent/portfolio</code></span>
             </div>
+            <p class="muted" style="margin:0 0 0.5rem;font-size:0.8rem">The preview renders the portfolio's <em>own</em> theme (pick it in Options above) — it is intentionally independent from the dashboard's dark/light mode.</p>
             <iframe id="portfolioPreview" title="Portfolio preview" sandbox="allow-scripts allow-popups"></iframe>
           </section>
           <section class="panel portfolio-editor-panel">
@@ -1126,6 +1132,21 @@ data engineer</textarea>
           <button id="bulkAddBtn">Add all</button>
         </section>
         <div class="notice hidden" id="addNotice"></div>
+      </section>
+
+      <section id="tab-myprofile" class="tab-panel">
+        <div class="section-header">
+          <div>
+            <h2>My Profile</h2>
+            <p>The local facts that drive scoring, packet generation, and screening answers. Saved to <code>profiles/candidate_profile.json</code> — nothing ever leaves your machine.</p>
+          </div>
+          <div class="action-row">
+            <button class="primary" id="profileFactsSaveBtn">Save profile</button>
+            <button id="profileFactsReloadBtn">Reload</button>
+          </div>
+        </div>
+        <div class="notice hidden" id="profileFactsNotice"></div>
+        <div id="profileFactsForm"><div class="empty-state"><span class="empty-glyph">◍</span><strong>Loading profile…</strong></div></div>
       </section>
 
       <section id="tab-profile" class="tab-panel">
@@ -1335,5 +1356,6 @@ SQL
     <script src="/static/drawer.js" defer></script>
     <script src="/static/kanban.js" defer></script>
     <script src="/static/features.js" defer></script>
+    <script src="/static/profile_editor.js" defer></script>
   </body>
 </html>

@@ -664,13 +664,13 @@ function renderJobs() {
 
   renderJobsMetrics(jobs);
 
+  const pinGlyph = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 4h6l1 7 2.5 2.5H5.5L8 11z"/></svg>`;
   const rows = jobs
     .map(
       (job) => {
         const checked = state.selectedJobs.has(job.id) ? "checked" : "";
-        const pinChecked = pinnedJobIds.has(job.id) ? "checked" : "";
-        const pinnedClass = pinnedJobIds.has(job.id) ? " pinned-row" : "";
-        const enrichLabel = job.enriched ? "Enriched" : "—";
+        const isPinned = pinnedJobIds.has(job.id);
+        const pinnedClass = isPinned ? " pinned-row" : "";
         const activeClass = state.activeJobId === job.id ? "active-row" : "";
         const summary = job.ai_summary ? `<div class="row-summary">${escapeHtml(job.ai_summary)}</div>` : "";
         const aiBadge = aiVerdictBadge(job);
@@ -681,15 +681,20 @@ function renderJobs() {
         const langWarn = (job.risk_flags || []).includes("LANGUAGE_MISMATCH")
           ? `<span class="badge-lang-warn" title="This job requires French — your profile is English-only">⚠ French required</span>`
           : "";
+        // One "Job" cell carries title + pin toggle + company + meta row
+        // (location/remote/status/enriched) so the table fits without
+        // horizontal scrolling.
+        const pinBtn = `<button class="pin-btn${isPinned ? " pinned" : ""}" data-action="job-pin" data-job="${escapeHtml(job.id)}" title="${isPinned ? "Unpin" : "Pin to keep visible while filtering"}" aria-pressed="${isPinned}">${pinGlyph}</button>`;
+        const metaBits = [
+          job.location ? escapeHtml(job.location) : "",
+          job.remote ? renderBadge("Remote", "good") : "",
+          statusBadge(job.status),
+          job.enriched ? `<span class="row-tag" title="Enriched with France Travail data">enriched</span>` : "",
+        ].filter(Boolean).join(" ");
         return `<tr data-job-row="${escapeHtml(job.id)}" class="${activeClass}${pinnedClass}">
           <td><input type="checkbox" data-select-job="${escapeHtml(job.id)}" ${checked} /></td>
-          <td class="pin-cell"><input type="checkbox" class="pin-check" data-action="job-pin" data-job="${escapeHtml(job.id)}" ${pinChecked} title="Pin to keep this job visible while you search or filter" /></td>
-          <td><strong>${escapeHtml(job.title)}</strong>${langWarn}<br>${companyLine(job)}${summary}${tags}</td>
-          <td>${escapeHtml(job.location || "")}${job.remote ? ` ${renderBadge("Remote", "good")}` : ""}</td>
-          <td>${statusBadge(job.status)}</td>
+          <td><strong>${escapeHtml(job.title)}</strong>${pinBtn}${langWarn}<br>${companyLine(job)}<div class="job-meta-row">${metaBits}</div>${summary}${tags}</td>
           <td>${scorePill(job.fit_score)}${preflightBadge ? `<br>${preflightBadge}` : ""}${aiBadge ? `<br>${aiBadge}` : ""}${authBadge ? `<br>${authBadge}` : ""}${grantBadge ? `<br>${grantBadge}` : ""}</td>
-          <td>${escapeHtml((job.tech_stack || []).slice(0, 5).join(", "))}</td>
-          <td>${escapeHtml(enrichLabel)}</td>
           <td class="actions">${jobActions(job)}</td>
         </tr>`;
       },
@@ -700,7 +705,7 @@ function renderJobs() {
     : "";
   const countLine = `<div class="jobs-count muted">Showing <strong>${jobs.length}</strong> of <strong>${state.jobs.length}</strong> tracked jobs${pinNote}</div>`;
   $("jobsTableWrap").innerHTML = countLine + `<table>
-    <thead><tr><th></th><th title="Pin">📌</th><th>Job</th><th>Location</th><th>Status</th><th>Score</th><th>Signals</th><th>Enrich</th><th>Actions</th></tr></thead>
+    <thead><tr><th></th><th>Job</th><th>Score</th><th>Actions</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
   refreshSelectionUi();
@@ -1778,19 +1783,11 @@ async function studioSwapEduExp() {
   }
 }
 
-let studioZoom = "page-width";
-
 function studioRefreshPreview() {
   const iframe = document.getElementById("studioPreview");
-  if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}#zoom=${studioZoom}`;
-}
-
-function studioSetZoom(zoom) {
-  studioZoom = zoom;
-  document.querySelectorAll('.zoom-controls button[data-zoom]').forEach((b) => {
-    b.classList.toggle("active", b.dataset.zoom === zoom);
-  });
-  studioRefreshPreview();
+  // page-width fit — the preview panel has a natural fixed height; the "Open
+  // full PDF" link covers close inspection (zoom controls were dropped).
+  if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}#zoom=page-width`;
 }
 
 async function studioCompile() {
@@ -2318,7 +2315,7 @@ async function applyIconPack() {
   try {
     const result = await api("/api/cv-studio/icon-pack", { pack: select.value });
     if (result.ok) {
-      if (notice) notice.textContent = `Applied ${result.label}. Recompile to preview.`;
+      if (notice) notice.textContent = `Applied ${result.label}. Compiling preview…`;
       toast("Icon pack updated.");
       const ta = document.getElementById("studioTextarea");
       if (ta && result.text) {
@@ -2329,11 +2326,50 @@ async function applyIconPack() {
         await loadStudio();
       }
       await loadStudioAssets();
+      // Recompile immediately so the icons actually show up. A failed compile
+      // usually means the pack's LaTeX package is missing locally.
+      try {
+        await studioCompile();
+        if (notice) notice.textContent = `Applied ${result.label}. Preview updated.`;
+      } catch (compileError) {
+        if (notice) notice.textContent =
+          `Applied ${result.label}, but the preview failed to compile: ${compileError.message}. ` +
+          `If the error mentions a missing package (e.g. fontawesome5), install it via MiKTeX Console → Packages.`;
+      }
     } else if (notice) {
       notice.textContent = `Failed: ${result.reason}`;
     }
   } catch (error) {
     if (notice) notice.textContent = error.message;
+  }
+}
+
+async function applyKeyProjects() {
+  const select = document.getElementById("studioKeyProjectsCount");
+  const notice = document.getElementById("studioKeyProjectsNotice");
+  const button = document.getElementById("studioKeyProjectsApplyBtn");
+  if (!select) return;
+  setBusy(button, true);
+  try {
+    const result = await api("/api/cv-studio/key-projects", { count: Number(select.value) });
+    if (!result.ok) {
+      if (notice) notice.textContent = `Failed: ${result.reason}`;
+      return;
+    }
+    const ta = document.getElementById("studioTextarea");
+    if (ta && result.text) {
+      ta.value = result.text;
+      ta.dataset.dirty = "1";
+    }
+    if (notice) notice.textContent = `Packed ${result.count} project(s): ${(result.projects || []).join(", ")}. Checking page count…`;
+    toast(`Key projects: ${result.count}`);
+    await studioCompile();
+    // More projects = tighter space; run the one-page guard automatically.
+    await checkSinglePage();
+  } catch (error) {
+    if (notice) notice.textContent = error.message;
+  } finally {
+    setBusy(button, false);
   }
 }
 
@@ -3549,9 +3585,8 @@ function bindEvents() {
   });
   const studioVersionsBtn = document.getElementById("studioVersionsBtn");
   if (studioVersionsBtn) studioVersionsBtn.addEventListener("click", studioToggleVersions);
-  document.querySelectorAll('.zoom-controls button[data-zoom]').forEach((b) => {
-    b.addEventListener("click", () => studioSetZoom(b.dataset.zoom));
-  });
+  const studioKeyProjectsBtn = document.getElementById("studioKeyProjectsApplyBtn");
+  if (studioKeyProjectsBtn) studioKeyProjectsBtn.addEventListener("click", applyKeyProjects);
   const studioReorderApplyBtn = document.getElementById("studioReorderApplyBtn");
   if (studioReorderApplyBtn) studioReorderApplyBtn.addEventListener("click", studioApplyReorder);
   const studioSwapBtn = document.getElementById("studioSwapEduExpBtn");

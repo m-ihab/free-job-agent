@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Career Copilot logo">
+  <!-- Career Copilot — "escape velocity" mark: an ascending arrow breaking
+       through an orbit ring. Gradient matches the app accent (indigo→orchid). -->
+  <defs>
+    <linearGradient id="cc-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5e6ad2"/>
+      <stop offset="0.55" stop-color="#7c8aff"/>
+      <stop offset="1" stop-color="#b06ab3"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#cc-grad)"/>
+  <!-- orbit ring, broken at the top where the arrow escapes -->
+  <path d="M 24.2 15.4 A 18 18 0 1 0 39.8 15.4" fill="none" stroke="#ffffff" stroke-opacity="0.5" stroke-width="3.4" stroke-linecap="round"/>
+  <!-- ascending arrow -->
+  <path d="M32 46 V14 M22.5 23.5 L32 14 l9.5 9.5" fill="none" stroke="#ffffff" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

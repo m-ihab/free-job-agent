@@ -183,7 +183,7 @@ def _render_html(config: AppConfig, cfg: PortfolioConfig) -> str:
     </div></section>
   </main>
   <footer><div class="wrap">
-    <span class="muted">© {name} · built locally with Paris Data Career Copilot.</span>
+    <span class="muted">© {name} · built locally with Career Copilot.</span>
     <span class="muted print-hint">Tip: Press Ctrl/Cmd + P for a clean printable resume.</span>
   </div></footer>
   <script>
