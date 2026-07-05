@@ -1,16 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Career Copilot logo">
-  <!-- Career Copilot — "escape velocity" mark: an ascending arrow breaking
-       through an orbit ring. Gradient matches the app accent (indigo→orchid). -->
+  <!-- Career Copilot — "Advance" mark: two forward chevrons, the leading one
+       solid and the trailing one faded for motion. Momentum: the co-pilot
+       pacing ahead. Gradient matches the app accent (indigo → periwinkle → orchid). -->
   <defs>
     <linearGradient id="cc-grad" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#5e6ad2"/>
       <stop offset="0.55" stop-color="#7c8aff"/>
       <stop offset="1" stop-color="#b06ab3"/>
     </linearGradient>
+    <linearGradient id="cc-hi" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="16" fill="url(#cc-grad)"/>
-  <!-- orbit ring, broken at the top where the arrow escapes -->
-  <path d="M 24.2 15.4 A 18 18 0 1 0 39.8 15.4" fill="none" stroke="#ffffff" stroke-opacity="0.5" stroke-width="3.4" stroke-linecap="round"/>
-  <!-- ascending arrow -->
-  <path d="M32 46 V14 M22.5 23.5 L32 14 l9.5 9.5" fill="none" stroke="#ffffff" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect width="64" height="64" rx="15" fill="url(#cc-grad)"/>
+  <rect width="64" height="64" rx="15" fill="url(#cc-hi)"/>
+  <rect x="1" y="1" width="62" height="62" rx="14" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="1.4"/>
+  <g fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 44 L32 32 L20 20" stroke-opacity="0.6"/>
+    <path d="M33 44 L45 32 L33 20"/>
+  </g>
 </svg>
