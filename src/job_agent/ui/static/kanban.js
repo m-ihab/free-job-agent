@@ -10,7 +10,7 @@
     { key: "qualified", label: "Qualified", target: "QUALIFIED", statuses: ["QUALIFIED"] },
     { key: "packet", label: "Packet ready", target: "PACKET_READY", statuses: ["PACKET_READY", "APPLYING", "ASSISTED_APPLY_OPENED", "APPLY_ATTEMPTED", "OUTREACH_DRAFTED"] },
     { key: "manual", label: "Needs manual", target: "NEEDS_MANUAL", statuses: ["NEEDS_MANUAL"] },
-    { key: "submitted", label: "Submitted", target: "MANUALLY_SUBMITTED", statuses: ["SUBMITTED", "MANUALLY_SUBMITTED", "APPLIED", "OUTREACH_SENT", "FOLLOWUP_DUE", "FOLLOWUP_SENT", "REPLIED"] },
+    { key: "submitted", label: "Submitted", target: "MANUALLY_SUBMITTED", statuses: ["SUBMITTED", "MANUALLY_SUBMITTED", "AUTO_SUBMITTED", "APPLIED", "OUTREACH_SENT", "FOLLOWUP_DUE", "FOLLOWUP_SENT", "REPLIED"] },
     { key: "interview", label: "Interviewing", target: "INTERVIEWING", statuses: ["INTERVIEW", "INTERVIEWING"] },
     { key: "offer", label: "Offer", target: "OFFER", statuses: ["OFFER", "OFFERED", "ACCEPTED"] },
   ];

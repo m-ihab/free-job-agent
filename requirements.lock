@@ -18,6 +18,8 @@ click==8.4.1
     # via -r requirements.txt
 colorama==0.4.6
     # via click
+defusedxml==0.7.1
+    # via -r requirements.txt
 et-xmlfile==2.0.0
     # via openpyxl
 feedparser==6.0.12

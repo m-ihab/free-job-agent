@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from job_agent.schemas.candidate import CandidateProfile
 from job_agent.schemas.job import JobListing
@@ -16,6 +16,9 @@ from job_agent.schemas.scoring import ScoreBreakdown
 from job_agent.scorer import score_job
 from job_agent.timing import job_timing_signal
 from job_agent.work_auth import WorkAuthClass, classify_work_auth
+
+if TYPE_CHECKING:
+    from job_agent.config import AppConfig
 
 _GRADE_BOUNDS = [(85, "A"), (70, "B"), (55, "C"), (40, "D")]
 _FRESHNESS_SCORES = {"fresh": 100, "recent": 80, "aging": 55, "stale_posting": 25, "unknown": 50}
@@ -103,8 +106,10 @@ def evaluate_job(
         breakdown = score_job(job, profile, semantic_score=semantic_score)
     semantic = semantic_score if semantic_score is not None else breakdown.semantic_score
 
+    # job_timing_signal only reads freshness_recent_hours; the SimpleNamespace
+    # stub stands in for AppConfig when no config is supplied.
     timing_config = config if config is not None else SimpleNamespace(freshness_recent_hours=72)
-    timing = job_timing_signal(job, timing_config)
+    timing = job_timing_signal(job, cast("AppConfig", timing_config))
     freshness = _FRESHNESS_SCORES.get(timing.bucket, 50)
 
     dims: list[DimensionGrade] = [

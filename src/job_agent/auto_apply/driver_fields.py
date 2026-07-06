@@ -13,6 +13,25 @@ from job_agent.auto_apply.ats_profiles import heuristic_keys_for
 
 logger = logging.getLogger(__name__)
 
+# Labels whose answers are factual claims (work authorization, visa, salary,
+# availability, nationality). A fuzzy match placing a stored answer in the
+# wrong one of these during an unattended run is far worse than leaving it
+# blank, so they are only ever filled through the curated keyword table —
+# never by fuzzy string similarity.
+_SENSITIVE_LABEL_MARKERS = (
+    "work authorization", "work authorisation", "autorisation", "visa", "sponsor",
+    "salary", "salaire", "compensation", "rémunération", "remuneration",
+    "pretentions", "prétentions",
+    "start date", "date de début", "disponibilité", "availability",
+    "notice period", "préavis",
+    "nationality", "nationalité", "citizen", "citoyen",
+)
+
+
+def _is_sensitive_label(label: str) -> bool:
+    label_l = label.lower()
+    return any(marker in label_l for marker in _SENSITIVE_LABEL_MARKERS)
+
 
 def _fill_visible_fields(page: Any, qa: dict, filled: list[str], ats: str = "generic") -> None:
     """Match visible form fields to QA answers by label proximity."""
@@ -34,17 +53,28 @@ def _fill_visible_fields(page: Any, qa: dict, filled: list[str], ats: str = "gen
             if not label_text:
                 continue
 
-            # Fuzzy match the label against QA keys
-            match = fuzz_process.extractOne(label_text, qa_keys, score_cutoff=55)
-            if not match:
-                # Also try matching directly against QA values by common field names
+            if _is_sensitive_label(label_text):
+                # Sensitive facts: curated keyword table only, no fuzzy match.
                 heuristic = _heuristic_match(label_text, qa, ats=ats)
                 if not heuristic:
+                    logger.info(
+                        "Leaving sensitive field %r unfilled — no exact answer mapping",
+                        label_text,
+                    )
                     continue
                 key, answer = heuristic
             else:
-                key = match[0]
-                answer = qa[key]
+                # Fuzzy match the label against QA keys
+                match = fuzz_process.extractOne(label_text, qa_keys, score_cutoff=55)
+                if not match:
+                    # Also try matching directly against QA values by common field names
+                    heuristic = _heuristic_match(label_text, qa, ats=ats)
+                    if not heuristic:
+                        continue
+                    key, answer = heuristic
+                else:
+                    key = match[0]
+                    answer = qa[key]
 
             if not answer:
                 continue

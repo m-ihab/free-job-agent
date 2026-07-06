@@ -42,7 +42,7 @@
 
   function contactRow(item) {
     return `<div class="pipeline-row compact-row">
-      <span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml([item.company, item.role, item.relationship].filter(Boolean).join(" Â· "))}</small></span>
+      <span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml([item.company, item.role, item.relationship].filter(Boolean).join(" · "))}</small></span>
       <span>${escapeHtml(item.source || "manual")}</span>
     </div>`;
   }
@@ -50,7 +50,7 @@
   function referralRow(item) {
     const contact = item.contact || {};
     return `<button class="pipeline-row compact-row" data-referral-contact="${escapeHtml(contact.id)}">
-      <span><strong>${escapeHtml(contact.name || "Contact")}</strong><small>${escapeHtml([contact.company, contact.role].filter(Boolean).join(" Â· "))}</small></span>
+      <span><strong>${escapeHtml(contact.name || "Contact")}</strong><small>${escapeHtml([contact.company, contact.role].filter(Boolean).join(" · "))}</small></span>
       <span>${escapeHtml(item.score || 0)} pts</span>
       <em>${escapeHtml((item.reasons || []).join(", "))}</em>
     </button>`;

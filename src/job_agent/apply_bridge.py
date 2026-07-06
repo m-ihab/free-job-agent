@@ -64,7 +64,7 @@ def get_ready_candidates(
         job = db.get_job(packet.job_id)
         if not job or not job.apply_url:
             continue
-        if job.status in (JobStatus.MANUALLY_SUBMITTED, JobStatus.APPLIED):
+        if job.status in (JobStatus.MANUALLY_SUBMITTED, JobStatus.AUTO_SUBMITTED, JobStatus.APPLIED):
             continue
 
         candidates.append(ApplyCandidate(
@@ -198,7 +198,7 @@ def generate_batch_instructions(
     # Mark every selected job as APPLYING so the tracker reflects the session.
     db = _get_db()
     for candidate in candidates:
-        if candidate.job.status not in (JobStatus.APPLYING, JobStatus.APPLIED, JobStatus.MANUALLY_SUBMITTED):
+        if candidate.job.status not in (JobStatus.APPLYING, JobStatus.APPLIED, JobStatus.MANUALLY_SUBMITTED, JobStatus.AUTO_SUBMITTED):
             db.update_job_status(candidate.job.id, JobStatus.APPLYING)
             db.log_event(
                 candidate.job.id,

@@ -66,6 +66,32 @@ def test_set_key_projects_single_keeps_shape(tmp_path):
     assert "Churn Model" not in result["text"]
 
 
+def test_set_key_projects_skips_content_free_projects(tmp_path):
+    """A name-only project must never produce invented CV prose (hard constraint)."""
+    config = _make_config(tmp_path)
+    _seed(config, [{"name": "Mystery Repo"}] + _PROJECTS[:1])
+    result = set_key_projects(config, 2)
+    assert result["ok"] is True
+    assert result["count"] == 1
+    assert "Mystery Repo" in result.get("skipped_empty", [])
+    assert "Mystery Repo" not in result["text"]
+    assert "Relevant data/AI project" not in result["text"]
+
+
+def test_set_key_projects_all_projects_empty_fails(tmp_path):
+    config = _make_config(tmp_path)
+    _seed(config, [{"name": "Mystery Repo"}, {"name": "Ghost"}])
+    result = set_key_projects(config, 2)
+    assert result["ok"] is False
+    assert result["reason"] == "no_projects_with_content"
+
+
+def test_project_cvitem_never_invents_body_text(tmp_path):
+    from job_agent.cv_studio_projects import _project_cvitem
+
+    assert _project_cvitem({"name": "Bare"}) == ""
+
+
 def test_set_key_projects_without_projects_fails(tmp_path):
     config = _make_config(tmp_path)
     _seed(config, [])

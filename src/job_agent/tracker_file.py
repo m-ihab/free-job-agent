@@ -35,6 +35,7 @@ _STATUS_LABELS: dict[str, JobStatus] = {
     "applied": JobStatus.APPLIED,
     "submitted": JobStatus.MANUALLY_SUBMITTED,
     "manually submitted": JobStatus.MANUALLY_SUBMITTED,
+    "auto submitted": JobStatus.AUTO_SUBMITTED,
     "rejected": JobStatus.REJECTED,
     "interview": JobStatus.INTERVIEW,
     "interviewing": JobStatus.INTERVIEW,

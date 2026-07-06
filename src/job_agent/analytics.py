@@ -21,9 +21,9 @@ from job_agent.schemas.job import JobListing, JobStatus
 # implies the earlier one — a job that reached APPLIED has also been SCORED.
 FUNNEL_STAGES: list[tuple[str, list[JobStatus]]] = [
     ("Tracked", []),
-    ("Scored", [JobStatus.SCORED, JobStatus.NEEDS_REVIEW, JobStatus.PACKET_READY, JobStatus.APPLYING, JobStatus.ASSISTED_APPLY_OPENED, JobStatus.APPLIED, JobStatus.MANUALLY_SUBMITTED, JobStatus.REJECTED, JobStatus.INTERVIEW, JobStatus.OFFERED, JobStatus.ACCEPTED]),
-    ("Packet ready", [JobStatus.PACKET_READY, JobStatus.APPLYING, JobStatus.ASSISTED_APPLY_OPENED, JobStatus.APPLIED, JobStatus.MANUALLY_SUBMITTED, JobStatus.REJECTED, JobStatus.INTERVIEW, JobStatus.OFFERED, JobStatus.ACCEPTED]),
-    ("Submitted", [JobStatus.APPLIED, JobStatus.MANUALLY_SUBMITTED, JobStatus.REJECTED, JobStatus.INTERVIEW, JobStatus.OFFERED, JobStatus.ACCEPTED]),
+    ("Scored", [JobStatus.SCORED, JobStatus.NEEDS_REVIEW, JobStatus.PACKET_READY, JobStatus.APPLYING, JobStatus.ASSISTED_APPLY_OPENED, JobStatus.APPLIED, JobStatus.MANUALLY_SUBMITTED, JobStatus.AUTO_SUBMITTED, JobStatus.REJECTED, JobStatus.INTERVIEW, JobStatus.OFFERED, JobStatus.ACCEPTED]),
+    ("Packet ready", [JobStatus.PACKET_READY, JobStatus.APPLYING, JobStatus.ASSISTED_APPLY_OPENED, JobStatus.APPLIED, JobStatus.MANUALLY_SUBMITTED, JobStatus.AUTO_SUBMITTED, JobStatus.REJECTED, JobStatus.INTERVIEW, JobStatus.OFFERED, JobStatus.ACCEPTED]),
+    ("Submitted", [JobStatus.APPLIED, JobStatus.MANUALLY_SUBMITTED, JobStatus.AUTO_SUBMITTED, JobStatus.REJECTED, JobStatus.INTERVIEW, JobStatus.OFFERED, JobStatus.ACCEPTED]),
     ("Interview+", [JobStatus.INTERVIEW, JobStatus.OFFERED, JobStatus.ACCEPTED]),
     ("Offer", [JobStatus.OFFERED, JobStatus.ACCEPTED]),
 ]
@@ -64,7 +64,7 @@ def compute_stats(db: Database, weeks: int = 8) -> dict:
     cutoff = now - timedelta(weeks=weeks)
     weekly_added: dict[str, int] = defaultdict(int)
     weekly_applied: dict[str, int] = defaultdict(int)
-    submitted_statuses = {JobStatus.APPLIED.value, JobStatus.MANUALLY_SUBMITTED.value, JobStatus.INTERVIEW.value, JobStatus.OFFERED.value, JobStatus.ACCEPTED.value, JobStatus.REJECTED.value}
+    submitted_statuses = {JobStatus.APPLIED.value, JobStatus.MANUALLY_SUBMITTED.value, JobStatus.AUTO_SUBMITTED.value, JobStatus.INTERVIEW.value, JobStatus.OFFERED.value, JobStatus.ACCEPTED.value, JobStatus.REJECTED.value}
     for job in jobs:
         created = _parse_iso(job.created_at)
         updated = _parse_iso(job.updated_at)

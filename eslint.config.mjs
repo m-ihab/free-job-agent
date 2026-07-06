@@ -33,4 +33,24 @@ export default [
       "no-redeclare": "error",
     },
   },
+  {
+    // Deferred classic-script modules that consume app.js's top-level
+    // `const state` as a bare global (script load order guarantees it is
+    // bound before these run). app.js itself is excluded so its own
+    // declaration doesn't trip no-redeclare.
+    files: [
+      "src/job_agent/ui/static/drawer.js",
+      "src/job_agent/ui/static/kanban.js",
+      "src/job_agent/ui/static/overview.js",
+      "src/job_agent/ui/static/palette.js",
+      "src/job_agent/ui/static/features.js",
+      "src/job_agent/ui/static/profile_editor.js",
+      "src/job_agent/ui/static/pipeline.js",
+    ],
+    languageOptions: {
+      globals: {
+        state: "readonly",
+      },
+    },
+  },
 ];

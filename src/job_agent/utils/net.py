@@ -14,11 +14,14 @@ from __future__ import annotations
 
 import contextlib
 import ipaddress
+import logging
 import socket
 import threading
 from collections.abc import Iterator
 from typing import Any
 from urllib.parse import urljoin, urlparse
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_SCHEMES = frozenset({"http", "https"})
 _REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
@@ -138,9 +141,63 @@ def _pin_host(host: str, ip: str) -> Iterator[None]:
 
 
 def _enforce_size(resp: Any, max_bytes: int) -> None:
+    """Cap the response body without materializing an oversized one.
+
+    Order matters for the memory-DoS case: reject on the declared
+    Content-Length first, then (real requests, stream=True) read in chunks and
+    abort mid-download the moment the counter passes the cap. Only clients
+    without ``iter_content`` (the vendored stdlib shim) fall back to checking
+    the already-materialized body.
+    """
+    declared = (getattr(resp, "headers", {}) or {}).get("Content-Length")
+    if declared:
+        try:
+            declared_size = int(declared)
+        except (TypeError, ValueError):
+            declared_size = None  # malformed header — rely on the byte-counted read
+        if declared_size is not None and declared_size > max_bytes:
+            raise UnsafeUrlError(f"Response exceeds the {max_bytes}-byte limit.")
+    iter_content = getattr(resp, "iter_content", None)
+    if callable(iter_content):
+        total = 0
+        chunks: list[bytes] = []
+        for chunk in iter_content(65536):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > max_bytes:
+                try:
+                    resp.close()
+                except Exception:
+                    logger.debug("Response close after size-cap abort failed", exc_info=True)
+                raise UnsafeUrlError(f"Response exceeds the {max_bytes}-byte limit.")
+            chunks.append(chunk)
+        # Hand the fully-read, capped body back through the normal .content
+        # attribute so callers are agnostic to the streaming read.
+        resp._content = b"".join(chunks)
+        return
     content = getattr(resp, "content", b"") or b""
     if len(content) > max_bytes:
         raise UnsafeUrlError(f"Response exceeds the {max_bytes}-byte limit.")
+
+
+def _get_without_redirects(requests: Any, url: str, headers: dict[str, str] | None,
+                           timeout: int | float) -> tuple[Any, bool]:
+    """GET with auto-redirects disabled, streaming when the client supports it.
+
+    Returns ``(response, manual_redirects_supported)``. The second element is
+    False only for odd clients lacking ``allow_redirects`` entirely.
+    """
+    try:
+        return requests.get(url, headers=headers, timeout=timeout,
+                            allow_redirects=False, stream=True), True
+    except TypeError:
+        pass  # client without stream support (e.g. the vendored shim)
+    try:
+        return requests.get(url, headers=headers, timeout=timeout,
+                            allow_redirects=False), True
+    except TypeError:
+        return requests.get(url, headers=headers, timeout=timeout), False
 
 
 def safe_get(
@@ -159,23 +216,16 @@ def safe_get(
     hops = 0
     while True:
         host, ip = _validate(current)
-        try:
-            # Both the real requests and the vendored shim honour
-            # ``allow_redirects=False``; we follow redirects manually so each hop
-            # is re-validated. ``_pin_host`` makes the connect use the IP we just
-            # vetted, closing the validate→connect rebinding window.
-            with _pin_host(host, str(ip)):
-                resp = requests.get(
-                    current, headers=headers, timeout=timeout, allow_redirects=False
-                )  # type: ignore[call-arg]
-        except TypeError:
-            # Last-resort path for a non-conforming client that lacks
-            # ``allow_redirects`` (real requests + the vendored shim both support
-            # it, so this only fires for odd test doubles). We cannot drive the
-            # manual per-hop revalidation here, so we refuse to hand back a
-            # redirect rather than risk an unvalidated auto-follow.
-            with _pin_host(host, str(ip)):
-                resp = requests.get(current, headers=headers, timeout=timeout)
+        # ``_pin_host`` makes the connect use the IP we just vetted, closing
+        # the validate→connect rebinding window. Redirects are followed
+        # manually so each hop is re-validated; streaming (when the client
+        # supports it) lets the size cap abort mid-download.
+        with _pin_host(host, str(ip)):
+            resp, manual_redirects = _get_without_redirects(requests, current, headers, timeout)
+        if not manual_redirects:
+            # A non-conforming client without ``allow_redirects`` (odd test
+            # doubles only) cannot drive per-hop revalidation, so refuse to
+            # hand back a redirect rather than risk an unvalidated follow.
             if (getattr(resp, "status_code", 0) in _REDIRECT_CODES
                     and (getattr(resp, "headers", {}) or {}).get("Location")):
                 raise UnsafeUrlError("Redirect cannot be revalidated on this client.")
@@ -183,6 +233,10 @@ def safe_get(
             return resp
         location = (getattr(resp, "headers", {}) or {}).get("Location")
         if getattr(resp, "status_code", 0) in _REDIRECT_CODES and location:
+            try:
+                resp.close()
+            except Exception:
+                logger.debug("Closing redirect response failed", exc_info=True)
             hops += 1
             if hops > max_redirects:
                 raise UnsafeUrlError("Too many redirects.")

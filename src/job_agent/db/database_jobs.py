@@ -124,7 +124,7 @@ class JobsMixin:
 
     def list_jobs_without_packets(self, min_score: Optional[float] = None, limit: int = 20) -> list[JobListing]:
         """Return jobs that have no associated packets yet, skipping terminal statuses."""
-        _terminal = ("FILTERED", "DUPLICATE", "WITHDRAWN", "REJECTED", "APPLYING", "APPLIED", "MANUALLY_SUBMITTED")
+        _terminal = ("FILTERED", "DUPLICATE", "WITHDRAWN", "REJECTED", "APPLYING", "APPLIED", "MANUALLY_SUBMITTED", "AUTO_SUBMITTED")
         placeholders = ",".join("?" * len(_terminal))
         with self._connect() as conn:
             if min_score is not None:

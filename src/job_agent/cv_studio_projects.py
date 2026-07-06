@@ -32,7 +32,18 @@ def _latex_escape_text(value: Any) -> str:
     return "".join(replacements.get(ch, ch) for ch in text)
 
 
+def _project_has_content(project: dict[str, Any]) -> bool:
+    """True when the project carries real, user-provided substance for the CV."""
+    if str(project.get("description") or "").strip():
+        return True
+    if any(str(item).strip() for item in (project.get("bullet_points") or [])):
+        return True
+    return any(str(item).strip() for item in (project.get("technologies") or []))
+
+
 def _project_cvitem(project: dict[str, Any], *, max_bullets: int = 3) -> str:
+    """Render one project. Returns "" for content-free projects — the CV must
+    only ever contain user-provided facts, never generated filler prose."""
     name = _latex_escape_text(project.get("name") or "Selected project")
     desc = _latex_escape_text(project.get("description") or "")
     bullets = [_latex_escape_text(item) for item in (project.get("bullet_points") or []) if str(item).strip()]
@@ -43,12 +54,16 @@ def _project_cvitem(project: dict[str, Any], *, max_bullets: int = 3) -> str:
     pieces.extend(item.rstrip(".") + "." for item in bullets[:max_bullets])
     if tech:
         pieces.append(r"\textit{Stack: " + ", ".join(tech[:8]) + ".}")
-    body = " ".join(pieces) or "Relevant data/AI project selected from the local profile."
+    body = " ".join(pieces)
+    if not body:
+        return ""
     return rf"\cvitem{{\textbf{{{name}}}}}{{{body}}}"
 
 
 def _projone_command(projects: list[dict[str, Any]], *, max_bullets: int = 3) -> str:
-    inner = "".join(_project_cvitem(project, max_bullets=max_bullets) for project in projects)
+    inner = "".join(
+        item for item in (_project_cvitem(project, max_bullets=max_bullets) for project in projects) if item
+    )
     return rf"\newcommand{{\projone}}{{{inner}}}"
 
 
@@ -72,6 +87,8 @@ def _replace_projone(text: str, line: str) -> tuple[str, int]:
 
 
 def _sync_project_into_draft(config: AppConfig, project: dict[str, Any]) -> tuple[bool, str, str]:
+    if not _project_has_content(project):
+        return False, "", "project_has_no_content"
     text, _, _ = _active_cv_text(config)
     if not text:
         return False, "", "no_cv_source"
@@ -104,7 +121,13 @@ def set_key_projects(config: AppConfig, count: int) -> dict[str, Any]:
     projects = [p for p in master.get("projects", []) if isinstance(p, dict)]
     if not projects:
         return {"ok": False, "reason": "no_projects"}
-    chosen = projects[:count]
+    # Content-free projects (name only) are excluded: rendering them would
+    # require inventing body text, which the profile contract forbids.
+    usable = [p for p in projects if _project_has_content(p)]
+    skipped_empty = [str(p.get("name") or "") for p in projects if not _project_has_content(p)]
+    if not usable:
+        return {"ok": False, "reason": "no_projects_with_content", "skipped_empty": skipped_empty}
+    chosen = usable[:count]
     text, _, _ = _active_cv_text(config)
     if not text:
         return {"ok": False, "reason": "no_cv_source"}
@@ -118,6 +141,7 @@ def set_key_projects(config: AppConfig, count: int) -> dict[str, Any]:
         "ok": True,
         "count": len(chosen),
         "projects": [p.get("name") for p in chosen],
+        "skipped_empty": skipped_empty,
         "text": rewritten,
         "note": f"packed_{len(chosen)}_projects_into_projone",
     }

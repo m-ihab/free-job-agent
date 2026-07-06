@@ -8,7 +8,7 @@ from job_agent.db.database import Database
 from job_agent.schemas.job import JobListing, JobStatus
 
 FOLLOWUP_OFFSETS = {"week1": 7, "week2": 14}
-_SUBMITTED = {JobStatus.APPLIED, JobStatus.SUBMITTED, JobStatus.MANUALLY_SUBMITTED}
+_SUBMITTED = {JobStatus.APPLIED, JobStatus.SUBMITTED, JobStatus.MANUALLY_SUBMITTED, JobStatus.AUTO_SUBMITTED}
 
 
 @dataclass(frozen=True)

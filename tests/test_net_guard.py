@@ -73,6 +73,70 @@ def test_safe_get_returns_final_response(monkeypatch: pytest.MonkeyPatch) -> Non
     assert resp.status_code == 200
 
 
+def test_safe_get_rejects_oversized_declared_content_length(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A multi-GB Content-Length must be rejected before any body is read."""
+    monkeypatch.setattr(
+        "job_agent.utils.net.socket.getaddrinfo",
+        lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 0))],
+    )
+    fake = _Resp(200, {"Content-Length": str(5_000_000_000)}, content=b"tiny")
+    monkeypatch.setattr("requests.get", lambda *a, **k: fake)
+    with pytest.raises(UnsafeUrlError):
+        safe_get("https://example.com/jobs")
+
+
+def test_safe_get_streaming_read_aborts_past_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With a streaming client, the byte counter must abort the download the
+    moment it passes max_bytes — the full body is never materialized."""
+    monkeypatch.setattr(
+        "job_agent.utils.net.socket.getaddrinfo",
+        lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 0))],
+    )
+
+    class _StreamResp(_Resp):
+        def __init__(self) -> None:
+            super().__init__(200, {})
+            self.closed = False
+
+        def iter_content(self, _size: int):
+            while True:  # endless body — must be cut off by the cap
+                yield b"x" * 1024
+
+        def close(self) -> None:
+            self.closed = True
+
+    fake = _StreamResp()
+    monkeypatch.setattr("requests.get", lambda *a, **k: fake)
+    with pytest.raises(UnsafeUrlError):
+        safe_get("https://example.com/jobs", max_bytes=10_000)
+    assert fake.closed
+
+
+def test_safe_get_streaming_body_within_cap_is_kept(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "job_agent.utils.net.socket.getaddrinfo",
+        lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 0))],
+    )
+
+    class _StreamResp(_Resp):
+        def iter_content(self, _size: int):
+            yield b"<html>"
+            yield b"job</html>"
+
+        @property
+        def content(self) -> bytes:
+            return self._content
+
+        @content.setter
+        def content(self, value: bytes) -> None:
+            self._content = value
+
+    fake = _StreamResp(200, {})
+    monkeypatch.setattr("requests.get", lambda *a, **k: fake)
+    resp = safe_get("https://example.com/jobs")
+    assert resp.content == b"<html>job</html>"
+
+
 def test_pin_host_forces_resolution_and_restores(monkeypatch: pytest.MonkeyPatch) -> None:
     """``_pin_host`` makes the connect use the vetted IP (no rebinding re-resolve)
     via a thread-local pin, leaving resolution untouched afterwards."""

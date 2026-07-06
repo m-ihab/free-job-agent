@@ -192,13 +192,36 @@ def semantic_similarity(job: JobListing, profile: CandidateProfile, db: Any, *,
     return round(similarity * 100)
 
 
+# Job-title tokens that don't distinguish roles: gender notation on French/
+# German postings ("(H/F)", "F/H", "m/w/d") reduced to single letters or
+# letter runs after punctuation stripping.
+_TITLE_MARKER_TOKENS = {"h", "f", "m", "w", "d", "x", "hf", "fh", "mw", "mwd", "mfd", "fhx", "hfx"}
+
+
+def _title_tokens(title: str) -> frozenset[str]:
+    cleaned = "".join(ch if ch.isalnum() else " " for ch in (title or "").lower())
+    return frozenset(tok for tok in cleaned.split() if tok not in _TITLE_MARKER_TOKENS)
+
+
+def same_role_title(a: str, b: str) -> bool:
+    """True when two titles name the same role (order/punct/gender-marker insensitive).
+
+    'Data Scientist (H/F)' == 'Scientist, Data' but != 'Senior Data Scientist':
+    an extra token like 'senior' is a different role, never a duplicate.
+    """
+    tokens_a, tokens_b = _title_tokens(a), _title_tokens(b)
+    return bool(tokens_a) and tokens_a == tokens_b
+
+
 def find_near_duplicate(db: Any, job: JobListing, *, options: EmbeddingOptions | None = None,
                         model: str | None = None, embedder: Embedder | None = None) -> str | None:
     """Return the id of an existing same-company job that is a near-duplicate.
 
     Company-scoped on purpose: cross-company matches at high cosine are usually
-    boilerplate postings, not the same role. Returns None when embeddings are
-    unavailable so intake never depends on Ollama.
+    boilerplate postings, not the same role. A shared-boilerplate description
+    can push two *different* roles past the cosine threshold, so the titles
+    must also name the same role. Returns None when embeddings are unavailable
+    so intake never depends on Ollama.
     """
     options = options or EmbeddingOptions.from_env()
     model = model or resolve_embed_model(options)
@@ -210,6 +233,8 @@ def find_near_duplicate(db: Any, job: JobListing, *, options: EmbeddingOptions |
     best_id, best_similarity = None, 0.0
     for row in db.list_job_embeddings_for_company(job.company):
         if row["owner_id"] == job.id or row.get("model") != model:
+            continue
+        if not same_role_title(job.title, row.get("title") or ""):
             continue
         similarity = cosine_similarity(vector, row["vector"])
         if similarity > best_similarity:

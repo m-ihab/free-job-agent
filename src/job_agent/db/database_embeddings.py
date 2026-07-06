@@ -52,11 +52,15 @@ class EmbeddingsMixin:
             "updated_at": row["updated_at"],
         }
 
+    def delete_embedding(self, owner_id: str, kind: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM embeddings WHERE owner_id = ? AND kind = ?", (owner_id, kind))
+
     def list_job_embeddings_for_company(self, company: str) -> list[dict]:
-        """Return ``{owner_id, model, vector}`` rows for tracked jobs at one company."""
+        """Return ``{owner_id, model, vector, title}`` rows for tracked jobs at one company."""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT e.owner_id, e.model, e.vector_json FROM embeddings e "
+                "SELECT e.owner_id, e.model, e.vector_json, j.title FROM embeddings e "
                 "JOIN jobs j ON j.id = e.owner_id "
                 "WHERE e.kind = 'job' AND lower(trim(j.company)) = lower(trim(?))",
                 (company,),
@@ -69,5 +73,10 @@ class EmbeddingsMixin:
                 logger.debug("Skipping corrupt embedding row in company scan")
                 continue
             if isinstance(vector, list) and vector:
-                result.append({"owner_id": row["owner_id"], "model": row["model"], "vector": vector})
+                result.append({
+                    "owner_id": row["owner_id"],
+                    "model": row["model"],
+                    "vector": vector,
+                    "title": row["title"] or "",
+                })
         return result

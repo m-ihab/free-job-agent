@@ -16,7 +16,7 @@ from job_agent.config import AppConfig
 from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.schemas.packet import ApplicationPacket, PacketStatus
 
-_SUBMITTED = {JobStatus.APPLIED, JobStatus.SUBMITTED, JobStatus.MANUALLY_SUBMITTED}
+_SUBMITTED = {JobStatus.APPLIED, JobStatus.SUBMITTED, JobStatus.MANUALLY_SUBMITTED, JobStatus.AUTO_SUBMITTED}
 _SAFE_PACKET_STATUSES = {PacketStatus.READY, PacketStatus.NEEDS_REVIEW, PacketStatus.DRAFT}
 _HARD_RISK_FLAGS = {"WORK_AUTH_REQUIRED", "LANGUAGE_MISMATCH", "SPONSORSHIP_GATED", "FRENCH_REQUIRED"}
 

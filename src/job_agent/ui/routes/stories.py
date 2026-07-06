@@ -5,6 +5,7 @@ import logging
 import uuid
 
 from job_agent import embeddings, story_bank
+from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.generator.evaluation import evaluate_job, salary_comparables
 from job_agent.validators import load_profile_bundle
@@ -14,8 +15,8 @@ logger = logging.getLogger(__name__)
 _STORY_TEXT_FIELDS = ("situation", "task", "action", "result", "reflection")
 
 
-def _db(h) -> tuple[object, Database]:
-    config = h._config()
+def _db(h) -> tuple[AppConfig, Database]:
+    config: AppConfig = h._config()
     db = Database(config.db_path)  # type: ignore[arg-type]
     db.initialize()
     return config, db

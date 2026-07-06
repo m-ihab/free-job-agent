@@ -244,6 +244,61 @@ def test_fill_visible_fields_logs_field_failures(monkeypatch, caplog):
     assert any("Auto-apply field fill failed" in rec.message for rec in caplog.records)
 
 
+class _FillableField(FakeElement):
+    """Text input that records what gets filled into it."""
+
+    def __init__(self, attrs=None):
+        super().__init__(attrs or {"type": "text"}, eval_text="input")
+        self.filled_with: list[str] = []
+
+    def fill(self, value: str) -> None:
+        self.filled_with.append(value)
+
+
+def _page_with(field, label_text, monkeypatch):
+    class FieldCollection:
+        def all(self):
+            return [field]
+
+    class PageWithField:
+        def locator(self, _selector: str):
+            return FieldCollection()
+
+    monkeypatch.setattr(
+        "job_agent.auto_apply.driver_fields._field_label",
+        lambda _page, _field: label_text,
+    )
+    return PageWithField()
+
+
+def test_sensitive_field_never_fuzzy_filled(monkeypatch):
+    """A salary/work-auth style label must not receive a fuzzy-matched answer —
+    wrong facts in sensitive fields are worse than blanks (SEC-M1)."""
+    field = _FillableField()
+    page = _page_with(field, "Expected salary (EUR)", monkeypatch)
+    filled: list[str] = []
+    # "desired_comp" is fuzzy-adjacent but not a curated salary key.
+    _fill_visible_fields(page, {"desired_comp": "45000"}, filled)
+    assert field.filled_with == []
+    assert filled == []
+
+
+def test_sensitive_field_filled_via_exact_keyword_table(monkeypatch):
+    field = _FillableField()
+    page = _page_with(field, "Salary expectations", monkeypatch)
+    filled: list[str] = []
+    _fill_visible_fields(page, {"salary_expectation": "45000"}, filled)
+    assert field.filled_with == ["45000"]
+
+
+def test_non_sensitive_field_still_fuzzy_fills(monkeypatch):
+    field = _FillableField()
+    page = _page_with(field, "Email address", monkeypatch)
+    filled: list[str] = []
+    _fill_visible_fields(page, {"email": "alice@example.com"}, filled)
+    assert field.filled_with == ["alice@example.com"]
+
+
 def test_click_submit_logs_click_failures(caplog):
     class FailingSubmitLocator:
         @property
@@ -428,6 +483,9 @@ class _ApplyPage:
 
     def content(self) -> str:
         return self._html
+
+    def query_selector_all(self, selector: str) -> list:
+        return []
 
 
 def _session(monkeypatch, mode=ApplyMode.FULL_AUTO, fill_ok=True):

@@ -79,18 +79,26 @@ def mark_submitted(session: Any, candidate: Any) -> None:
     from job_agent.schemas.job import JobStatus
     from job_agent.schemas.packet import PacketStatus
 
+    # FULL_AUTO submissions get their own first-class status so analytics,
+    # exports, and the audit trail can distinguish autonomous submissions from
+    # human-confirmed ones (FILL_AND_CONFIRM keeps MANUALLY_SUBMITTED).
+    if session.mode == ApplyMode.FULL_AUTO:
+        job_status, packet_status = JobStatus.AUTO_SUBMITTED, PacketStatus.AUTO_SUBMITTED
+    else:
+        job_status, packet_status = JobStatus.MANUALLY_SUBMITTED, PacketStatus.MANUALLY_SUBMITTED
+
     db = Database(session.config.db_path)
     db.initialize()
-    db.update_job_status(candidate.job.id, JobStatus.MANUALLY_SUBMITTED)
+    db.update_job_status(candidate.job.id, job_status)
     for pkt in db.get_packets_for_job(candidate.job.id):
         if pkt.id == candidate.packet.id:
-            pkt.status = PacketStatus.MANUALLY_SUBMITTED
+            pkt.status = packet_status
             db.save_packet(pkt)
             break
     db.log_event(
         candidate.job.id,
-        "MANUALLY_SUBMITTED",
-        {"packet_id": candidate.packet.id, "note": "Auto-apply session"},
+        job_status.value,
+        {"packet_id": candidate.packet.id, "note": "Auto-apply session", "mode": session.mode.value},
         packet_id=candidate.packet.id,
     )
     try:

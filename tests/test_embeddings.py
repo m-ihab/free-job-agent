@@ -219,6 +219,27 @@ def test_find_near_duplicate_same_company_above_threshold(db: Database) -> None:
     assert dupe == existing.id
 
 
+def test_find_near_duplicate_preserves_distinct_roles(db: Database) -> None:
+    """Same company + near-identical boilerplate must NOT collapse distinct roles."""
+    existing = _job(title="Data Scientist")
+    db.save_job(existing)
+    embedder, _ = _counting_embedder([0.6, 0.8])
+    emb.get_job_embedding(db, existing, model="m", embedder=embedder)
+
+    incoming = _job(title="Senior Data Scientist", id="new-job-id")
+    assert emb.find_near_duplicate(db, incoming, model="m", embedder=embedder) is None
+
+
+def test_find_near_duplicate_title_word_order_and_punctuation(db: Database) -> None:
+    existing = _job(title="Data Scientist")
+    db.save_job(existing)
+    embedder, _ = _counting_embedder([0.6, 0.8])
+    emb.get_job_embedding(db, existing, model="m", embedder=embedder)
+
+    incoming = _job(title="Scientist, Data", id="new-job-id")
+    assert emb.find_near_duplicate(db, incoming, model="m", embedder=embedder) == existing.id
+
+
 def test_find_near_duplicate_ignores_other_companies(db: Database) -> None:
     existing = _job(company="OtherCorp")
     db.save_job(existing)
@@ -255,6 +276,16 @@ def test_save_and_get_embedding_roundtrip(db: Database) -> None:
 
 def test_get_embedding_missing_returns_none(db: Database) -> None:
     assert db.get_embedding("nope", "job") is None
+
+
+def test_delete_embedding_removes_row(db: Database) -> None:
+    db.save_embedding("owner-1", "job", "model-x", "hash-1", [0.25, 0.75])
+    db.delete_embedding("owner-1", "job")
+    assert db.get_embedding("owner-1", "job") is None
+
+
+def test_delete_embedding_missing_is_noop(db: Database) -> None:
+    db.delete_embedding("nope", "job")
 
 
 # ---- scorer blend ----
@@ -308,6 +339,29 @@ def test_add_job_skips_semantic_near_duplicate(tmp_path: Path, monkeypatch: pyte
     )
     assert not created_again
     assert second.id == first.id
+
+
+def test_semantic_duplicate_cleans_up_orphan_embedding(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A deduped job is never inserted, so its cached vector must not linger."""
+    from job_agent import pipeline
+    from job_agent.config import AppConfig
+    from job_agent.db.database import Database as Db
+
+    config = AppConfig(data_dir=tmp_path)
+    first, created = pipeline.add_job_to_tracker(config, _job(title="Data Scientist"))
+    assert created
+
+    # Different location → different exact fingerprint, so intake reaches the
+    # semantic-dedup branch instead of the exact-match early return.
+    incoming = _job(title="Data Scientist", id="incoming-dupe-id", location="Lyon")
+    db2 = Db(config.db_path)
+    db2.initialize()
+    db2.save_embedding(incoming.id, "job", "m", "hash-x", [0.6, 0.8])
+    monkeypatch.setattr(pipeline.embeddings, "find_near_duplicate", lambda db, job: first.id)
+
+    _, created_again = pipeline.add_job_to_tracker(config, incoming)
+    assert not created_again
+    assert db2.get_embedding(incoming.id, "job") is None
 
 
 def test_add_job_proceeds_when_semantic_check_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

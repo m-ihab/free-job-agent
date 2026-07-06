@@ -20,6 +20,7 @@ class PacketStatus(str, Enum):
     ASSISTED_APPLY_OPENED = "ASSISTED_APPLY_OPENED"
     SUBMITTED = "SUBMITTED"  # backward-compatible alias
     MANUALLY_SUBMITTED = "MANUALLY_SUBMITTED"
+    AUTO_SUBMITTED = "AUTO_SUBMITTED"  # FULL_AUTO submitted without per-job confirmation
     SKIPPED = "SKIPPED"
     FAILED = "FAILED"
 

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from job_agent.schemas.job import JobListing, JobStatus
 
-_SUBMITTED = {JobStatus.APPLIED, JobStatus.SUBMITTED, JobStatus.MANUALLY_SUBMITTED}
+_SUBMITTED = {JobStatus.APPLIED, JobStatus.SUBMITTED, JobStatus.MANUALLY_SUBMITTED, JobStatus.AUTO_SUBMITTED}
 _REPLIED = {JobStatus.REPLIED, JobStatus.INTERVIEW, JobStatus.INTERVIEWING, JobStatus.OFFERED, JobStatus.OFFER}
 _INTERVIEW = {JobStatus.INTERVIEW, JobStatus.INTERVIEWING, JobStatus.OFFERED, JobStatus.OFFER}
 _OFFER = {JobStatus.OFFERED, JobStatus.OFFER}

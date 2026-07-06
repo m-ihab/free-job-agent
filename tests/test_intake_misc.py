@@ -55,6 +55,29 @@ def test_rss_fallback_parses_xml_when_feedparser_empty(monkeypatch):
     assert all(job.source == "rss" for job in jobs)
 
 
+_ENTITY_BOMB_FEED = b"""<?xml version='1.0'?>
+<!DOCTYPE lolz [
+  <!ENTITY lol "lol">
+  <!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
+  <!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">
+  <!ENTITY lol4 "&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;">
+]>
+<rss version='2.0'><channel><item><title>&lol4;</title></item></channel></rss>"""
+
+
+def test_rss_entity_expansion_feed_fails_bounded(monkeypatch):
+    """A billion-laughs feed must be refused (defusedxml), not expanded —
+    ingest_rss returns [] instead of ballooning memory (SEC-M3)."""
+    monkeypatch.setattr(rss.feedparser, "parse", lambda url: SimpleNamespace(entries=[]))
+    monkeypatch.setattr(rss, "safe_get", lambda *a, **k: _FakeResp(_ENTITY_BOMB_FEED))
+    assert rss.ingest_rss("https://example.com/feed.xml") == []
+
+
+def test_rss_parser_refuses_entity_definitions():
+    with pytest.raises(Exception):
+        rss._parse_rss_xml(_ENTITY_BOMB_FEED)
+
+
 def test_rss_fallback_respects_limit(monkeypatch):
     monkeypatch.setattr(rss.feedparser, "parse", lambda url: SimpleNamespace(entries=[]))
     monkeypatch.setattr(rss, "safe_get", lambda *a, **k: _FakeResp(_ATOM_FEED))

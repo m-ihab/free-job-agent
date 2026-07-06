@@ -14,6 +14,7 @@ import job_agent.auto_apply as _pkg
 from job_agent.auto_apply.detect import (
     _detect_ats,
     _detect_human_wall,
+    _find_unfilled_required,
     _is_france_travail_detail,
 )
 from job_agent.auto_apply.driver import (
@@ -181,6 +182,15 @@ def apply_one(session: Any, page: Any, candidate: Any, index: int, total: int) -
             wall, reason = _detect_human_wall(page)
             if wall:
                 return session._queue_needs_manual(candidate, summary, reason)
+            # Fail closed on incompletely-understood forms: any required field
+            # still empty after the fill pass means an unknown question — hand
+            # off instead of submitting a partial application.
+            unfilled = _find_unfilled_required(page)
+            if unfilled:
+                return session._queue_needs_manual(
+                    candidate, summary,
+                    "unfilled required field(s): " + ", ".join(unfilled[:5]),
+                )
 
         # Submit
         session._emit(ApplyEvent("progress", job_id=job.id, packet_id=packet.id,

@@ -527,7 +527,7 @@ function sortJobs(jobs, mode) {
 function renderJobsMetrics(jobs) {
   const enriched = jobs.filter((job) => job.enriched).length;
   const internships = jobs.filter((job) => isInternship(job)).length;
-  const applied = jobs.filter((job) => ["APPLIED", "MANUALLY_SUBMITTED"].includes(job.status)).length;
+  const applied = jobs.filter((job) => ["APPLIED", "MANUALLY_SUBMITTED", "AUTO_SUBMITTED"].includes(job.status)).length;
   const sponsorship = jobs.filter((job) => job.work_auth_class === "sponsorship_gated").length;
   $("jobsMetrics").innerHTML = [
     metric("Visible", jobs.length),
@@ -1543,14 +1543,14 @@ function renderInsights(stats) {
 // status editable inline (saves via /api/status), with the Excel export/import.
 const TRACKER_STAGES = [
   { label: "To apply", statuses: ["NEW", "SCORED", "PACKET_READY", "NEEDS_REVIEW"] },
-  { label: "Applied", statuses: ["APPLYING", "APPLIED", "MANUALLY_SUBMITTED", "ASSISTED_APPLY_OPENED"] },
+  { label: "Applied", statuses: ["APPLYING", "APPLIED", "MANUALLY_SUBMITTED", "AUTO_SUBMITTED", "ASSISTED_APPLY_OPENED"] },
   { label: "Interviewing", statuses: ["INTERVIEW"] },
   { label: "Offers", statuses: ["OFFERED", "ACCEPTED"] },
   { label: "Closed", statuses: ["REJECTED", "WITHDRAWN", "FAILED"] },
   { label: "Needs manual", statuses: ["NEEDS_MANUAL"] },
 ];
 const TRACKER_STATUS_OPTIONS = [
-  "NEW", "APPLYING", "APPLIED", "MANUALLY_SUBMITTED", "INTERVIEW",
+  "NEW", "APPLYING", "APPLIED", "MANUALLY_SUBMITTED", "AUTO_SUBMITTED", "INTERVIEW",
   "OFFERED", "ACCEPTED", "REJECTED", "WITHDRAWN", "NEEDS_MANUAL",
 ];
 

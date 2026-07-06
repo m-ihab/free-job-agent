@@ -23,6 +23,32 @@ class FakePage:
     def content(self) -> str:
         return self._content
 
+    def query_selector_all(self, selector: str) -> list:
+        return []
+
+
+class FakeField:
+    """Minimal Playwright ElementHandle stand-in for required-field checks."""
+
+    def __init__(self, *, name: str = "", value: str = "", type_: str = "text",
+                 checked: bool = False, visible: bool = True) -> None:
+        self._attrs = {"name": name, "type": type_}
+        self._value = value
+        self._checked = checked
+        self._visible = visible
+
+    def get_attribute(self, name: str):
+        return self._attrs.get(name) or None
+
+    def input_value(self) -> str:
+        return self._value
+
+    def is_checked(self) -> bool:
+        return self._checked
+
+    def is_visible(self) -> bool:
+        return self._visible
+
 
 def _candidate():
     job = SimpleNamespace(id="job1", title="Data Scientist", company="ACME",
@@ -121,6 +147,81 @@ def test_full_auto_detection_failure_fails_closed(monkeypatch):
     result = sess._apply_one(Unreadable(""), _candidate(), 1, 1)
     assert result.status == "needs_manual"
     assert not sess.submitted_calls
+
+
+def test_full_auto_unfilled_required_field_hands_off(monkeypatch):
+    """An empty [required] field after fill means the form is not fully
+    understood — FULL_AUTO must hand off, never submit a partial form."""
+    sess = _session(monkeypatch)
+    submit_called = []
+    monkeypatch.setattr(aa, "_click_submit", lambda page, ats: submit_called.append(True) or True)
+
+    class PageWithEmptyRequired(FakePage):
+        def query_selector_all(self, selector: str) -> list:
+            return [FakeField(name="salary_expectation", value="")]
+
+    result = sess._apply_one(PageWithEmptyRequired("<html><form>apply</form></html>"), _candidate(), 1, 1)
+    assert result.status == "needs_manual"
+    assert "salary_expectation" in result.message
+    assert sess.manual_calls and not submit_called and not sess.submitted_calls
+
+
+def test_full_auto_filled_required_fields_submit(monkeypatch):
+    sess = _session(monkeypatch)
+    monkeypatch.setattr(aa, "_click_submit", lambda page, ats: True)
+
+    class PageWithFilledRequired(FakePage):
+        def query_selector_all(self, selector: str) -> list:
+            return [
+                FakeField(name="email", value="x@y.z"),
+                FakeField(name="consent", type_="checkbox", checked=True),
+            ]
+
+    result = sess._apply_one(PageWithFilledRequired("<html><form>apply</form></html>"), _candidate(), 1, 1)
+    assert result.status == "submitted"
+
+
+def test_full_auto_required_check_failure_fails_closed(monkeypatch):
+    sess = _session(monkeypatch)
+    monkeypatch.setattr(aa, "_click_submit", lambda page, ats: True)
+
+    class PageUninspectableFields(FakePage):
+        def query_selector_all(self, selector: str) -> list:
+            raise RuntimeError("detached frame")
+
+    result = sess._apply_one(PageUninspectableFields("<html><form>apply</form></html>"), _candidate(), 1, 1)
+    assert result.status == "needs_manual"
+    assert not sess.submitted_calls
+
+
+@pytest.mark.parametrize(
+    "mode, expected_status",
+    [(ApplyMode.FULL_AUTO, "AUTO_SUBMITTED"), (ApplyMode.FILL_AND_CONFIRM, "MANUALLY_SUBMITTED")],
+)
+def test_mark_submitted_records_mode_specific_status(tmp_path, mode, expected_status):
+    """Auto submissions must be durably labeled AUTO_SUBMITTED, never mislabeled
+    as manual; human-confirmed ones keep MANUALLY_SUBMITTED (real DB, no stubs)."""
+    from job_agent.auto_apply.session_actions import mark_submitted
+    from job_agent.db.database import Database
+    from job_agent.schemas.job import JobListing
+    from job_agent.schemas.packet import ApplicationPacket
+
+    db_path = tmp_path / "jobs.db"
+    db = Database(db_path)
+    db.initialize()
+    job = JobListing(title="Data Scientist", company="ACME", description="ML role")
+    db.save_job(job)
+    packet = ApplicationPacket(job_id=job.id)
+    db.save_packet(packet)
+
+    session = SimpleNamespace(config=SimpleNamespace(db_path=db_path), mode=mode)
+    mark_submitted(session, SimpleNamespace(job=job, packet=packet))
+
+    assert db.get_job(job.id).status.value == expected_status
+    stored_packet = next(p for p in db.get_packets_for_job(job.id) if p.id == packet.id)
+    assert stored_packet.status.value == expected_status
+    events = [e for e in db.get_events(job.id) if e.get("event_type") == expected_status]
+    assert events, f"no {expected_status} event logged"
 
 
 def test_full_auto_queue_persistence_failure_surfaces_error(monkeypatch):

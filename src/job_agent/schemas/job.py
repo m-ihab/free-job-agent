@@ -29,6 +29,7 @@ class JobStatus(str, Enum):
     APPLIED = "APPLIED"  # kept for backward compatibility
     SUBMITTED = "SUBMITTED"
     MANUALLY_SUBMITTED = "MANUALLY_SUBMITTED"
+    AUTO_SUBMITTED = "AUTO_SUBMITTED"  # FULL_AUTO submitted without per-job confirmation
     OUTREACH_DRAFTED = "OUTREACH_DRAFTED"
     OUTREACH_SENT = "OUTREACH_SENT"
     FOLLOWUP_DUE = "FOLLOWUP_DUE"

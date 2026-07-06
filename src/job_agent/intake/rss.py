@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from typing import Optional
 from types import SimpleNamespace
-from xml.etree import ElementTree as ET
+
+try:  # pragma: no cover - preferred parser; blocks entity-expansion DoS
+    from defusedxml import ElementTree as ET
+except Exception:  # pragma: no cover - stdlib fallback keeps intake usable
+    from xml.etree import ElementTree as ET  # type: ignore[no-redef]
 
 from job_agent.schemas.job import JobListing
 from job_agent.utils.html import strip_html

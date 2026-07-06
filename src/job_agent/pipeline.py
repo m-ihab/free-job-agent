@@ -71,6 +71,9 @@ def _semantic_duplicate(tracker: ApplicationTracker, job: JobListing) -> JobList
                     "Semantic near-duplicate: '%s' @ %s matches tracked job %s",
                     job.title, job.company, dupe_id,
                 )
+                # The deduped job is never inserted; drop its cached vector so
+                # the embeddings table doesn't accumulate orphan rows.
+                tracker.db.delete_embedding(job.id, "job")
                 return existing
     except Exception:
         logger.debug("Semantic duplicate check skipped", exc_info=True)
@@ -232,6 +235,7 @@ def _enforce_single_page(cv_tex_path: Path, cv_pdf_path: Path) -> None:
                 return
     except Exception:
         # One-page fitting is a nicety; never let it break packet generation.
+        logger.debug("One-page CV fitting skipped", exc_info=True)
         return
 
 
@@ -326,6 +330,7 @@ def _write_evaluation_artifacts(
         try:
             semantic = embeddings.semantic_similarity(job, profile, tracker.db)
         except Exception:
+            logger.debug("Semantic similarity skipped in evaluation artifacts", exc_info=True)
             semantic = None
         evaluation = evaluate_job(job, profile, preflight=preflight, semantic_score=semantic, config=config)
         salary_lines = salary_comparables(tracker.db, job)
@@ -422,6 +427,7 @@ def generate_packet_for_job(
         from job_agent.polish import resolve_ollama_model
         model_name = resolve_ollama_model(polish_opts)
     except Exception:
+        logger.debug("Ollama model resolution failed; AI phase runs without a model name", exc_info=True)
         model_name = ""
 
     # Run AI calls in parallel — analyze_fit + classify + summarize concurrently.

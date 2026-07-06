@@ -111,11 +111,6 @@
 
   // ── chip editing (mutates the live profile object) ──────────────────────────
 
-  function chipValues(id) {
-    if (id === "skills") return (profile.skills || []).map((s) => s.name);
-    return profile[id] || [];
-  }
-
   function addChip(id, value) {
     const clean = value.trim();
     if (!clean) return;

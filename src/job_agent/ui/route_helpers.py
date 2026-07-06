@@ -339,6 +339,7 @@ def _one_click_hunt(config: AppConfig, payload: dict) -> dict:
             limit=limit_queries,
         )
     except Exception:
+        logger.warning("Query-plan generation failed; using deterministic expansion", exc_info=True)
         query_plan = {
             "queries": [group["query"] for group in links["groups"]],
             "rationale": "Profile loading failed; deterministic query expansion used.",

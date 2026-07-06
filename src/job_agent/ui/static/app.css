@@ -114,6 +114,8 @@ html[data-theme="dark"] {
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
 
 body {
@@ -181,25 +183,9 @@ body::before {
   }
 }
 
-::selection {
-  background: var(--accent-soft);
-}
-
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
-}
-
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
-}
-
-*::-webkit-scrollbar-thumb {
-  background: var(--line-strong);
-  border-radius: 99px;
-  border: 3px solid transparent;
-  background-clip: content-box;
 }
 
 *::-webkit-scrollbar-track {
@@ -396,6 +382,9 @@ h4 {
 }
 
 .app-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
   font-size: 1rem;
   margin: 0;
   white-space: nowrap;
@@ -406,13 +395,6 @@ h4 {
   flex-wrap: wrap;
   justify-content: flex-end;
   row-gap: 0.35rem;
-}
-
-.app-header h1 {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  font-size: clamp(1.05rem, 1.4vw, 1.3rem);
 }
 
 .app-header h1 .brand-logo {
@@ -2309,10 +2291,6 @@ img {
 html {
   scrollbar-color: var(--line-strong) transparent;
 }
-*::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
 *::-webkit-scrollbar-thumb {
   background: var(--line-strong);
   border-radius: 999px;
@@ -2431,11 +2409,6 @@ html {
   flex: none;
 }
 
-.cmdk-btn kbd {
-  margin-left: auto;
-  white-space: nowrap;
-}
-
 .cmdk-btn:hover {
   border-color: var(--line-strong);
   color: var(--ink);
@@ -2443,6 +2416,8 @@ html {
 }
 
 .cmdk-btn kbd {
+  margin-left: auto;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 0.7rem;
   border: 1px solid var(--line);
