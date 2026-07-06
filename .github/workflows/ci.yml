@@ -30,7 +30,12 @@ jobs:
         # --reruns retries only failed tests (no cost on green); this absorbs
         # transient flakes in the threaded live-server tests on shared runners
         # without masking real failures (those fail every retry).
-        run: pytest -q --basetemp=.pytest_tmp/bt --reruns 2 --reruns-delay 1
+        # mkdir first: pytest does not create basetemp's PARENT directory, and
+        # a fresh checkout has no .pytest_tmp/ — without this every test errors
+        # at fixture setup with FileNotFoundError.
+        run: |
+          mkdir -p .pytest_tmp
+          pytest -q --basetemp=.pytest_tmp/bt --reruns 2 --reruns-delay 1
 
   e2e:
     runs-on: ubuntu-latest
@@ -47,7 +52,10 @@ jobs:
       - name: Install Playwright browsers
         run: playwright install --with-deps chromium
       - name: E2E tests
-        run: pytest tests/e2e/ -q --basetemp=.pytest_tmp/e2e
+        # mkdir first — see the Tests step note about basetemp's parent dir.
+        run: |
+          mkdir -p .pytest_tmp
+          pytest tests/e2e/ -q --basetemp=.pytest_tmp/e2e
 
   frontend-lint:
     runs-on: ubuntu-latest

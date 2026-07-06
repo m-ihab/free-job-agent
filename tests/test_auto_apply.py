@@ -72,7 +72,10 @@ def test_latex_compile_raises_on_timeout(tmp_path):
     tex.write_text(r"\documentclass{article}\begin{document}hi\end{document}", encoding="utf-8")
 
     with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="pdflatex", timeout=120)):
-        with patch("job_agent.renderer.latex_render.available_latex_compiler", return_value="/usr/bin/pdflatex"):
+        # Patch the seam in latex_compile (where compile_latex_to_pdf resolves
+        # it), not the latex_render re-export — patching the re-export only
+        # worked on machines where a real LaTeX install made it moot.
+        with patch("job_agent.renderer.latex_compile.available_latex_compiler", return_value="/usr/bin/pdflatex"):
             with pytest.raises(LatexCompileError, match="timed out"):
                 compile_latex_to_pdf(tex, tmp_path / "cv.pdf")
 
