@@ -50,6 +50,8 @@ export default [
       "src/job_agent/ui/static/pipeline.js",
       "src/job_agent/ui/static/studio.js",
       "src/job_agent/ui/static/studio_tools.js",
+      "src/job_agent/ui/static/portfolio.js",
+      "src/job_agent/ui/static/coach.js",
     ],
     languageOptions: {
       globals: {
