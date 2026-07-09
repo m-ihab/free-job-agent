@@ -168,7 +168,7 @@ def _enforce_size(resp: Any, max_bytes: int) -> None:
             if total > max_bytes:
                 try:
                     resp.close()
-                except Exception:
+                except OSError:
                     logger.debug("Response close after size-cap abort failed", exc_info=True)
                 raise UnsafeUrlError(f"Response exceeds the {max_bytes}-byte limit.")
             chunks.append(chunk)
@@ -235,7 +235,10 @@ def safe_get(
         if getattr(resp, "status_code", 0) in _REDIRECT_CODES and location:
             try:
                 resp.close()
-            except Exception:
+            except (OSError, AttributeError):
+                # OSError: socket-level close failure. AttributeError: response
+                # object without a close() (duck-typed/test doubles). Best-effort
+                # cleanup — never let it block redirect handling.
                 logger.debug("Closing redirect response failed", exc_info=True)
             hops += 1
             if hops > max_redirects:

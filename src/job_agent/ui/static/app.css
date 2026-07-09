@@ -1683,11 +1683,13 @@ html[data-theme="dark"] .chat-bubble.thinking {
   box-shadow: var(--shadow-ring);
 }
 
-/* Height comes from .studio-preview (clamp) + flex; keep the frame itself
-   unconstrained so the panel stays a natural size. */
+/* Match the editor column's height envelope (min(78vh, 860px)) so the preview
+   frame is tall enough to show a full A4 page at a readable size. The iframe
+   flexes to fill and the PDF viewer is told to fit the whole page
+   (#zoom=page-fit in studioRefreshPreview), so the CV shows without scrolling. */
 
 .studio-preview {
-  height: clamp(420px, 62vh, 720px);
+  min-height: min(78vh, 860px);
 }
 
 .studio-preview iframe {

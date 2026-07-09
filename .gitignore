@@ -89,6 +89,10 @@ SESSION-HISTORY.md
 PLAN.md
 /docs/UPGRADE-LOG.md
 commit-all.bat
+commit-clean.bat
+commit-message-examples.txt
+normalize-eol.bat
+ship.bat
 
 # Extra sensitive-file guards
 profiles/**/.env*
@@ -98,3 +102,12 @@ profiles/**/token*
 *.bak
 profile_audit_report.md
 interview_prep.md
+/docs
+/docs/new
+/mythos-review
+/.claude
+/CLAUDE.md
+/AGENTS.md
+/PLAN.md
+/SESSION-HISTORY.md
+/AI-TOOLING.md

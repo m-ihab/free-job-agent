@@ -14,6 +14,28 @@ _SKILL_RATIO_MIN = 85
 _SKILL_PARTIAL_MIN = 90
 _LOCATION_PARTIAL_MIN = 70
 
+# Component weights — the single source of truth for BOTH score_job and the
+# score-explain decomposition (money-engine's CandidatPro reuses this exact shape).
+# Deterministic components sum to 1.0.
+WEIGHTS = {
+    "skill": 0.38,
+    "title": 0.22,
+    "location": 0.15,
+    "seniority": 0.10,
+    "language": 0.10,
+    "salary": 0.05,
+}
+# When a local-embedding semantic signal is present, the deterministic components
+# are rescaled to SEMANTIC_RESCALE and the semantic signal takes SEMANTIC_WEIGHT
+# (the two sum to 1.0).
+SEMANTIC_RESCALE = 0.85
+SEMANTIC_WEIGHT = 0.15
+# Hard-cap disclosures (risk flag -> score ceiling) surfaced in the explanation.
+SCORE_CAPS = {
+    "FRENCH_REQUIRED": 25,
+    "SPONSORSHIP_GATED": 45,
+}
+
 
 def _skill_overlap(job_tech: list[str], candidate_skills: list[str]) -> tuple[int, list[str], list[str]]:
     if not job_tech:
@@ -150,35 +172,27 @@ def score_job(job: JobListing, profile: CandidateProfile, *, semantic_score: int
     lang_score, lang_notes, lang_risks = _language_score(job, profile)
     auth_score, auth_notes, auth_risks = _work_auth_score(job, profile)
 
-    weights = {
-        "skill": 0.38,
-        "title": 0.22,
-        "location": 0.15,
-        "seniority": 0.10,
-        "language": 0.10,
-        "salary": 0.05,
-    }
     deterministic = (
-        skill_score * weights["skill"]
-        + title_score * weights["title"]
-        + loc_score * weights["location"]
-        + seniority_score * weights["seniority"]
-        + lang_score * weights["language"]
-        + salary_score * weights["salary"]
+        skill_score * WEIGHTS["skill"]
+        + title_score * WEIGHTS["title"]
+        + loc_score * WEIGHTS["location"]
+        + seniority_score * WEIGHTS["seniority"]
+        + lang_score * WEIGHTS["language"]
+        + salary_score * WEIGHTS["salary"]
     )
     semantic_notes: list[str] = []
     if semantic_score is None:
         total = round(deterministic)
     else:
         semantic_score = max(0, min(100, int(semantic_score)))
-        total = round(deterministic * 0.85 + semantic_score * 0.15)
+        total = round(deterministic * SEMANTIC_RESCALE + semantic_score * SEMANTIC_WEIGHT)
         semantic_notes = [f"Semantic similarity: {semantic_score}/100 (local embedding, 15% weight)"]
 
     # Hard penalties: work auth and language are dealbreakers
     if "FRENCH_REQUIRED" in lang_risks:
-        total = min(total, 25)
+        total = min(total, SCORE_CAPS["FRENCH_REQUIRED"])
     if "SPONSORSHIP_GATED" in auth_risks:
-        total = min(total, 45)
+        total = min(total, SCORE_CAPS["SPONSORSHIP_GATED"])
     risk_flags = seniority_risks + salary_risks + lang_risks + auth_risks
     min_fit = getattr(profile, "min_fit_score", 70) or 70
     if total >= min_fit and not risk_flags:
@@ -217,3 +231,65 @@ def score_job(job: JobListing, profile: CandidateProfile, *, semantic_score: int
         missing_requirements=missing,
         risk_flags=risk_flags,
     )
+
+
+def explain_score(
+    job: JobListing, profile: CandidateProfile, *, semantic_score: int | None = None
+) -> dict:
+    """Per-component decomposition of the fit score.
+
+    This is the data behind the dashboard's "Why this score" panel and the
+    money-engine score-explain API (CandidatPro reuses this exact JSON shape),
+    so it lives in the scorer with zero UI/HTTP imports. The ``weight`` of each
+    component is its EFFECTIVE weight: deterministic weights are rescaled by
+    ``SEMANTIC_RESCALE`` when a semantic signal is present, and a ``semantic``
+    component carries ``SEMANTIC_WEIGHT`` — so the component weights always sum
+    to 1.0. ``contribution`` is ``score * weight`` (the points that component
+    adds to the pre-cap total).
+    """
+    breakdown = score_job(job, profile, semantic_score=semantic_score)
+    rescale = SEMANTIC_RESCALE if semantic_score is not None else 1.0
+    raw_scores = {
+        "skill": breakdown.skill_score,
+        "title": breakdown.title_score,
+        "location": breakdown.location_score,
+        "seniority": breakdown.seniority_score,
+        "language": breakdown.language_score,
+        "salary": breakdown.salary_score,
+    }
+    components: list[dict] = []
+    for name, weight in WEIGHTS.items():
+        effective = weight * rescale
+        components.append(
+            {
+                "name": name,
+                "score": raw_scores[name],
+                "weight": round(effective, 4),
+                "contribution": round(raw_scores[name] * effective, 2),
+            }
+        )
+    if semantic_score is not None:
+        sem = breakdown.semantic_score or 0
+        components.append(
+            {
+                "name": "semantic",
+                "score": sem,
+                "weight": round(SEMANTIC_WEIGHT, 4),
+                "contribution": round(sem * SEMANTIC_WEIGHT, 2),
+            }
+        )
+    caps_applied = [
+        {"flag": flag, "ceiling": ceiling}
+        for flag, ceiling in SCORE_CAPS.items()
+        if flag in breakdown.risk_flags
+    ]
+    return {
+        "job_id": job.id,
+        "components": components,
+        "caps_applied": caps_applied,
+        "total_score": breakdown.total_score,
+        "decision": breakdown.decision,
+        "confidence": breakdown.confidence,
+        "missing_requirements": breakdown.missing_requirements,
+        "notes": breakdown.notes,
+    }

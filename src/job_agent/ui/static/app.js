@@ -1785,9 +1785,10 @@ async function studioSwapEduExp() {
 
 function studioRefreshPreview() {
   const iframe = document.getElementById("studioPreview");
-  // page-width fit — the preview panel has a natural fixed height; the "Open
-  // full PDF" link covers close inspection (zoom controls were dropped).
-  if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}#zoom=page-width`;
+  // Fit the WHOLE page into the frame (page-fit, not page-width) so the full
+  // CV is visible without scrolling; the taller preview panel (see app.css)
+  // keeps it readable, and "Open full PDF" covers close inspection.
+  if (iframe) iframe.src = `/api/cv-studio/preview-pdf?t=${Date.now()}#zoom=page-fit`;
 }
 
 async function studioCompile() {

@@ -1,0 +1,46 @@
+# Normalize line endings so the repo can never accumulate the 171-file CRLF
+# phantom diff again (see docs/new/01-ENGINEERING-GUARDRAILS.md, EOL note).
+# `text=auto eol=lf` = git stores LF in the repo and checks LF out on every OS.
+# This OVERRIDES a developer's global core.autocrlf, so it is the durable fix.
+* text=auto eol=lf
+
+# Explicit source types (belt and suspenders over text=auto detection).
+*.py    text eol=lf
+*.pyi   text eol=lf
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+*.ts    text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.toml  text eol=lf
+*.cfg   text eol=lf
+*.ini   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.tex   text eol=lf
+*.svg   text eol=lf
+*.sh    text eol=lf
+
+# Windows-only scripts must stay CRLF (batch interpreters are CRLF-sensitive).
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# Binary assets: never touch line endings, never diff as text.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.xlsx  binary
+*.xls   binary
+*.zip   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary

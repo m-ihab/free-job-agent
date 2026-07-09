@@ -28,6 +28,7 @@ from job_agent.ui.routes import (
     post_preflight,
     post_pipeline,
     post_referral,
+    post_score_explain,
     post_search,
     stories,
 )
@@ -101,6 +102,7 @@ POST_ROUTES: dict[str, Callable[[object, dict], None]] = {
     "/api/portfolio/import-github": post_portfolio.post_portfolio_import_github,
     "/api/portfolio/publish-guide": post_portfolio.post_portfolio_publish_guide,
     "/api/preflight": post_preflight.post_preflight,
+    "/api/score-explain": post_score_explain.post_score_explain,
     "/api/cover-letter": post_cover_letter.post_cover_letter,
     "/api/next-action": post_pipeline.post_next_action,
     "/api/job-notes": post_pipeline.post_job_notes,

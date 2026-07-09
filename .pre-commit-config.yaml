@@ -1,0 +1,39 @@
+# Pre-commit gate (G-7, docs/new/01-ENGINEERING-GUARDRAILS.md). Install once:
+#   pip install pre-commit && pre-commit install
+# Front-loads the CI syntax-floor + file-size + lint checks so failures surface
+# locally on `git commit`, not on a pushed ref. The CI matrix stays the authority.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  - repo: local
+    hooks:
+      - id: syntax-floor
+        name: compileall (syntax gate)
+        entry: python -m compileall -q src
+        language: system
+        pass_filenames: false
+        files: '\.py$'
+
+      - id: no-giant-files
+        name: block new >800-line source files
+        entry: python scripts/check_file_size.py --max 800 --warn 300
+        language: system
+        types: [file]
+        files: '\.(py|js)$'
+
+      - id: eslint
+        name: eslint (dashboard js)
+        entry: npm run --silent lint:js
+        language: system
+        files: 'src/job_agent/ui/static/.*\.js$'
+        pass_filenames: false
+
+      - id: ble-safety
+        name: no blind except on safety paths (G-8)
+        entry: ruff check --select BLE
+        language: system
+        files: '^src/job_agent/(ui/security|utils/net)\.py$'

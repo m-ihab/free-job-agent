@@ -2,7 +2,10 @@
 
 Everything here runs against a local Ollama server when one is reachable; each
 function degrades safely (returns ``None``/``[]``/deterministic fallback) when
-it is not. Nothing is ever sent to a paid or remote API.
+it is not. Nothing is ever sent to a paid API. Job-public tasks (classify /
+summarize — prompts built only from public job text) may additionally fall back
+to opt-in *free-tier* cloud endpoints via :mod:`job_agent.llm_providers`;
+candidate data never leaves the machine.
 
 This module keeps the shared primitives — the Ollama JSON call, availability
 probe, and the candidate/job prompt summaries — and re-exports the task-specific
@@ -36,6 +39,7 @@ from job_agent.polish import (  # noqa: F401  (PolishOptions re-exported for cal
     resolve_ollama_model,
 )
 from job_agent.agent_core import choose_route, record_trace
+from job_agent import llm_providers
 from job_agent.schemas.candidate import CandidateProfile, MasterCV
 from job_agent.schemas.job import JobListing
 
@@ -83,16 +87,25 @@ def is_available(options: PolishOptions | None = None) -> bool:
     AI fit analysis and search planning are local-only and safe to auto-enable
     when Ollama is running. Text polishing remains separately opt-in in
     ``polish.py`` because it rewrites user-facing prose.
+
+    Also True when the opt-in free-tier cloud fallback is configured: job-public
+    tasks (classify/summarize) can then run cloud-only, while candidate-data
+    tasks still no-op safely when Ollama itself is down.
     """
     options = options or PolishOptions.from_env()
-    return is_ollama_reachable(options)
+    return is_ollama_reachable(options) or llm_providers.cloud_enabled()
 
 
 def _call_ollama_json(prompt: str, options: PolishOptions, *, task: str = "general") -> Optional[dict]:
-    """Call Ollama and parse the response as JSON. Returns None on failure."""
-    if requests is None:
-        return None
+    """Call Ollama and parse the response as JSON. Returns None on failure.
+
+    On Ollama failure, job-public tasks may fall back to the opt-in free-tier
+    cloud chain (see :mod:`job_agent.llm_providers`); it returns ``None`` for
+    every other task, so the signature and degrade semantics stay unchanged.
+    """
     route = choose_route(task, prompt, options)
+    if requests is None:
+        return llm_providers.maybe_cloud_json(prompt, task=task, max_output_tokens=route.max_output_tokens)
     payload: dict[str, Any] = {
         "model": route.model,
         "prompt": prompt,
@@ -107,13 +120,13 @@ def _call_ollama_json(prompt: str, options: PolishOptions, *, task: str = "gener
         body = response.json()
     except Exception as exc:
         record_trace(route, ok=False, elapsed_ms=int((time.perf_counter() - started) * 1000), error=f"{type(exc).__name__}: {exc}")
-        return None
+        return llm_providers.maybe_cloud_json(prompt, task=task, max_output_tokens=route.max_output_tokens)
     raw_text = ""
     if isinstance(body, dict):
         raw_text = body.get("response", "") or body.get("thinking", "")
     if not raw_text:
         record_trace(route, ok=False, elapsed_ms=int((time.perf_counter() - started) * 1000), error="empty response")
-        return None
+        return llm_providers.maybe_cloud_json(prompt, task=task, max_output_tokens=route.max_output_tokens)
     # Some models return text with code fences around JSON; strip them.
     cleaned = raw_text.strip()
     if cleaned.startswith("```"):
@@ -125,7 +138,7 @@ def _call_ollama_json(prompt: str, options: PolishOptions, *, task: str = "gener
         return parsed
     except Exception as exc:
         record_trace(route, ok=False, elapsed_ms=int((time.perf_counter() - started) * 1000), error=f"invalid json: {exc}")
-        return None
+        return llm_providers.maybe_cloud_json(prompt, task=task, max_output_tokens=route.max_output_tokens)
 
 
 def _truncate(text: str, limit: int) -> str:

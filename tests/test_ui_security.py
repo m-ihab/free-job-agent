@@ -70,7 +70,7 @@ def test_get_is_not_token_gated() -> None:
 # ── Integration: real server, guard fires before routing (no DB writes) ──────
 
 @pytest.fixture
-def live_server(monkeypatch, tmp_path):
+def live_server(monkeypatch, tmp_path, server_ready):
     monkeypatch.setenv("JOB_AGENT_DATA_DIR", str(tmp_path / "data"))
     from job_agent.ui.server import JobAgentHandler, JobAgentServer
     from job_agent.ui.services import configured_app
@@ -79,6 +79,7 @@ def live_server(monkeypatch, tmp_path):
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    server_ready("127.0.0.1", port)  # G-4: block until accepting — no WinError-10053 reset
     try:
         yield port
     finally:

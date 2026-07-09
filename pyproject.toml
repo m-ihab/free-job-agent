@@ -29,6 +29,10 @@ dependencies = [
 ui = ["streamlit>=1.28"]
 ollama = ["httpx>=0.25"]
 markitdown = ["markitdown>=0.1.5"]
+# Optional intake/apply backends (free, open-source; core never requires them)
+crawl = ["crawl4ai>=0.6,<1"]
+scraping = ["scrapling>=0.2,<1"]
+browseruse = ["browser-use>=0.4,<1"]
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
@@ -69,6 +73,17 @@ addopts = "--basetemp=.pytest_tmp/bt"
 src = ["src"]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
+# BLE001 (blind-except) is intentionally NOT globally selected: the codebase has
+# ~183 pre-existing broad-except BOUNDARIES that are deliberately catch-log-continue
+# (intake feeds, optional-import fallbacks, diagnostic traces — all reviewed in the
+# 2026-07 silent-except triage). Enabling it globally would turn CI red on reviewed
+# code. Instead BLE is enforced on the CLEAN safety paths via dedicated
+# `ruff check --select BLE` invocations (pre-commit `ble-safety` hook + the CI
+# "Ruff (safety paths)" step), so a NEW blind except on those paths fails the gate.
+# The auto_apply/* burn-down (29 reviewed boundaries → narrow-or-justify) is tracked
+# in docs/new/WORKLOG.md rather than silently ignored (G-8).
 
 [tool.mypy]
 python_version = "3.11"

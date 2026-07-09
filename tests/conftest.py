@@ -1,6 +1,8 @@
 import getpass
 import os
+import socket
 import tempfile
+import time
 from pathlib import Path
 
 import json
@@ -35,6 +37,39 @@ def _ensure_accessible_pytest_temproot() -> None:
 
 
 _ensure_accessible_pytest_temproot()
+
+# pytest creates the --basetemp LEAF but never its PARENT directory. The pyproject
+# addopts point at ".pytest_tmp/bt", so guarantee ".pytest_tmp" exists on every
+# runner — this removes the CI-only `mkdir -p .pytest_tmp` coupling so local and CI
+# runs behave identically (G-5, docs/new/01-ENGINEERING-GUARDRAILS.md).
+os.makedirs(".pytest_tmp", exist_ok=True)
+
+
+def wait_ready(host: str, port: int, deadline_s: float = 5.0) -> None:
+    """Block until a TCP listener accepts connections on ``host:port``.
+
+    Threaded live-server tests start stdlib ``http.server`` on a daemon thread; a
+    client that connects before ``serve_forever`` is accepting sees a connection
+    reset (WinError 10053) that ``--reruns`` only papers over. Call this right
+    after ``thread.start()`` for a deterministic readiness handshake (G-4).
+    """
+    end = time.monotonic() + deadline_s
+    last_err: OSError | None = None
+    while time.monotonic() < end:
+        try:
+            with socket.create_connection((host, port), timeout=0.25):
+                return
+        except OSError as exc:  # listener not accepting yet — retry until deadline
+            last_err = exc
+            time.sleep(0.05)
+    raise RuntimeError(f"server never became ready on {host}:{port}") from last_err
+
+
+@pytest.fixture
+def server_ready():
+    """Expose :func:`wait_ready` to tests as ``server_ready(host, port)``."""
+    return wait_ready
+
 
 from job_agent.schemas.candidate import CandidateProfile, MasterCV, QAProfile  # noqa: E402  (after the temp-root workaround above)
 from job_agent.schemas.job import JobListing  # noqa: E402

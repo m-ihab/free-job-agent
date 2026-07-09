@@ -22,8 +22,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+      - name: Syntax gate (all files, floor interpreter)
+        # compileall parses EVERY file, including modules pytest never imports,
+        # on the matrix's 3.11 leg. Front-line guard against the
+        # "3.12-only f-string lands, 3.11 CI never compiles it" failure class.
+        run: python -m compileall -q src tests
       - name: Ruff
         run: ruff check src tests
+      # Blind-except gate on safety paths (G-8): these two modules are BLE-clean;
+      # this blocks a NEW `except Exception` from silently fail-opening the SSRF
+      # guard or the request-security check. auto_apply/* burn-down: see WORKLOG.
+      - name: Ruff (safety paths — no blind except)
+        run: ruff check src/job_agent/ui/security.py src/job_agent/utils/net.py --select BLE
       - name: Mypy
         run: mypy src
       - name: Tests
@@ -49,6 +59,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,e2e]"
+      - name: Cache Playwright browsers
+        # Kills chromium-download flakes and speeds the e2e job. Keyed on
+        # pyproject so a playwright version bump busts the cache automatically.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
       - name: Install Playwright browsers
         run: playwright install --with-deps chromium
       - name: E2E tests
@@ -89,3 +106,11 @@ jobs:
         run: bandit -r src --severity-level high
       - name: pip-audit
         run: pip-audit -r requirements.lock
+      - name: Lock freshness (warn on drift, never fail)
+        # requirements.lock is the pip-audit target; if it silently diverges from
+        # pyproject the audit scans stale deps. This surfaces drift as a warning
+        # (regeneration is deliberate and happens on the 3.11 floor).
+        run: |
+          pip install pip-tools
+          pip-compile pyproject.toml --all-extras -o /tmp/fresh.lock -q 2>/dev/null || true
+          diff -u requirements.lock /tmp/fresh.lock || echo "::warning::requirements.lock drift — regenerate on py3.11 (pip-compile pyproject.toml --all-extras -o requirements.lock)"

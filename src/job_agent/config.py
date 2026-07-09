@@ -98,6 +98,17 @@ class AppConfig(BaseModel):
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
         self.profiles_dir.mkdir(parents=True, exist_ok=True)
 
+    @property
+    def resolved_db_path(self) -> Path:
+        """Absolute, user-expanded path to the SQLite database.
+
+        ``db_path`` is always populated in ``__init__`` (defaults to
+        ``data_dir / "jobs.db"``), so this never returns ``None``. Use this
+        instead of the raw ``db_path`` wherever an absolute path is required.
+        """
+        assert self.db_path is not None  # guaranteed by __init__
+        return Path(self.db_path).expanduser().resolve()
+
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "AppConfig":
         load_local_env()
