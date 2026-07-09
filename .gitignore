@@ -93,6 +93,7 @@ commit-clean.bat
 commit-message-examples.txt
 normalize-eol.bat
 ship.bat
+/scripts/backup_docs.py
 
 # Extra sensitive-file guards
 profiles/**/.env*
@@ -102,7 +103,11 @@ profiles/**/token*
 *.bak
 profile_audit_report.md
 interview_prep.md
-/docs
+# docs/ is local-only EXCEPT the two public files the README needs on GitHub
+# (/docs/* — not /docs — so the negations below can re-include children).
+/docs/*
+!/docs/logo.svg
+!/docs/france_travail_endpoints.example.json
 /docs/new
 /mythos-review
 /.claude

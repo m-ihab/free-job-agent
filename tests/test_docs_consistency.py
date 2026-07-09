@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 DOCS = [
     Path("CLAUDE.md"),
     Path("README.md"),
@@ -35,7 +37,11 @@ ALLOWED_CONTEXT = [
 
 
 def test_canonical_full_auto_phrasing_is_present():
-    text = Path("docs/FULL_AUTO_CONTRACT.md").read_text(encoding="utf-8").casefold()
+    # docs/ is local-only (untracked); CI checkouts don't have this file.
+    path = Path("docs/FULL_AUTO_CONTRACT.md")
+    if not path.exists():
+        pytest.skip("docs/FULL_AUTO_CONTRACT.md is local-only, absent in CI checkouts")
+    text = path.read_text(encoding="utf-8").casefold()
 
     assert "full auto off" in text
     assert "fill_and_confirm" in text

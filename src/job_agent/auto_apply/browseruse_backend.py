@@ -19,6 +19,7 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import urlparse
 
 from job_agent.auto_apply.session_types import ApplyEvent, ApplyMode
@@ -128,9 +129,11 @@ def _execute_agent(plan: BrowserUseFillPlan, headless: bool) -> str:
     from job_agent.polish import PolishOptions, resolve_ollama_model
 
     try:
-        llm_cls = getattr(browser_use, "ChatOllama", None)
+        llm_cls: Any = getattr(browser_use, "ChatOllama", None)
         if llm_cls is None:
-            from browser_use.llm import ChatOllama as llm_cls  # type: ignore
+            from browser_use.llm import ChatOllama  # type: ignore[import-not-found]
+
+            llm_cls = ChatOllama
         llm = llm_cls(model=resolve_ollama_model(PolishOptions.from_env()))
     except Exception as exc:
         raise RuntimeError(f"no local llm for browser_use: {exc}") from exc

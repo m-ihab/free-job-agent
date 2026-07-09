@@ -21,6 +21,8 @@ export default [
         clearTimeout: "readonly",
         setInterval: "readonly",
         clearInterval: "readonly",
+        MutationObserver: "readonly",
+        requestAnimationFrame: "readonly",
         FileReader: "readonly",
         URL: "readonly",
         Date: "readonly",

@@ -23,7 +23,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 try:
     import requests  # patched in tests like free_apis.requests / ai.requests
@@ -129,7 +129,7 @@ def _post_chat(provider: CloudProvider, prompt: str, max_output_tokens: int) -> 
     """One chat-completions call. Returns raw content text or None."""
     if requests is None:
         return None
-    payload = {
+    payload: dict[str, Any] = {
         "model": provider.model(),
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2,
