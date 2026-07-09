@@ -4,18 +4,31 @@ from __future__ import annotations
 import http.client
 import json
 import re
+import shutil
 import threading
 from contextlib import closing
+from pathlib import Path
 
 import pytest
 
 from job_agent.schemas.job import JobListing
 from job_agent.ui.security import TOKEN_HEADER
 
+EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
+PROFILE_FILES = ("candidate_profile.json", "master_cv.json", "master_qa_profile.json")
+
 
 @pytest.fixture
 def server(monkeypatch, tmp_path):
     monkeypatch.setenv("JOB_AGENT_DATA_DIR", str(tmp_path / "data"))
+    # Hermetic profiles: seed the isolated dir with the tracked examples and pin
+    # JOB_AGENT_PROFILES_DIR, so load_profile_bundle never falls back to a real
+    # profiles/ dir on the developer machine (present locally, absent in CI).
+    profiles_dir = tmp_path / "data" / "profiles"
+    profiles_dir.mkdir(parents=True)
+    for name in PROFILE_FILES:
+        shutil.copy(EXAMPLES_DIR / name, profiles_dir / name)
+    monkeypatch.setenv("JOB_AGENT_PROFILES_DIR", str(profiles_dir))
     from job_agent.db.database import Database
     from job_agent.ui.server import JobAgentHandler, JobAgentServer
     from job_agent.ui.services import configured_app
