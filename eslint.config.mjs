@@ -48,6 +48,8 @@ export default [
       "src/job_agent/ui/static/features.js",
       "src/job_agent/ui/static/profile_editor.js",
       "src/job_agent/ui/static/pipeline.js",
+      "src/job_agent/ui/static/studio.js",
+      "src/job_agent/ui/static/studio_tools.js",
     ],
     languageOptions: {
       globals: {
