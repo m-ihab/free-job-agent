@@ -3,11 +3,17 @@ from __future__ import annotations
 from pathlib import Path
 
 
-APP_JS = Path("src/job_agent/ui/static/app.js")
+STATIC_DIR = Path("src/job_agent/ui/static")
 
 
 def _source() -> str:
-    return APP_JS.read_text(encoding="utf-8")
+    # The dashboard is app.js plus its extracted classic-script modules (R3
+    # split) — the guarded wiring may live in any of them. A sorted glob puts
+    # app.js first and studio.js before studio_tools.js, preserving the
+    # anchor order the _between() extractions rely on.
+    return "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(STATIC_DIR.glob("*.js"))
+    )
 
 
 def _between(source: str, start: str, end: str) -> str:
