@@ -5,8 +5,11 @@ the CLI so the browser dashboard and command line stay behaviorally aligned.
 """
 from __future__ import annotations
 
+import logging
 import os
 import shutil
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -38,11 +41,62 @@ APP_DESCRIPTION = os.environ.get(
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 def configured_app() -> AppConfig:
     config = AppConfig.load()
     config.ensure_dirs()
     Database(config.db_path).initialize()  # type: ignore[arg-type]
+    warn_on_shadow_db(config)
     return config
+
+
+def _job_count(path: Path) -> int:
+    with closing(sqlite3.connect(str(path))) as con:
+        try:
+            return int(con.execute("SELECT COUNT(*) FROM jobs").fetchone()[0])
+        except sqlite3.Error:
+            return 0
+
+
+def _shadow_db_candidates(active: Path) -> list[Path]:
+    candidates = [Path.cwd() / ".job_agent" / "jobs.db", Path.home() / ".job_agent" / "jobs.db"]
+    seen: list[Path] = []
+    for candidate in candidates:
+        if candidate.exists() and candidate.resolve() != active:
+            seen.append(candidate)
+    return seen
+
+
+def warn_on_shadow_db(config: AppConfig) -> None:
+    """Loudly flag a launch that opened a different database than an existing,
+    fuller one.
+
+    2026-07-11 incident: with HOME set in the launch environment (Git Bash),
+    the data dir resolved to ``~/.job_agent`` and the repo database with every
+    tracked job looked deleted. Launchers now pin JOB_AGENT_DATA_DIR; this
+    warning covers unpinned launches. Silence with JOB_AGENT_SILENCE_SHADOW_DB=1.
+    """
+    if os.environ.get("JOB_AGENT_DATA_DIR") or os.environ.get("JOB_AGENT_SILENCE_SHADOW_DB"):
+        return
+    try:
+        active = config.resolved_db_path
+        active_count = _job_count(active) if active.exists() else 0
+        for shadow in _shadow_db_candidates(active):
+            shadow_count = _job_count(shadow)
+            if shadow_count > active_count:
+                logger.warning(
+                    "Dashboard database %s holds %d jobs, but %s holds %d. "
+                    "This launch may have resolved the wrong data dir — set "
+                    "JOB_AGENT_DATA_DIR (launch.ps1 pins it) to open the fuller one.",
+                    active,
+                    active_count,
+                    shadow,
+                    shadow_count,
+                )
+    except Exception:  # diagnostic-only boundary: never block startup on the check
+        logger.debug("shadow-db check skipped", exc_info=True)
 
 
 def is_france_travail_configured() -> bool:

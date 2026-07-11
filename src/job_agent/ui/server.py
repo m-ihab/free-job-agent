@@ -296,7 +296,19 @@ def run_server(
             "(auto-apply, URL fetch, job data) to your network."
         )
     config = configured_app()
-    server = JobAgentServer((host, port), JobAgentHandler, config)
+    try:
+        server = JobAgentServer((host, port), JobAgentHandler, config)
+    except OSError as exc:
+        logger.error(
+            "Cannot bind %s:%s (%s). Another dashboard instance is probably still "
+            "running on this port — stop it or relaunch with --port <other>. "
+            "A stale instance can serve a DIFFERENT database and make tracked "
+            "jobs look deleted (2026-07-11 incident).",
+            host,
+            port,
+            exc,
+        )
+        raise SystemExit(2) from exc
     url = f"http://{host}:{port}"
     logger.info("Starting %s at %s", APP_NAME, url)
     logger.info("Data: %s", config.data_dir)
