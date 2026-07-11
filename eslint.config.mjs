@@ -52,10 +52,15 @@ export default [
       "src/job_agent/ui/static/studio_tools.js",
       "src/job_agent/ui/static/portfolio.js",
       "src/job_agent/ui/static/coach.js",
+      "src/job_agent/ui/static/autopilot.js",
+      "src/job_agent/ui/static/insights.js",
     ],
     languageOptions: {
       globals: {
         state: "readonly",
+        // top-level const in app.js (script scope, not on window) — modules
+        // read it as a bare identifier at call time, same as `state`
+        autoApplyState: "readonly",
       },
     },
   },

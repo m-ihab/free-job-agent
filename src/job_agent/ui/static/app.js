@@ -1355,192 +1355,10 @@ async function importCvTemplate() {
   }
 }
 
-async function loadInsights() {
-  try {
-    const payload = await api("/api/stats");
-    state.insightsCache = payload;
-    renderInsights(payload);
-  } catch (error) {
-    toast(`Insights error: ${error.message}`);
-  }
-}
-
-function readVar(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
-}
-
-function destroyChart(key) {
-  const existing = state.charts[key];
-  if (existing && typeof existing.destroy === "function") existing.destroy();
-  state.charts[key] = null;
-}
-
-function renderFunnelChart(funnel) {
-  if (typeof Chart === "undefined") return;
-  destroyChart("funnel");
-  const ctx = document.getElementById("funnelChart");
-  if (!ctx) return;
-  const labels = funnel.map((row) => row.label);
-  const values = funnel.map((row) => row.count);
-  state.charts.funnel = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [{
-        label: "Jobs",
-        data: values,
-        backgroundColor: labels.map((_, i) => `rgba(${i % 2 ? "28,63,114" : "11,139,127"}, 0.85)`),
-        borderRadius: 6,
-        borderSkipped: false,
-      }],
-    },
-    options: {
-      indexAxis: "y",
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { beginAtZero: true, grid: { color: readVar("--line") }, ticks: { color: readVar("--muted") } },
-        y: { grid: { display: false }, ticks: { color: readVar("--ink") } },
-      },
-    },
-  });
-}
-
-function renderWeeklyChart(weeks) {
-  if (typeof Chart === "undefined") return;
-  destroyChart("weekly");
-  const ctx = document.getElementById("weeklyChart");
-  if (!ctx) return;
-  const labels = weeks.map((row) => row.week.replace(/^\d{4}-/, ""));
-  const added = weeks.map((row) => row.added);
-  const applied = weeks.map((row) => row.applied);
-  state.charts.weekly = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        { label: "Added", data: added, backgroundColor: "rgba(28,63,114,0.75)", borderRadius: 4 },
-        { label: "Applied", data: applied, backgroundColor: "rgba(11,139,127,0.85)", borderRadius: 4 },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: readVar("--muted") } } },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: readVar("--muted") } },
-        y: { beginAtZero: true, grid: { color: readVar("--line") }, ticks: { color: readVar("--muted") } },
-      },
-    },
-  });
-}
-
-function renderPipelineChart(funnel) {
-  if (typeof Chart === "undefined") return;
-  destroyChart("pipeline");
-  const ctx = document.getElementById("pipelineChart");
-  if (!ctx) return;
-  if (!funnel || !funnel.length) return;
-  const labels = funnel.map((row) => row.label);
-  const values = funnel.map((row) => row.count);
-  const conversions = values.map((value, idx) => {
-    if (idx === 0 || !values[idx - 1]) return "100%";
-    return `${Math.round((value / values[idx - 1]) * 100)}%`;
-  });
-  state.charts.pipeline = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [{
-        label: "Jobs",
-        data: values,
-        backgroundColor: labels.map((_, i) => {
-          const ratio = i / Math.max(1, labels.length - 1);
-          return `rgba(${Math.round(11 + (28 - 11) * ratio)}, ${Math.round(139 - (139 - 63) * ratio)}, ${Math.round(127 - (127 - 114) * ratio)}, 0.85)`;
-        }),
-        borderRadius: 8,
-        borderSkipped: false,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (item) => `${item.raw} jobs · ${conversions[item.dataIndex]} of previous`,
-          },
-        },
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: readVar("--muted") } },
-        y: { beginAtZero: true, grid: { color: readVar("--line") }, ticks: { color: readVar("--muted") } },
-      },
-    },
-  });
-}
-
-function renderScoreChart(buckets) {
-  if (typeof Chart === "undefined") return;
-  destroyChart("score");
-  const ctx = document.getElementById("scoreChart");
-  if (!ctx) return;
-  const labels = Object.keys(buckets);
-  const values = Object.values(buckets);
-  state.charts.score = new Chart(ctx, {
-    type: "doughnut",
-    data: {
-      labels,
-      datasets: [{
-        data: values,
-        backgroundColor: [
-          "rgba(192,57,43,0.85)",
-          "rgba(244,184,96,0.85)",
-          "rgba(11,139,127,0.85)",
-          "rgba(28,63,114,0.85)",
-        ],
-        borderColor: readVar("--surface"),
-        borderWidth: 2,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom", labels: { color: readVar("--muted") } } },
-    },
-  });
-}
-
-function renderInsights(stats) {
-  const total = stats.total || 0;
-  const submitted = stats.submitted_count || 0;
-  const interviews = stats.interview_count || 0;
-  $("insightsMetrics").innerHTML = [
-    metric("Total tracked", total),
-    metric("Submitted", submitted),
-    metric("Interviews+", interviews),
-    metric("Response rate", `${stats.response_rate ?? 0}%`, `avg score ${stats.avg_score ?? "—"}`),
-  ].join("");
-
-  renderFunnelChart(stats.funnel || []);
-  renderWeeklyChart(stats.weekly || []);
-  renderScoreChart(stats.score_buckets || {});
-  renderPipelineChart(stats.funnel || []);
-
-  $("topCompaniesView").innerHTML = (stats.top_companies || [])
-    .map((row) => `<li><span>${escapeHtml(row.name)}</span><strong>${row.count}</strong></li>`)
-    .join("") || "<li class='muted'>No data yet.</li>";
-  $("topSourcesView").innerHTML = (stats.top_sources || [])
-    .map((row) => `<li><span>${escapeHtml(row.name)}</span><strong>${row.count}</strong></li>`)
-    .join("") || "<li class='muted'>No data yet.</li>";
-  $("topLocationsView").innerHTML = (stats.top_locations || [])
-    .map((row) => `<li><span>${escapeHtml(row.name)}</span><strong>${row.count}</strong></li>`)
-    .join("") || "<li class='muted'>No data yet.</li>";
-}
-
 // ===== Tracker tab =====
+// NOTE: tracker stays in app.js on purpose — kanban.js monkey-patches
+// window.renderTracker (top-level declaration binding); an IIFE move
+// would bypass that patch. Refactor to events before extracting.
 // The application funnel: tracked jobs grouped into pipeline stages, each row's
 // status editable inline (saves via /api/status), with the Excel export/import.
 const TRACKER_STAGES = [
@@ -1661,9 +1479,9 @@ function activateTab(name) {
   if (name === "jobs") renderJobs();
   if (name === "pipeline" && window.JobAgentPipeline) window.JobAgentPipeline.load();
   if (name === "tracker") loadTracker();
-  if (name === "insights" && !state.insightsCache) loadInsights();
+  if (name === "insights" && !state.insightsCache && window.JobAgentInsights) window.JobAgentInsights.load();
   if (name === "autopilot") {
-    loadAutopilot();
+    if (window.JobAgentAutopilot) window.JobAgentAutopilot.load();
     loadAiSetup();
     loadAiTrace();
     loadNeedsManual();
@@ -1679,171 +1497,6 @@ function activateTab(name) {
   if (name === "coach" && !state.coachCache && window.JobAgentCoach) window.JobAgentCoach.renderShell();
 }
 
-async function loadAutopilot() {
-  try {
-    const status = await api("/api/autopilot");
-    state.autopilotCache = status;
-    renderAutopilot(status);
-  } catch (error) {
-    setNotice("autopilotNotice", error.message, true);
-  }
-}
-
-function renderAutopilot(status) {
-  const cfg = status.config || {};
-  $("autopilotMetrics").innerHTML = [
-    metric("Running", status.running ? "Yes" : "No"),
-    metric("Cycles", status.cycles_completed || 0),
-    metric("Jobs added", status.jobs_added_total || 0),
-    metric("Packets built", status.packets_built_total || 0),
-  ].join("");
-  if ($("autopilotInterval")) {
-    if (cfg.interval_minutes) $("autopilotInterval").value = cfg.interval_minutes;
-    if (cfg.location) $("autopilotLocation").value = cfg.location;
-    if (cfg.radius_km != null && $("autopilotRadius")) $("autopilotRadius").value = cfg.radius_km;
-    if (cfg.auto_packet_threshold != null) $("autopilotThreshold").value = cfg.auto_packet_threshold;
-    if (cfg.min_relevance != null && $("autopilotMinRelevance")) $("autopilotMinRelevance").value = cfg.min_relevance;
-    if (cfg.max_packets_per_cycle != null) $("autopilotMaxPackets").value = cfg.max_packets_per_cycle;
-    if (cfg.queries && cfg.queries.length) $("autopilotQueries").value = cfg.queries.join("\n");
-    $("autopilotUseFT").checked = cfg.use_france_travail !== false;
-    $("autopilotUseMulti").checked = cfg.use_multi_source !== false;
-    if ($("autopilotFranceEuOnly")) $("autopilotFranceEuOnly").checked = cfg.france_eu_only !== false;
-    if ($("autopilotEmailNotify")) $("autopilotEmailNotify").checked = cfg.email_notify === true;
-  }
-  const summary = status.last_summary;
-  if (summary) {
-    const perQuery = Object.entries(summary.per_query || {})
-      .map(([q, c]) => `${escapeHtml(q)}: ${c}`)
-      .join("<br>");
-    const plannedQueries = (summary.queries || []).map((q) => `<span class="badge">${escapeHtml(q)}</span>`).join("");
-    $("autopilotLastSummary").innerHTML = `
-      <div class="detail-row"><span>Last run</span><strong>${escapeHtml(status.last_run_at || "-")}</strong></div>
-      <div class="detail-row"><span>Jobs added</span><strong>${summary.jobs_added || 0}</strong></div>
-      <div class="detail-row"><span>Packets built</span><strong>${summary.packets_built || 0}</strong></div>
-      <div class="detail-row"><span>France Travail</span><strong>${summary.france_travail_used ? "yes" : "no"}</strong></div>
-      <div class="detail-row"><span>Multi-source</span><strong>${summary.multi_source_used ? "yes" : "no"}</strong></div>
-      ${plannedQueries ? `<h4>Smart queries</h4><div class="tag-cloud">${plannedQueries}</div>` : ""}
-      ${perQuery ? `<h4>Per query</h4><div class="muted">${perQuery}</div>` : ""}
-    `;
-  } else {
-    $("autopilotLastSummary").innerHTML = "Autopilot has not run yet. Press <strong>Start autopilot</strong> to begin.";
-  }
-  const errs = (summary && summary.errors) || (status.last_error ? [status.last_error] : []);
-  if (errs && errs.length) {
-    $("autopilotErrors").innerHTML = errs.map(escapeHtml).join("<br>");
-  } else {
-    $("autopilotErrors").innerHTML = "None.";
-  }
-  const brokenNode = document.getElementById("autopilotBrokenSources");
-  if (brokenNode) {
-    const broken = (summary && summary.broken_sources) || status.broken_sources || [];
-    if (!broken.length) {
-      brokenNode.innerHTML = "None recorded.";
-    } else {
-      brokenNode.innerHTML = broken.map((b) =>
-        `<div class="detail-row"><span>${escapeHtml(b.source)}/${escapeHtml(b.slug)}</span><strong>HTTP ${b.status_code || "?"} · until ${escapeHtml((b.broken_until || "").slice(0, 16))}</strong></div>`
-      ).join("");
-    }
-  }
-}
-
-let _contractType = "stage_and_alternance";
-
-function setContractType(type) {
-  _contractType = type;
-  document.querySelectorAll("#contractTypeToggle .contract-btn").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.contract === type);
-  });
-}
-
-function autopilotPayload() {
-  return {
-    interval_minutes: Number($("autopilotInterval").value || 30),
-    location: $("autopilotLocation").value.trim() || "Paris",
-    radius_km: Number($("autopilotRadius")?.value || 0),
-    auto_packet_threshold: Number($("autopilotThreshold").value || 75),
-    min_relevance: Number($("autopilotMinRelevance")?.value || 50),
-    max_packets_per_cycle: Number($("autopilotMaxPackets").value || 5),
-    queries: $("autopilotQueries").value.split("\n").map((q) => q.trim()).filter(Boolean),
-    use_france_travail: $("autopilotUseFT").checked,
-    use_multi_source: $("autopilotUseMulti").checked,
-    contract_type: _contractType,
-    france_eu_only: $("autopilotFranceEuOnly") ? $("autopilotFranceEuOnly").checked : true,
-    email_notify: $("autopilotEmailNotify") ? $("autopilotEmailNotify").checked : false,
-    auto_apply: $("autopilotAutoApply") ? $("autopilotAutoApply").checked : false,
-    auto_apply_mode: autoApplyState ? autoApplyState.mode : "fill_and_confirm",
-    auto_apply_min_score: parseFloat($("autoApplyMinScore")?.value || "75"),
-  };
-}
-
-function subscribeAutopilotSse() {
-  if (state.autopilotStream) return;
-  if (typeof EventSource === "undefined") return;
-  const es = new EventSource("/api/autopilot/stream");
-  state.autopilotStream = es;
-  es.addEventListener("status", (event) => {
-    try {
-      const status = JSON.parse(event.data);
-      state.autopilotCache = status;
-      renderAutopilot(status);
-      if (!status.running) closeAutopilotSse();
-    } catch {
-      // ignore parse errors; keep stream open
-    }
-  });
-  es.onerror = () => {
-    closeAutopilotSse();
-  };
-}
-
-function closeAutopilotSse() {
-  if (state.autopilotStream) {
-    try {
-      state.autopilotStream.close();
-    } catch (error) {
-      console.debug("Autopilot SSE close failed", error);
-    }
-    state.autopilotStream = null;
-  }
-}
-
-async function startAutopilot() {
-  const button = $("autopilotStartBtn");
-  setBusy(button, true);
-  setNotice("autopilotNotice", "");
-  try {
-    const payload = await api("/api/autopilot/start", autopilotPayload());
-    renderAutopilot(payload.status);
-    toast("Autopilot started. It runs in the background.");
-    if (state.autopilotTimer) window.clearInterval(state.autopilotTimer);
-    state.autopilotTimer = window.setInterval(loadAutopilot, 30000);
-    subscribeAutopilotSse();
-  } catch (error) {
-    setNotice("autopilotNotice", error.message, true);
-  } finally {
-    setBusy(button, false);
-  }
-}
-
-async function stopAutopilot() {
-  const button = $("autopilotStopBtn");
-  setBusy(button, true);
-  try {
-    const payload = await api("/api/autopilot/stop", {});
-    renderAutopilot(payload.status);
-    if (state.autopilotTimer) {
-      window.clearInterval(state.autopilotTimer);
-      state.autopilotTimer = null;
-    }
-    closeAutopilotSse();
-    toast("Autopilot stopped.");
-  } catch (error) {
-    setNotice("autopilotNotice", error.message, true);
-  } finally {
-    setBusy(button, false);
-  }
-}
-
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
   try {
@@ -1852,7 +1505,7 @@ function applyTheme(theme) {
     console.debug("Could not persist dashboard theme", error);
   }
   // Charts must be re-drawn to pick up new CSS-variable colors
-  if (state.insightsCache) renderInsights(state.insightsCache);
+  if (state.insightsCache && window.JobAgentInsights) window.JobAgentInsights.render(state.insightsCache);
 }
 
 function initTheme() {
@@ -2244,7 +1897,6 @@ function bindEvents() {
     await loadJobs();
     renderState();
   });
-  $("insightsRefreshBtn").addEventListener("click", loadInsights);
   const needsManualRefreshBtn = document.getElementById("needsManualRefreshBtn");
   if (needsManualRefreshBtn) needsManualRefreshBtn.addEventListener("click", loadNeedsManual);
   $("statusFilter").addEventListener("change", loadJobs);
@@ -2316,12 +1968,6 @@ function bindEvents() {
     if (event.target === $("shortcutsHelp")) toggleShortcuts(false);
   });
 
-  $("autopilotStartBtn").addEventListener("click", startAutopilot);
-  $("autopilotStopBtn").addEventListener("click", stopAutopilot);
-  $("autopilotRefreshBtn").addEventListener("click", loadAutopilot);
-  document.querySelectorAll("#contractTypeToggle .contract-btn").forEach((btn) => {
-    btn.addEventListener("click", () => setContractType(btn.dataset.contract));
-  });
   bindAutoApplyEvents();
   const launchBtn = document.getElementById("launchOllamaBtn");
   if (launchBtn) launchBtn.addEventListener("click", launchOllama);
@@ -2399,7 +2045,7 @@ function bindEvents() {
     try {
       const result = await api("/api/maintenance/validate-sources", {});
       toast(`Validated ${result.total} boards · ${result.healthy} OK · ${result.broken} marked dead.`);
-      await loadAutopilot();
+      if (window.JobAgentAutopilot) await window.JobAgentAutopilot.load();
     } catch (error) {
       toast(`Validate failed: ${error.message}`);
     } finally {
@@ -2412,7 +2058,7 @@ function bindEvents() {
     try {
       const result = await api("/api/maintenance/clear-broken", {});
       toast(`Cleared ${result.cleared} dead-board entries.`);
-      await loadAutopilot();
+      if (window.JobAgentAutopilot) await window.JobAgentAutopilot.load();
     } catch (error) {
       toast(`Clear failed: ${error.message}`);
     } finally {
