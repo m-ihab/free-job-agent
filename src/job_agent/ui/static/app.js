@@ -889,71 +889,6 @@ async function addText() {
   }
 }
 
-// Outreach engine toggle: "auto" tries local Ollama (with template fallback),
-// "standard" forces the deterministic templates. Read once per request.
-function outreachEngine() {
-  const select = document.getElementById("outreachEngine");
-  return select ? select.value : "auto";
-}
-
-function engineSuffix(engine) {
-  return engine === "smart" ? " (AI-enhanced)" : "";
-}
-
-async function generateLinkedInMessage(jobId, button) {
-  setBusy(button, true);
-  toast("Drafting LinkedIn message…");
-  try {
-    const payload = await api("/api/linkedin-message", { job_id: jobId, type: "recruiter", engine: outreachEngine() });
-    openTextModal(`LinkedIn Message Draft${engineSuffix(payload.engine)}`, payload.message, "Copy to clipboard");
-  } catch (error) {
-    toast(`LinkedIn message failed: ${error.message}`);
-  } finally {
-    setBusy(button, false);
-  }
-}
-
-async function generateInterviewPrep(jobId, button) {
-  setBusy(button, true);
-  toast("Generating interview prep…");
-  try {
-    const payload = await api("/api/interview-prep", { job_id: jobId });
-    const panel = document.getElementById("prepPanel");
-    const title = document.getElementById("prepPanelTitle");
-    const body = document.getElementById("prepPanelBody");
-    const copyBtn = document.getElementById("prepPanelCopyBtn");
-    const closeBtn = document.getElementById("prepPanelCloseBtn");
-    if (panel && body) {
-      const job = state.jobs.find((j) => j.id === jobId);
-      if (title) title.textContent = `Prep — ${job ? job.title : "Interview"}`;
-      body.textContent = (payload.prep_md || "").replace(/\*\*([^*]+)\*\*/g, "$1");
-      panel.classList.remove("hidden");
-      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      if (copyBtn) copyBtn.onclick = () => navigator.clipboard.writeText(payload.prep_md || "").then(() => toast("Prep copied."));
-      if (closeBtn) closeBtn.onclick = () => panel.classList.add("hidden");
-    } else {
-      openTextModal("Interview Prep", payload.prep_md, "Copy");
-    }
-  } catch (error) {
-    toast(`Interview prep failed: ${error.message}`);
-  } finally {
-    setBusy(button, false);
-  }
-}
-
-async function generateFollowupEmail(jobId, button) {
-  setBusy(button, true);
-  toast("Drafting follow-up email…");
-  try {
-    const payload = await api("/api/followup-email", { job_id: jobId, type: "week1", engine: outreachEngine() });
-    openTextModal(`Follow-up Email Draft${engineSuffix(payload.engine)}`, payload.email_md, "Copy");
-  } catch (error) {
-    toast(`Follow-up failed: ${error.message}`);
-  } finally {
-    setBusy(button, false);
-  }
-}
-
 function openTextModal(title, content, copyLabel) {
   let modal = document.getElementById("genericTextModal");
   if (!modal) {
@@ -1012,106 +947,6 @@ async function runSkillSuggestions() {
   } finally {
     setBusy(button, false);
   }
-}
-
-async function runMarketReport() {
-  const button = document.getElementById("insightsMarketBtn");
-  setBusy(button, true);
-  toast("Building market report…");
-  try {
-    const r = await api("/api/market-report", {});
-    openTextModal("Market Report", r.markdown || "No market data yet — track some jobs first.", "Copy");
-  } catch (error) {
-    toast(`Market report failed: ${error.message}`);
-  } finally {
-    setBusy(button, false);
-  }
-}
-
-async function runHeadhunter() {
-  const button = document.getElementById("headhunterBtn");
-  setBusy(button, true);
-  toast("Building outreach packs…");
-  try {
-    const [batch, strategy] = await Promise.all([
-      api("/api/headhunter-batch", { min_score: 50 }),
-      api("/api/headhunter-strategy", {}),
-    ]);
-    const packs = (batch.packs || []).map((p) =>
-      `${p.job_title} — ${p.company} (score ${p.score}${p.is_english_first ? ", English-first" : ""})\n\nCONNECT:\n${p.connect_request}\n\nRECRUITER MESSAGE:\n${p.recruiter_message}\n\nFOLLOW-UP:\n${p.followup_message}`
-    ).join("\n\n────────────────────\n\n");
-    const text = `${strategy.report_md || ""}\n\n====================\n${batch.count || 0} OUTREACH PACK(S)\n====================\n\n${packs || "No tracked jobs above the score threshold yet."}`;
-    openTextModal("Headhunter Outreach", text, "Copy all");
-  } catch (error) {
-    toast(`Headhunter failed: ${error.message}`);
-  } finally {
-    setBusy(button, false);
-  }
-}
-
-async function generateBrief(jobId, button) {
-  setBusy(button, true);
-  toast("Writing application brief…");
-  try {
-    const payload = await api("/api/application-brief", { job_id: jobId, engine: outreachEngine() });
-    const keywords = (payload.keywords || []).join(", ");
-    const text = [
-      `HEADLINE\n${payload.headline || ""}`,
-      `SUMMARY\n${payload.summary || ""}`,
-      `KEYWORDS (most relevant for this role)\n${keywords}`,
-    ].join("\n\n");
-    openTextModal(`Application Brief${engineSuffix(payload.engine)}`, text, "Copy");
-  } catch (error) {
-    toast(`Brief failed: ${error.message}`);
-  } finally {
-    setBusy(button, false);
-  }
-}
-
-async function generateOutreachEmail(jobId, button) {
-  setBusy(button, true);
-  toast("Drafting outreach email…");
-  try {
-    const payload = await api("/api/generate-outreach", { job_id: jobId, engine: outreachEngine() });
-    openOutreachModal(payload);
-  } catch (error) {
-    toast(`Outreach failed: ${error.message}`);
-  } finally {
-    setBusy(button, false);
-  }
-}
-
-function openOutreachModal(payload) {
-  let modal = document.getElementById("outreachModal");
-  if (!modal) {
-    modal = document.createElement("div");
-    modal.id = "outreachModal";
-    modal.className = "modal-overlay";
-    modal.innerHTML = `
-      <div class="modal-box" style="max-width:640px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
-          <strong>Outreach Email Draft</strong>
-          <button id="outreachCopyBtn" style="margin-left:auto;margin-right:0.5rem">Copy</button>
-          <button id="outreachCloseBtn">✕</button>
-        </div>
-        <pre id="outreachContent" style="white-space:pre-wrap;font-size:0.85rem;background:var(--surface,#f5f5f5);padding:1rem;border-radius:6px;max-height:420px;overflow:auto"></pre>
-        <p id="outreachRecruiterInfo" style="font-size:0.8rem;color:var(--muted,#888);margin-top:0.5rem"></p>
-      </div>`;
-    document.body.appendChild(modal);
-    document.getElementById("outreachCloseBtn").addEventListener("click", () => { modal.style.display = "none"; });
-    document.getElementById("outreachCopyBtn").addEventListener("click", () => {
-      const text = document.getElementById("outreachContent").textContent;
-      navigator.clipboard.writeText(text).then(() => toast("Copied to clipboard."));
-    });
-    modal.addEventListener("click", (e) => { if (e.target === modal) modal.style.display = "none"; });
-  }
-  const emailText = (payload.email_md || "").replace(/\*\*Subject:\*\*/g, "Subject:").replace(/---\n\n/, "");
-  document.getElementById("outreachContent").textContent = emailText;
-  const info = [];
-  if (payload.recruiter_name) info.push(`Recruiter: ${payload.recruiter_name}`);
-  if (payload.recruiter_email) info.push(`Email: ${payload.recruiter_email}`);
-  document.getElementById("outreachRecruiterInfo").textContent = info.join("  ·  ") || "No recruiter contact found in description.";
-  modal.style.display = "flex";
 }
 
 async function generatePacket(jobId, button) {
@@ -1734,12 +1569,6 @@ function bindEvents() {
   const themeBtn = document.getElementById("themeToggleBtn");
   if (themeBtn) themeBtn.addEventListener("click", toggleTheme);
 
-  // Insights / headhunter extras (bindings stay with app.js functions)
-  const insightsMarketBtn = document.getElementById("insightsMarketBtn");
-  if (insightsMarketBtn) insightsMarketBtn.addEventListener("click", runMarketReport);
-  const headhunterBtn = document.getElementById("headhunterBtn");
-  if (headhunterBtn) headhunterBtn.addEventListener("click", runHeadhunter);
-
   // Maintenance
   const rescanBtn = document.getElementById("rescanCompaniesBtn");
   if (rescanBtn) rescanBtn.addEventListener("click", async () => {
@@ -1864,27 +1693,27 @@ function bindEvents() {
     }
     const briefTarget = event.target.closest("[data-action='brief']");
     if (briefTarget) {
-      generateBrief(briefTarget.dataset.job, briefTarget);
+      if (window.JobAgentOutreach) window.JobAgentOutreach.brief(briefTarget.dataset.job, briefTarget);
       return;
     }
     const outreachTarget = event.target.closest("[data-action='outreach']");
     if (outreachTarget) {
-      generateOutreachEmail(outreachTarget.dataset.job, outreachTarget);
+      if (window.JobAgentOutreach) window.JobAgentOutreach.outreach(outreachTarget.dataset.job, outreachTarget);
       return;
     }
     const linkedinTarget = event.target.closest("[data-action='linkedin']");
     if (linkedinTarget) {
-      generateLinkedInMessage(linkedinTarget.dataset.job, linkedinTarget);
+      if (window.JobAgentOutreach) window.JobAgentOutreach.linkedin(linkedinTarget.dataset.job, linkedinTarget);
       return;
     }
     const interviewTarget = event.target.closest("[data-action='interview']");
     if (interviewTarget) {
-      generateInterviewPrep(interviewTarget.dataset.job, interviewTarget);
+      if (window.JobAgentOutreach) window.JobAgentOutreach.interviewPrep(interviewTarget.dataset.job, interviewTarget);
       return;
     }
     const followupTarget = event.target.closest("[data-action='followup']");
     if (followupTarget) {
-      generateFollowupEmail(followupTarget.dataset.job, followupTarget);
+      if (window.JobAgentOutreach) window.JobAgentOutreach.followup(followupTarget.dataset.job, followupTarget);
       return;
     }
     const statusTarget = event.target.closest("[data-action='status']");
