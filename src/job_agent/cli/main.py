@@ -37,6 +37,7 @@ class LocalCLIApp:
 
     def build_parser(self) -> argparse.ArgumentParser:
         from job_agent.cli.commands import apply as apply_cmds
+        from job_agent.cli.commands import career as career_cmds
         from job_agent.cli.commands import france as france_cmds
         from job_agent.cli.commands import jobs as job_cmds
         from job_agent.cli.commands import outreach as outreach_cmds
@@ -234,6 +235,12 @@ class LocalCLIApp:
         score_p = sub.add_parser("score", help="Score a job against your candidate profile.")
         score_p.add_argument("job_id")
         score_p.set_defaults(handler=job_cmds._handle_score)
+
+        gap_p = sub.add_parser("gap-report", help="Rank recurring gaps across low-scoring jobs.")
+        gap_p.add_argument("--threshold", type=int, default=70, help="Include scored jobs below this score (default 70).")
+        gap_p.add_argument("--json", dest="json_path", type=Path, default=None, help="Optional JSON artifact output path.")
+        gap_p.add_argument("--top", type=int, default=10, help="Maximum number of ranked gap clusters (default 10).")
+        gap_p.set_defaults(handler=career_cmds._handle_gap_report)
 
         apply_p = sub.add_parser("apply", help="Generate a full local application packet.")
         apply_p.add_argument("job_id")
