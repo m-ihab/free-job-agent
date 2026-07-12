@@ -55,6 +55,7 @@ export default [
       "src/job_agent/ui/static/autopilot.js",
       "src/job_agent/ui/static/insights.js",
       "src/job_agent/ui/static/autoapply.js",
+      "src/job_agent/ui/static/ai.js",
     ],
     languageOptions: {
       globals: {

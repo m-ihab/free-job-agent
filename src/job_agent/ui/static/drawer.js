@@ -162,8 +162,8 @@
       case "packet": return window.generatePacket(job.id, button);
       case "cover-letter": return window.generateCoverLetter(job.id, button);
       case "preflight": { close(); window.activateTab("jobs"); return window.runPreflight(job.id, button); }
-      case "ai-fit": return window.runAiAnalysis(job.id, button);
-      case "chat": { close(); return window.openChatModal(job); }
+      case "ai-fit": return window.JobAgentAi && window.JobAgentAi.analyze(job.id, button);
+      case "chat": { close(); return window.JobAgentAi && window.JobAgentAi.openChat(job); }
       case "delete": { close(); return window.deleteJob(job.id, button); }
       default: return undefined;
     }
