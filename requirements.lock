@@ -38,7 +38,7 @@ mdurl==0.1.2
     # via markdown-it-py
 openpyxl==3.1.5
     # via -r requirements.txt
-pillow==12.2.0
+pillow==12.3.0
     # via
     #   -r requirements.txt
     #   reportlab
