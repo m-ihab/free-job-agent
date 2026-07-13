@@ -242,6 +242,18 @@ class LocalCLIApp:
         gap_p.add_argument("--top", type=int, default=10, help="Maximum number of ranked gap clusters (default 10).")
         gap_p.set_defaults(handler=career_cmds._handle_gap_report)
 
+        cert_p = sub.add_parser("cert-plan", help="Rank targeted certifications from recurring gap clusters.")
+        cert_p.add_argument("--threshold", type=int, default=70, help="Build from scored jobs below this score (default 70).")
+        cert_p.add_argument("--json", dest="json_path", type=Path, default=None, help="Optional JSON artifact output path.")
+        cert_p.add_argument("--top", type=int, choices=range(3, 6), default=5, help="Number of certifications, 3-5 (default 5).")
+        cert_p.set_defaults(handler=career_cmds._handle_cert_plan)
+
+        project_p = sub.add_parser("project-plan", help="Audit CV projects and generate a gap-driven masterplan.")
+        project_p.add_argument("--threshold", type=int, default=70, help="Build from scored jobs below this score (default 70).")
+        project_p.add_argument("--json", dest="json_path", type=Path, default=None, help="Optional JSON artifact output path.")
+        project_p.add_argument("--top", type=int, choices=range(4, 7), default=5, help="Number of project specs, 4-6 (default 5).")
+        project_p.set_defaults(handler=career_cmds._handle_project_plan)
+
         apply_p = sub.add_parser("apply", help="Generate a full local application packet.")
         apply_p.add_argument("job_id")
         apply_p.add_argument("--force", action="store_true")

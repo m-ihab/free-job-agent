@@ -60,6 +60,7 @@ where = ["src"]
 include = ["job_agent*"]
 
 [tool.setuptools.package-data]
+"job_agent" = ["data/*.json"]
 "job_agent.ui" = ["static/*"]
 
 [tool.pytest.ini_options]

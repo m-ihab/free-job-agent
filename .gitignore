@@ -26,6 +26,8 @@ htmlcov/
 profiles/
 jobs/
 data/
+!src/job_agent/data/
+!src/job_agent/data/certifications.json
 outputs/
 second-brain/
 

@@ -1,0 +1,79 @@
+[
+  {
+    "id": "ibm-skillsbuild-ai-fundamentals",
+    "name": "Artificial Intelligence Fundamentals",
+    "issuer": "IBM SkillsBuild",
+    "cost": "free",
+    "est_hours": 10,
+    "skill_tags": ["Machine learning", "AI fundamentals", "Data science"],
+    "recruiter_weight": 3,
+    "roles_it_moves": ["Data Scientist", "AI Engineer", "Data Analyst"],
+    "checked_date": "2026-07-13"
+  },
+  {
+    "id": "databricks-genai-fundamentals",
+    "name": "Generative AI Fundamentals Accreditation",
+    "issuer": "Databricks",
+    "cost": "free",
+    "est_hours": 2,
+    "skill_tags": ["Data engineering", "Machine learning", "MLOps / deployment", "Spark", "GenAI"],
+    "recruiter_weight": 3,
+    "roles_it_moves": ["Data Engineer", "Machine Learning Engineer", "Data Scientist"],
+    "checked_date": "2026-07-13"
+  },
+  {
+    "id": "google-cloud-skill-badges",
+    "name": "Google Cloud Data and AI Skill Badges",
+    "issuer": "Google Cloud",
+    "cost": "free tier",
+    "est_hours": 6,
+    "skill_tags": ["Cloud platforms", "GCP", "BigQuery", "MLOps / deployment"],
+    "recruiter_weight": 3,
+    "roles_it_moves": ["Cloud Data Engineer", "Machine Learning Engineer", "Data Engineer"],
+    "checked_date": "2026-07-13"
+  },
+  {
+    "id": "aws-skill-builder-ml-plan",
+    "name": "Machine Learning Learning Plan and Digital Badges",
+    "issuer": "AWS Skill Builder",
+    "cost": "free",
+    "est_hours": 8,
+    "skill_tags": ["Cloud platforms", "AWS", "Machine learning", "MLOps / deployment"],
+    "recruiter_weight": 3,
+    "roles_it_moves": ["Machine Learning Engineer", "Cloud Engineer", "Data Scientist"],
+    "checked_date": "2026-07-13"
+  },
+  {
+    "id": "kaggle-learn-ranked-notebook",
+    "name": "Kaggle Learn Certificates plus Ranked Notebook",
+    "issuer": "Kaggle",
+    "cost": "free",
+    "est_hours": 12,
+    "skill_tags": ["Machine learning", "Data science", "Analytics / BI", "Python", "SQL"],
+    "recruiter_weight": 2,
+    "roles_it_moves": ["Data Scientist", "Data Analyst", "Machine Learning Intern"],
+    "checked_date": "2026-07-13"
+  },
+  {
+    "id": "deeplearning-ai-short-course",
+    "name": "DeepLearning.AI Short-Course Certificate",
+    "issuer": "DeepLearning.AI",
+    "cost": "free",
+    "est_hours": 5,
+    "skill_tags": ["Machine learning", "Deep learning", "GenAI", "MLOps / deployment"],
+    "recruiter_weight": 2,
+    "roles_it_moves": ["AI Engineer", "Machine Learning Engineer", "Data Scientist"],
+    "checked_date": "2026-07-13"
+  },
+  {
+    "id": "salesforce-trailhead-superbadge",
+    "name": "CRM Analytics Trailhead Superbadge",
+    "issuer": "Salesforce Trailhead",
+    "cost": "free",
+    "est_hours": 20,
+    "skill_tags": ["Analytics / BI", "CRM analytics", "Salesforce"],
+    "recruiter_weight": 2,
+    "roles_it_moves": ["CRM Analyst", "Salesforce Data Analyst"],
+    "checked_date": "2026-07-13"
+  }
+]
