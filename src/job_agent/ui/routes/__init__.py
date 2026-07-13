@@ -16,6 +16,7 @@ from job_agent.ui.routes import (
     boards,
     get_career,
     get_core,
+    get_filtered_out,
     profile_facts,
     get_pipeline,
     get_portfolio,
@@ -81,6 +82,7 @@ GET_ROUTES: dict[str, Callable[[object], None]] = {
     "/api/career/gap-report": get_career.get_gap_report,
     "/api/career/cert-plan": get_career.get_cert_plan,
     "/api/career/project-plan": get_career.get_project_plan,
+    "/api/filtered-out": get_filtered_out.get_filtered_out,
 }
 
 

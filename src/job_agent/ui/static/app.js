@@ -1332,6 +1332,7 @@ function activateTab(name) {
   }
   if (name === "portfolio" && window.JobAgentPortfolio) window.JobAgentPortfolio.load();
   if (name === "career" && window.JobAgentCareer) window.JobAgentCareer.load();
+  if (name === "filtered-out" && window.JobAgentFilters) window.JobAgentFilters.load();
   if (name === "coach" && !state.coachCache && window.JobAgentCoach) window.JobAgentCoach.renderShell();
 }
 
