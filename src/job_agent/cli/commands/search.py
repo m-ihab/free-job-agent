@@ -6,6 +6,7 @@ import argparse
 from job_agent.ai_agent import suggest_search_queries
 from job_agent.fingerprint import set_fingerprint
 from job_agent.intake.discover import discover_job_links
+from job_agent.intake.eu_sources import load_eu_source_registry
 from job_agent.intake.free_apis import (
     FreeApiError,
     KEYWORD_ONLY_SOURCES,
@@ -183,7 +184,19 @@ def _handle_api_sources(args: argparse.Namespace) -> None:
     console.print("Supported sources: " + ", ".join(supported_source_names()))
     console.print("Keyword-only sources (no board/credentials): " + ", ".join(KEYWORD_ONLY_SOURCES))
     console.print("France priority source: francetravail (free credentials required).")
-    console.print("All sources are read-only here; final submission remains manual.")
+    console.print("Discovery sources are read-only; application mode is controlled separately by the Full Auto toggle.")
+    registry = load_eu_source_registry()
+    console.print(f"Curated EU source registry ({len(registry['sources'])} entries):")
+    console.print(registry["attribution"])
+    for source in registry["sources"]:
+        countries = ",".join(source["countries"])
+        auth = "yes" if source["requires_auth"] else "no"
+        verified = "yes" if source["verified"] else "no"
+        console.print(
+            f"{source['id']}: {source['name']} "
+            f"access={source['access_type']} countries={countries} auth={auth} verified={verified} "
+            f"{source['url']}"
+        )
 
 
 def _handle_smart_plan(args: argparse.Namespace) -> None:

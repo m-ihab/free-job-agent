@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from urllib.parse import quote_plus
 
+from job_agent.intake.france_market_xray import ATS_XRAY_SITES, XRAY_NOTES, build_xray_url
+
 
 @dataclass(frozen=True)
 class SearchBoard:
@@ -17,8 +19,11 @@ class SearchBoard:
     url_template: str
     notes: str = ""
     recommended: bool = True
+    xray_site: str = ""
 
     def url(self, query: str, location: str = "Paris") -> str:
+        if self.xray_site:
+            return build_xray_url(self.xray_site, query, location)
         return self.url_template.format(q=quote_plus(query), loc=quote_plus(location))
 
 
@@ -145,6 +150,11 @@ FRENCH_SEARCH_BOARDS: list[SearchBoard] = [
         "Best for alternance/apprentissage manual fallback.",
     ),
 ]
+
+FRENCH_SEARCH_BOARDS.extend(
+    SearchBoard(key, name, "", XRAY_NOTES, xray_site=site)
+    for key, name, site in ATS_XRAY_SITES
+)
 
 
 @dataclass(frozen=True)
