@@ -14,6 +14,7 @@ from typing import Callable
 
 from job_agent.ui.routes import (
     boards,
+    get_career,
     get_core,
     profile_facts,
     get_pipeline,
@@ -77,6 +78,9 @@ GET_ROUTES: dict[str, Callable[[object], None]] = {
     "/api/stories": stories.get_stories,
     "/api/company-boards": boards.get_company_boards,
     "/api/profile-facts": profile_facts.get_profile_facts,
+    "/api/career/gap-report": get_career.get_gap_report,
+    "/api/career/cert-plan": get_career.get_cert_plan,
+    "/api/career/project-plan": get_career.get_project_plan,
 }
 
 

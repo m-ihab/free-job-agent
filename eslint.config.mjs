@@ -57,6 +57,7 @@ export default [
       "src/job_agent/ui/static/autoapply.js",
       "src/job_agent/ui/static/ai.js",
       "src/job_agent/ui/static/outreach.js",
+      "src/job_agent/ui/static/career.js",
     ],
     languageOptions: {
       globals: {

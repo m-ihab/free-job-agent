@@ -36,6 +36,7 @@
       <button class="tab" data-tab="studio"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>CV Studio</button>
       <button class="tab" data-tab="portfolio"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3.5 9h17M3.5 15h17M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>Portfolio</button>
       <div class="rail-group">Grow</div>
+      <button class="tab" data-tab="career"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/><path d="m4 9 6-4 6 7 4-5"/></svg>Career</button>
       <button class="tab" data-tab="coach"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12v9M12 12L4 7.5M12 12l8-4.5"/></svg>Career Coach</button>
       <button class="tab" data-tab="insights"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19V10M10 19V4M16 19v-7M21 19H3"/></svg>Insights</button>
       <div class="rail-group">Setup</div>
@@ -952,6 +953,53 @@ data engineer</textarea>
         </div>
       </section>
 
+      <section id="tab-career" class="tab-panel">
+        <div class="section-header">
+          <div>
+            <h2>Career Engine</h2>
+            <p>Evidence-backed gaps, credentials, and portfolio moves from your scored job market.</p>
+          </div>
+          <div class="action-row">
+            <label for="careerThreshold">Gap threshold</label>
+            <select id="careerThreshold" aria-label="Gap score threshold">
+              <option value="50">Below 50</option>
+              <option value="60">Below 60</option>
+              <option value="70" selected>Below 70</option>
+              <option value="80">Below 80</option>
+            </select>
+            <button class="primary" id="careerRefreshBtn">Refresh report</button>
+          </div>
+        </div>
+
+        <div class="metric-grid" id="careerMetrics"></div>
+        <div class="notice hidden" id="careerNotice"></div>
+
+        <section class="panel">
+          <h3>Market gap clusters</h3>
+          <p class="muted">Ranked from scored jobs below the selected threshold. Score lifts are hypothetical re-scores, never promises.</p>
+          <div id="careerGapContent"></div>
+        </section>
+
+        <div class="split">
+          <section class="panel">
+            <h3>Targeted certification plan</h3>
+            <p class="muted">Free-first credentials ranked by recruiter signal per hour and current gap coverage.</p>
+            <ol id="careerCerts" class="coach-list"></ol>
+          </section>
+          <section class="panel">
+            <h3>Existing project audit</h3>
+            <p class="muted">Signal, neutral, or dilutive verdicts using deterministic rules and local evidence receipts.</p>
+            <ol id="careerVerdicts" class="coach-list"></ol>
+          </section>
+        </div>
+
+        <section class="panel">
+          <h3>Project masterplan</h3>
+          <p class="muted">Production-grade portfolio briefs ranked by gap coverage and recruiter visibility.</p>
+          <ol id="careerMasterplan" class="coach-list"></ol>
+        </section>
+      </section>
+
       <section id="tab-coach" class="tab-panel">
         <div class="section-header">
           <div>
@@ -1366,6 +1414,7 @@ SQL
     <script src="/static/autoapply.js" defer></script>
     <script src="/static/ai.js" defer></script>
     <script src="/static/outreach.js" defer></script>
+    <script src="/static/career.js" defer></script>
     <script src="/static/score_explain.js" defer></script>
   </body>
 </html>
