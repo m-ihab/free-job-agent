@@ -58,6 +58,14 @@ class LocalCLIApp:
         validate_p = sub.add_parser("validate-profile", help="Validate candidate profile files.")
         validate_p.set_defaults(handler=profile_cmds._handle_validate_profile)
 
+        profile_import_p = sub.add_parser(
+            "profile-import",
+            help="Import a JSON Resume or LinkedIn data-export ZIP into local evidence.",
+        )
+        profile_import_p.add_argument("path", type=Path)
+        profile_import_p.add_argument("--dry-run", action="store_true", help="Preview without writing evidence.")
+        profile_import_p.set_defaults(handler=profile_cmds._handle_profile_import)
+
         add_p = sub.add_parser("add", help="Add jobs from various sources.")
         add_sub = add_p.add_subparsers(dest="add_command")
         add_sub.required = True

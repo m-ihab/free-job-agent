@@ -11,6 +11,8 @@ from pathlib import Path
 from job_agent.config import AppConfig
 from job_agent.cv_template import import_cv_template_upload
 from job_agent.db.database import Database
+from job_agent.evidence import EvidenceStore
+from job_agent.intake.profile_import import ProfileImportError, ProfileImportResult, parse_profile_import
 from job_agent.profile_audit import audit_profile
 from job_agent.profile_enrich import (
     enrich_from_github,
@@ -65,6 +67,31 @@ def _handle_validate_profile(args: argparse.Namespace) -> None:
     console.print("Profile validation passed")
     for warning in report.warnings:
         console.print(f"Warning: {warning}")
+
+
+def _handle_profile_import(args: argparse.Namespace) -> None:
+    try:
+        result = parse_profile_import(Path(args.path))
+    except ProfileImportError as exc:
+        _fail(str(exc))
+
+    if args.dry_run:
+        _print_profile_import_preview(result)
+        console.print(f"Dry run complete. Would store: {len(result.entries)} evidence entries.")
+        return
+
+    store = EvidenceStore.load(_load_config())
+    stored_count = store.merge(result.entries)
+    console.print(f"Stored {stored_count} new evidence entries ({len(result.entries)} parsed).")
+
+
+def _print_profile_import_preview(result: ProfileImportResult) -> None:
+    console.print(f"Dry run preview ({result.input_type}):")
+    for item in result.entries:
+        console.print(f"  {item.kind}: {item.label} | {item.value} | {item.source_ref}")
+    counts = ", ".join(f"{section}={count}" for section, count in result.section_counts.items())
+    console.print(f"Section counts: {counts}")
+    console.print(f"Missing sections: {', '.join(result.missing_sections) or 'none'}")
 
 
 def _handle_enrich_github(args: argparse.Namespace) -> None:

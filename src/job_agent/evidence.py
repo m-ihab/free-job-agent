@@ -50,6 +50,19 @@ class EvidenceStore:
         self._items = build_evidence_items(profile, master_cv, qa_profile)
         self._db.replace_evidence_items([asdict(item) for item in self._items])
 
+    def merge(self, items: Iterable[EvidenceItem]) -> int:
+        """Atomically add exact new evidence items and return the stored count."""
+        merged = list(self._items)
+        seen = set(merged)
+        for item in items:
+            if item not in seen:
+                merged.append(item)
+                seen.add(item)
+        stored_count = len(merged) - len(self._items)
+        self._db.replace_evidence_items([asdict(item) for item in merged])
+        self._items = merged
+        return stored_count
+
     def index(self) -> dict[str, list[EvidenceItem]]:
         result: dict[str, list[EvidenceItem]] = {}
         for item in self._items:
