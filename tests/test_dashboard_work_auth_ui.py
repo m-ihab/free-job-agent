@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-APP_JS = Path("src/job_agent/ui/static/app.js")
+JOBS_JS = Path("src/job_agent/ui/static/jobs.js")
 INDEX_HTML = Path("src/job_agent/ui/static/index.html")
 
 
@@ -18,7 +18,7 @@ def test_dashboard_has_work_auth_filter_controls():
 
 
 def test_dashboard_filters_and_renders_work_auth_badges():
-    js = APP_JS.read_text(encoding="utf-8")
+    js = JOBS_JS.read_text(encoding="utf-8")
 
     assert "function workAuthBadge(" in js
     assert "function gratificationBadge(" in js

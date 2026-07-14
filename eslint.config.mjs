@@ -59,6 +59,8 @@ export default [
       "src/job_agent/ui/static/outreach.js",
       "src/job_agent/ui/static/career.js",
       "src/job_agent/ui/static/filters_view.js",
+      "src/job_agent/ui/static/search.js",
+      "src/job_agent/ui/static/jobs.js",
     ],
     languageOptions: {
       globals: {

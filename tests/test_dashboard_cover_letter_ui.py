@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 
 
-APP_JS = Path("src/job_agent/ui/static/app.js")
 STATIC_DIR = Path("src/job_agent/ui/static")
 INDEX_HTML = Path("src/job_agent/ui/static/index.html")
 ROUTES = Path("src/job_agent/ui/routes/__init__.py")
@@ -18,7 +17,7 @@ def _dashboard_js() -> str:
 
 
 def test_dashboard_has_generate_letter_action():
-    js = APP_JS.read_text(encoding="utf-8")
+    js = _dashboard_js()
 
     assert 'data-action="cover-letter"' in js
     assert "/api/cover-letter" in js

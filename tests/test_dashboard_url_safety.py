@@ -5,6 +5,13 @@ from pathlib import Path
 
 
 APP_JS = Path("src/job_agent/ui/static/app.js")
+STATIC_DIR = Path("src/job_agent/ui/static")
+
+
+def _dashboard_js() -> str:
+    return "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(STATIC_DIR.glob("*.js"))
+    )
 
 
 def test_dashboard_uses_safe_href_for_server_sourced_links() -> None:
@@ -21,8 +28,9 @@ def test_dashboard_uses_safe_href_for_server_sourced_links() -> None:
         r'href="\$\{escapeHtml\(repo\.url\)\}"',
         r'href="\$\{escapeHtml\(cert\.url\)\}"',
     ]
+    dashboard_source = _dashboard_js()
     for pattern in unsafe_patterns:
-        assert not re.search(pattern, source), pattern
+        assert not re.search(pattern, dashboard_source), pattern
 
 
 def test_dashboard_safe_href_rejects_javascript_protocol() -> None:
