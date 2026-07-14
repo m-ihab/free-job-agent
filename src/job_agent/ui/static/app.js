@@ -1191,9 +1191,9 @@ async function importCvTemplate() {
 }
 
 // ===== Tracker tab =====
-// NOTE: tracker stays in app.js on purpose — kanban.js monkey-patches
-// window.renderTracker (top-level declaration binding); an IIFE move
-// would bypass that patch. Refactor to events before extracting.
+// Tracker rendering publishes jobagent:tracker-rendered; kanban.js subscribes
+// to keep its board view in sync without replacing window.renderTracker.
+// This event contract keeps a future IIFE extraction compatible.
 // The application funnel: tracked jobs grouped into pipeline stages, each row's
 // status editable inline (saves via /api/status), with the Excel export/import.
 const TRACKER_STAGES = [
@@ -1246,6 +1246,8 @@ function renderTracker() {
           <tbody>${rows}</tbody></table></div>`
       : `<p class="muted">No tracked applications yet. Add jobs from the Search or Add Job tabs.</p>`;
   }
+  // eslint-disable-next-line no-undef
+  document.dispatchEvent(new CustomEvent('jobagent:tracker-rendered'));
 }
 
 async function loadTracker() {

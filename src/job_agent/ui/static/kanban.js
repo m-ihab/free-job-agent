@@ -1,6 +1,7 @@
 /* Kanban board view for the Tracker tab — drag a card between funnel columns
-   to update its status via /api/status. Uses app.js globals; `state` is
-   app.js's top-level const (bare global, not window.state). */
+   to update its status via /api/status. Re-renders through app.js's
+   jobagent:tracker-rendered event. Uses app.js globals; `state` is app.js's
+   top-level const (bare global, not window.state). */
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = (value) => window.escapeHtml(String(value ?? ""));
@@ -61,7 +62,6 @@
       await window.api("/api/status", { job_id: jobId, status: targetStatus, note: "Kanban move" });
       await window.loadJobs(false);
       window.renderTracker();
-      render();
       window.toast(`Moved → ${targetStatus.replace(/_/g, " ")}`);
     } catch (error) {
       window.setNotice("trackerNotice", error.message, true);
@@ -118,12 +118,7 @@
       }
     });
 
-    // Board re-renders whenever the tracker reloads.
-    const originalRenderTracker = window.renderTracker;
-    window.renderTracker = function patchedRenderTracker() {
-      originalRenderTracker();
-      render();
-    };
+    document.addEventListener('jobagent:tracker-rendered', render);
 
     let preferred = "table";
     try { preferred = localStorage.getItem("job-agent-tracker-view") || "table"; } catch { /* private mode */ }
