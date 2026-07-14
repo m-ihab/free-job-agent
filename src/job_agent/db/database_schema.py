@@ -48,6 +48,18 @@ SCHEMA_SQL = """
         ON jobs(fingerprint) WHERE fingerprint != '';
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 
+    CREATE TABLE IF NOT EXISTS job_feedback (
+        job_id TEXT PRIMARY KEY,
+        verdict TEXT NOT NULL CHECK(verdict IN ('up', 'down')),
+        created_at TEXT NOT NULL,
+        company TEXT NOT NULL DEFAULT '',
+        title_keywords_json TEXT NOT NULL DEFAULT '[]',
+        source TEXT NOT NULL DEFAULT '',
+        FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_feedback_company ON job_feedback(company);
+    CREATE INDEX IF NOT EXISTS idx_job_feedback_source ON job_feedback(source);
+
     CREATE TABLE IF NOT EXISTS application_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         job_id TEXT,

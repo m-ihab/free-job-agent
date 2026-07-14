@@ -13,6 +13,7 @@
   const fileHref = (value) => window.fileHref(value);
   const companyLine = (job) => window.companyLine(job);
   const jobActions = (job) => window.jobActions(job);
+  const feedbackControls = (job) => window.JobAgentFeedback?.controls(job) || "";
   const loadJobs = (...args) => window.loadJobs(...args);
   const renderState = (...args) => window.renderState(...args);
 
@@ -115,14 +116,14 @@ function isFranceOrEu(job) {
 function sortJobs(jobs, mode) {
   const list = [...jobs];
   if (mode === "score") {
-    return list.sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1));
+    return list.sort((a, b) => (b.adjusted_fit_score ?? b.fit_score ?? -1) - (a.adjusted_fit_score ?? a.fit_score ?? -1));
   }
   if (mode === "ai") {
     return list.sort((a, b) => {
       const va = _AI_VERDICT_RANK[a.ai_verdict || ""] || 0;
       const vb = _AI_VERDICT_RANK[b.ai_verdict || ""] || 0;
       if (vb !== va) return vb - va;
-      return (b.ai_score ?? b.fit_score ?? -1) - (a.ai_score ?? a.fit_score ?? -1);
+      return (b.ai_score ?? b.adjusted_fit_score ?? b.fit_score ?? -1) - (a.ai_score ?? a.adjusted_fit_score ?? a.fit_score ?? -1);
     });
   }
   if (mode === "company") {
@@ -177,7 +178,7 @@ function renderEnrichmentDetails(job) {
       <div class="detail-row"><span>Job</span><strong>${escapeHtml(job.title)}</strong></div>
       <div class="detail-row"><span>Company</span><strong>${escapeHtml(job.company)}</strong></div>
       <div class="detail-row"><span>Location</span><strong>${escapeHtml(job.location || "-")}</strong></div>
-      <div class="detail-row"><span>Score</span>${scorePill(job.fit_score)}</div>
+      <div class="detail-row"><span>Score</span>${scorePill(job.adjusted_fit_score ?? job.fit_score)}</div>
       <div class="detail-row"><span>Decision</span><strong>${escapeHtml(job.fit_decision || "-")}</strong></div>
       <div class="detail-row"><span>Status</span><strong>${escapeHtml(job.status || "-")}</strong></div>
       <div class="detail-row"><span>Work auth</span><strong>${workAuthBadge(job) || escapeHtml(job.work_auth_rationale || "Verify")}</strong></div>
@@ -251,7 +252,7 @@ function renderJobs() {
     if (aiVerdictFilter === "unknown") jobs = jobs.filter((job) => !job.ai_verdict);
     else jobs = jobs.filter((job) => job.ai_verdict === aiVerdictFilter);
   }
-  if (minScore > 0) jobs = jobs.filter((job) => (job.fit_score ?? 0) >= minScore);
+  if (minScore > 0) jobs = jobs.filter((job) => (job.adjusted_fit_score ?? job.fit_score ?? 0) >= minScore);
   jobs = sortJobs(jobs, sortMode);
 
   // Pinned jobs stay visible: re-add any the filter hid, then float all pinned
@@ -301,7 +302,7 @@ function renderJobs() {
         return `<tr data-job-row="${escapeHtml(job.id)}" class="${activeClass}${pinnedClass}">
           <td><input type="checkbox" data-select-job="${escapeHtml(job.id)}" ${checked} /></td>
           <td><strong>${escapeHtml(job.title)}</strong>${pinBtn}${langWarn}<br>${companyLine(job)}<div class="job-meta-row">${metaBits}</div>${summary}${tags}</td>
-          <td>${scorePill(job.fit_score)}${preflightBadge ? `<br>${preflightBadge}` : ""}${aiBadge ? `<br>${aiBadge}` : ""}${authBadge ? `<br>${authBadge}` : ""}${grantBadge ? `<br>${grantBadge}` : ""}</td>
+          <td>${scorePill(job.adjusted_fit_score ?? job.fit_score)}${feedbackControls(job)}${preflightBadge ? `<br>${preflightBadge}` : ""}${aiBadge ? `<br>${aiBadge}` : ""}${authBadge ? `<br>${authBadge}` : ""}${grantBadge ? `<br>${grantBadge}` : ""}</td>
           <td class="actions">${jobActions(job)}</td>
         </tr>`;
       },

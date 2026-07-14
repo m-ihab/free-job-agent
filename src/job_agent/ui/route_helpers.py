@@ -18,6 +18,7 @@ from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.enrichment import EnrichOptions, enrich_job
 from job_agent.exporters.internship_workbook import export_applied_internships
+from job_agent.feedback import aggregate_feedback, calculate_feedback_adjustment
 from job_agent.ai_agent import suggest_search_queries
 from job_agent.intake.free_apis import (
     KEYWORD_ONLY_SOURCES,
@@ -129,6 +130,9 @@ def _list_jobs(config: AppConfig, status: str = "") -> list[dict]:
     enrichments = tracker.db.bulk_get_enrichments(job_ids)
     ai_caches = tracker.db.bulk_list_ai_cache(job_ids)
     latest_packets = tracker.db.bulk_latest_packets(job_ids)
+    feedback_records = tracker.db.list_feedback()
+    feedback_by_job = {record.job_id: record.verdict for record in feedback_records}
+    feedback_aggregates = aggregate_feedback(feedback_records)
     try:
         profile, _master_cv, _qa = load_profile_bundle(config)
     except Exception as exc:
@@ -136,14 +140,30 @@ def _list_jobs(config: AppConfig, status: str = "") -> list[dict]:
         profile = None
     results: list[dict] = []
     for job in jobs:
-        results.append(job_to_dict(
+        item = job_to_dict(
             job,
             latest_packets.get(job.id),
             enrichment=enrichments.get(job.id),
             ai_cache=ai_caches.get(job.id, {}),
             profile=profile,
             config=config,
-        ))
+        )
+        item["feedback_verdict"] = feedback_by_job.get(job.id, "")
+        item["base_fit_score"] = job.fit_score
+        if job.fit_score is None:
+            item.update({"feedback_adjustment": 0, "adjusted_fit_score": None, "feedback_reasons": []})
+        else:
+            adjustment = calculate_feedback_adjustment(
+                job, feedback_aggregates, base_score=float(job.fit_score)
+            )
+            item.update(
+                {
+                    "feedback_adjustment": adjustment.adjustment,
+                    "adjusted_fit_score": adjustment.adjusted_score,
+                    "feedback_reasons": list(adjustment.reasons),
+                }
+            )
+        results.append(item)
     return results
 
 

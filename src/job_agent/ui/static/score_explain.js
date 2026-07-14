@@ -171,9 +171,12 @@
           .map((m) => `<li>${esc(m)}</li>`).join("")}</ul></div>` : "";
     const notes = (ex.notes || []).length
       ? `<div class="se-sec"><h3>Notes</h3><ul>${ex.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>` : "";
+    const feedbackDelta = Number(ex.feedback_adjustment || 0);
+    const feedbackReasons = (ex.feedback_reasons || []).map(esc).join(" · ");
+    const feedback = `<div class="se-caps" role="note"><strong>Base score ${ex.base_score}</strong> · Feedback adjustment ${feedbackDelta >= 0 ? "+" : ""}${feedbackDelta}<br>${feedbackReasons}</div>`;
     drawer.querySelector("#se-body").innerHTML = `
       <div class="se-total"><b>${ex.total_score}</b>
         <span>${esc(ex.decision || "")} · confidence ${Math.round((ex.confidence || 0) * 100)}%</span></div>
-      ${caps}${rows}${missing}${notes}`;
+      ${feedback}${caps}${rows}${missing}${notes}`;
   }
 })();

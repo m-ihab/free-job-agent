@@ -38,6 +38,7 @@ class LocalCLIApp:
     def build_parser(self) -> argparse.ArgumentParser:
         from job_agent.cli.commands import apply as apply_cmds
         from job_agent.cli.commands import career as career_cmds
+        from job_agent.cli.commands import feedback as feedback_cmds
         from job_agent.cli.commands import france as france_cmds
         from job_agent.cli.commands import jobs as job_cmds
         from job_agent.cli.commands import outreach as outreach_cmds
@@ -243,6 +244,16 @@ class LocalCLIApp:
         score_p = sub.add_parser("score", help="Score a job against your candidate profile.")
         score_p.add_argument("job_id")
         score_p.set_defaults(handler=job_cmds._handle_score)
+
+        feedback_p = sub.add_parser("feedback", help="Rate jobs to tune future local ranking.")
+        feedback_p.add_argument("job_id", nargs="?", default="")
+        feedback_choice = feedback_p.add_mutually_exclusive_group(required=True)
+        feedback_choice.add_argument("--up", action="store_true", help="Record a thumbs-up rating.")
+        feedback_choice.add_argument("--down", action="store_true", help="Record a thumbs-down rating.")
+        feedback_choice.add_argument(
+            "--list", dest="list_feedback", action="store_true", help="List saved ratings."
+        )
+        feedback_p.set_defaults(handler=feedback_cmds._handle_feedback)
 
         gap_p = sub.add_parser("gap-report", help="Rank recurring gaps across low-scoring jobs.")
         gap_p.add_argument("--threshold", type=int, default=70, help="Include scored jobs below this score (default 70).")
