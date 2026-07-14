@@ -28,6 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 ui = ["streamlit>=1.28"]
 ollama = ["httpx>=0.25"]
+onnx = ["onnxruntime>=1.20"]
 markitdown = ["markitdown>=0.1.5"]
 # Optional intake/apply backends (free, open-source; core never requires them)
 crawl = ["crawl4ai>=0.6,<1"]

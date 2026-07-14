@@ -1,22 +1,13 @@
-"""Local semantic embeddings via a locally-running Ollama server.
-
-Enhancer only: every helper degrades to ``None`` when Ollama, the ``requests``
-package, or an embedding-capable model is unavailable. The deterministic
-scorer and pipeline never depend on this module succeeding.
-
-Vectors are cached in the local SQLite ``embeddings`` table keyed by
-``(owner_id, kind)`` with a text hash, so each job/profile is embedded once
-per content change. No candidate data ever leaves the machine.
-"""
+"""Fail-soft local embeddings: Ollama, optional ONNX, then deterministic hashing."""
 from __future__ import annotations
 
 import hashlib
 import logging
-import math
 import os
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+from job_agent import hash_embeddings, onnx_embeddings
 from job_agent.polish import DEFAULT_BASE_URL, PolishOptions, available_ollama_models
 from job_agent.schemas.candidate import CandidateProfile
 from job_agent.schemas.job import JobListing
@@ -54,6 +45,7 @@ class EmbeddingOptions:
     timeout: int = DEFAULT_EMBED_TIMEOUT
     disabled: bool = False
     dupe_threshold: float = DEFAULT_DUPE_THRESHOLD
+    allow_hash_similarity: bool = False
 
     @classmethod
     def from_env(cls) -> "EmbeddingOptions":
@@ -63,6 +55,8 @@ class EmbeddingOptions:
             timeout=int(os.environ.get("JOB_AGENT_OLLAMA_EMBED_TIMEOUT", str(DEFAULT_EMBED_TIMEOUT))),
             disabled=os.environ.get("JOB_AGENT_DISABLE_EMBEDDINGS", "").strip() in {"1", "true", "yes", "on"},
             dupe_threshold=float(os.environ.get("JOB_AGENT_EMBED_DUPE_THRESHOLD", str(DEFAULT_DUPE_THRESHOLD))),
+            allow_hash_similarity=os.environ.get("JOB_AGENT_ALLOW_HASH_SIMILARITY", "").strip().lower()
+            in {"1", "true", "yes", "on"},
         )
 
 
@@ -118,15 +112,8 @@ def embed_text(text: str, options: EmbeddingOptions | None = None, model: str | 
         return None
 
 
-def cosine_similarity(a: list[float], b: list[float]) -> float:
-    if not a or not b or len(a) != len(b):
-        return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(y * y for y in b))
-    if norm_a == 0.0 or norm_b == 0.0:
-        return 0.0
-    return dot / (norm_a * norm_b)
+cosine_similarity = hash_embeddings.cosine_similarity
+same_role_title = hash_embeddings.same_role_title
 
 
 def job_embedding_text(job: JobListing) -> str:
@@ -150,6 +137,31 @@ def _text_hash(text: str, model: str) -> str:
 
 def _default_embedder(options: EmbeddingOptions) -> Embedder:
     return lambda text, model: embed_text(text, options=options, model=model)
+
+
+def _onnx_embedder(text: str, model: str) -> list[float] | None:
+    vectors = onnx_embeddings.embed_texts([text])
+    return vectors[0] if vectors else None
+
+
+def _hash_embedder(text: str, model: str) -> list[float]:
+    return hash_embeddings.embed_text(text)
+
+
+def _resolve_backend(options: EmbeddingOptions, model: str | None, embedder: Embedder | None,
+                     *, allow_hash: bool) -> tuple[str, Embedder] | None:
+    if model:
+        return model, embedder or _default_embedder(options)
+    if options.disabled:
+        return None
+    ollama_model = resolve_embed_model(options)
+    if ollama_model:
+        return ollama_model, embedder or _default_embedder(options)
+    if onnx_embeddings.is_available():
+        return onnx_embeddings.MODEL_ID, embedder or _onnx_embedder
+    if allow_hash:
+        return hash_embeddings.MODEL_ID, embedder or _hash_embedder
+    return None
 
 
 def _cached_embedding(db: Any, owner_id: str, kind: str, text: str, model: str, embedder: Embedder) -> list[float] | None:
@@ -181,36 +193,18 @@ def semantic_similarity(job: JobListing, profile: CandidateProfile, db: Any, *,
                         embedder: Embedder | None = None) -> int | None:
     """0-100 semantic fit between a job and the profile, or None when unavailable."""
     options = options or EmbeddingOptions.from_env()
-    model = model or resolve_embed_model(options)
-    if not model:
+    backend = _resolve_backend(options, model, embedder, allow_hash=options.allow_hash_similarity)
+    if backend is None:
         return None
-    job_vector = get_job_embedding(db, job, model=model, embedder=embedder, options=options)
-    profile_vector = get_profile_embedding(db, profile, model=model, embedder=embedder, options=options)
+    model, active_embedder = backend
+    job_vector = get_job_embedding(db, job, model=model, embedder=active_embedder, options=options)
+    profile_vector = get_profile_embedding(
+        db, profile, model=model, embedder=active_embedder, options=options
+    )
     if not job_vector or not profile_vector:
         return None
     similarity = max(0.0, min(1.0, cosine_similarity(job_vector, profile_vector)))
     return round(similarity * 100)
-
-
-# Job-title tokens that don't distinguish roles: gender notation on French/
-# German postings ("(H/F)", "F/H", "m/w/d") reduced to single letters or
-# letter runs after punctuation stripping.
-_TITLE_MARKER_TOKENS = {"h", "f", "m", "w", "d", "x", "hf", "fh", "mw", "mwd", "mfd", "fhx", "hfx"}
-
-
-def _title_tokens(title: str) -> frozenset[str]:
-    cleaned = "".join(ch if ch.isalnum() else " " for ch in (title or "").lower())
-    return frozenset(tok for tok in cleaned.split() if tok not in _TITLE_MARKER_TOKENS)
-
-
-def same_role_title(a: str, b: str) -> bool:
-    """True when two titles name the same role (order/punct/gender-marker insensitive).
-
-    'Data Scientist (H/F)' == 'Scientist, Data' but != 'Senior Data Scientist':
-    an extra token like 'senior' is a different role, never a duplicate.
-    """
-    tokens_a, tokens_b = _title_tokens(a), _title_tokens(b)
-    return bool(tokens_a) and tokens_a == tokens_b
 
 
 def find_near_duplicate(db: Any, job: JobListing, *, options: EmbeddingOptions | None = None,
@@ -224,10 +218,11 @@ def find_near_duplicate(db: Any, job: JobListing, *, options: EmbeddingOptions |
     so intake never depends on Ollama.
     """
     options = options or EmbeddingOptions.from_env()
-    model = model or resolve_embed_model(options)
-    if not model:
+    backend = _resolve_backend(options, model, embedder, allow_hash=True)
+    if backend is None:
         return None
-    vector = get_job_embedding(db, job, model=model, embedder=embedder, options=options)
+    model, active_embedder = backend
+    vector = get_job_embedding(db, job, model=model, embedder=active_embedder, options=options)
     if not vector:
         return None
     best_id, best_similarity = None, 0.0

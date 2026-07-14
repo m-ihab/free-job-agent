@@ -206,6 +206,38 @@ def test_semantic_similarity_none_when_model_unavailable(db: Database) -> None:
     assert score is None
 
 
+def test_semantic_similarity_uses_onnx_after_ollama(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(emb, "resolve_embed_model", lambda options=None, installed=None: None)
+    monkeypatch.setattr(emb.onnx_embeddings, "is_available", lambda: True)
+    monkeypatch.setattr(
+        emb.onnx_embeddings, "embed_texts", lambda texts: [[0.6, 0.8] for _ in texts]
+    )
+
+    assert emb.semantic_similarity(_job(), _profile(), db, options=emb.EmbeddingOptions()) == 100
+
+
+def test_semantic_similarity_does_not_use_hashing_by_default(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(emb, "resolve_embed_model", lambda options=None, installed=None: None)
+    monkeypatch.setattr(emb.onnx_embeddings, "is_available", lambda: False)
+
+    assert emb.semantic_similarity(_job(), _profile(), db, options=emb.EmbeddingOptions()) is None
+
+
+def test_semantic_similarity_hashing_requires_explicit_opt_in(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(emb, "resolve_embed_model", lambda options=None, installed=None: None)
+    monkeypatch.setattr(emb.onnx_embeddings, "is_available", lambda: False)
+    monkeypatch.setattr(emb.hash_embeddings, "embed_text", lambda text: [0.6, 0.8])
+    options = emb.EmbeddingOptions(allow_hash_similarity=True)
+
+    assert emb.semantic_similarity(_job(), _profile(), db, options=options) == 100
+
+
 # ---- near-duplicate detection ----
 
 def test_find_near_duplicate_same_company_above_threshold(db: Database) -> None:
@@ -261,6 +293,21 @@ def test_find_near_duplicate_below_threshold_returns_none(db: Database) -> None:
         return [0.0, 1.0]
 
     assert emb.find_near_duplicate(db, incoming, model="m", embedder=_orthogonal) is None
+
+
+def test_find_near_duplicate_uses_hash_when_ollama_and_onnx_are_unavailable(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    existing = _job(title="Data Scientist (H/F)")
+    db.save_job(existing)
+    monkeypatch.setattr(emb, "resolve_embed_model", lambda options=None, installed=None: None)
+    monkeypatch.setattr(emb.onnx_embeddings, "is_available", lambda: False)
+    vector = emb.hash_embeddings.embed_text(emb.job_embedding_text(existing))
+    db.save_embedding(existing.id, "job", "hash-v1", "existing-hash", vector)
+
+    incoming = _job(title="Data Scientist (H/F)", id="incoming")
+
+    assert emb.find_near_duplicate(db, incoming, options=emb.EmbeddingOptions()) == existing.id
 
 
 # ---- DB embedding storage ----
