@@ -579,9 +579,12 @@ async function trackerImport() {
 function activateTab(name) {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === name));
   document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `tab-${name}`));
+  if (window.JobAgentBrain) window.JobAgentBrain.setActive(name === "brain");
   if (name === "jobs" && window.JobAgentJobs) window.JobAgentJobs.renderJobs();
   if (name === "pipeline" && window.JobAgentPipeline) window.JobAgentPipeline.load();
   if (name === "tracker") loadTracker();
+  if (name === "brain" && window.JobAgentBrain) window.JobAgentBrain.load();
+  if (name === "skill-tree" && window.JobAgentSkillTree) window.JobAgentSkillTree.load();
   if (name === "insights" && !state.insightsCache && window.JobAgentInsights) window.JobAgentInsights.load();
   if (name === "autopilot") {
     if (window.JobAgentAutopilot) window.JobAgentAutopilot.load();

@@ -51,6 +51,7 @@
       <button data-drawer-action="preflight">Preflight</button>
       <button data-drawer-action="ai-fit">AI fit</button>
       <button data-drawer-action="chat">Chat</button>
+      <button data-drawer-action="brain">Open in Brain</button>
       ${applyLink}
       <button class="ghost" data-drawer-action="delete">Remove</button>`;
   }
@@ -119,6 +120,22 @@
     }
   }
 
+  async function renderHistory(job) {
+    const node = $("drawerHistory");
+    node.innerHTML = `<span class="muted">Loading history…</span>`;
+    try {
+      const payload = await window.api(`/api/job-history?job_id=${encodeURIComponent(job.id)}`);
+      const events = payload.events || [];
+      node.innerHTML = events.length ? events.map((event) => `
+        <div class="story-mini">
+          <strong>${esc(String(event.event_type || "Event").replace(/_/g, " "))}</strong>
+          <span class="muted">${esc(String(event.created_at || "").slice(0, 19))}</span>
+        </div>`).join("") : `<span class="muted">No events recorded.</span>`;
+    } catch (error) {
+      node.innerHTML = `<span class="muted">History unavailable: ${esc(error.message)}</span>`;
+    }
+  }
+
   function renderNotes(job) {
     const node = $("drawerDescription");
     const notes = job.fit_notes || [];
@@ -146,6 +163,7 @@
     $("jobDrawer").classList.remove("hidden");
     renderEvaluation(job);
     renderStories(job);
+    renderHistory(job);
     $("drawerCloseBtn").focus();
   }
 
@@ -164,6 +182,7 @@
       case "preflight": { close(); window.activateTab("jobs"); return window.runPreflight(job.id, button); }
       case "ai-fit": return window.JobAgentAi && window.JobAgentAi.analyze(job.id, button);
       case "chat": { close(); return window.JobAgentAi && window.JobAgentAi.openChat(job); }
+      case "brain": { close(); return window.JobAgentBrain && window.JobAgentBrain.openJob(job.id); }
       case "delete": { close(); return window.deleteJob(job.id, button); }
       default: return undefined;
     }
