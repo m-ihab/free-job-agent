@@ -116,24 +116,24 @@
     try {
       if (!state.profile) await window.loadState();
       if (!state.jobs.length) await window.loadJobs(false);
-      const [stats, today, metrics] = await Promise.all([
-        window.api("/api/stats"),
+      const [metrics, today] = await Promise.all([
+        window.api("/api/metrics"),
         window.api("/api/pipeline/today?limit=6"),
-        window.api("/api/pipeline/metrics"),
       ]);
       const jobs = state.jobs || [];
-      const strong = jobs.filter((job) => (job.fit_score || 0) >= 75).length;
+      const kpis = metrics.kpis || {};
       $("ovHero").innerHTML = [
-        heroStat(metrics.total ?? jobs.length, "Tracked jobs"),
-        heroStat(strong, "Strong matches"),
-        heroStat(metrics.submitted ?? 0, "Submitted"),
-        heroStat(`${Math.round((metrics.interview_rate || 0) * 100)}%`, "Interview rate"),
-        heroStat(`${Math.round((metrics.reply_rate || 0) * 100)}%`, "Reply rate"),
+        heroStat(kpis.tracked ?? jobs.length, "Tracked jobs"),
+        heroStat(kpis.scored ?? 0, "Scored"),
+        heroStat(kpis.packets ?? 0, "Packet ready"),
+        heroStat(kpis.applied ?? 0, "Applied"),
+        heroStat(`${kpis.response_rate ?? 0}%`, "Response rate"),
+        heroStat(kpis.interviews ?? 0, "Interviews"),
       ].join("");
       renderQueue(today.items || today.queue || []);
       renderMatches(jobs);
-      renderFunnel(stats.funnel || []);
-      renderChecklist(state.profile || {}, jobs.length, metrics.submitted || 0);
+      renderFunnel(metrics.funnel || []);
+      renderChecklist(state.profile || {}, jobs.length, kpis.applied || 0);
     } catch (error) {
       const node = $("ovHero");
       if (node) node.innerHTML = `<div class="notice error">Overview failed to load: ${esc(error.message)}</div>`;

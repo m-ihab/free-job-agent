@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
+from job_agent.analytics_metrics import compute_metrics as compute_metrics
 from job_agent.db.database import Database
 from job_agent.schemas.job import JobListing, JobStatus
 

@@ -1,0 +1,10 @@
+{
+  "name": "Career Copilot",
+  "short_name": "Career Copilot",
+  "description": "Local-first job search and application dashboard",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#060609",
+  "theme_color": "#101019"
+}

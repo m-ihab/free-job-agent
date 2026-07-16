@@ -1,204 +1,192 @@
-// Insights charts (R3 split from app.js). Classic script, defer, after
-// app.js — pipeline.js idiom. Chart.js is loaded as a vendor script;
-// state.charts / state.insightsCache stay on the shared app.js state.
+// Interactive metrics dashboard. Chart.js is vendored and loaded before this file.
 (function () {
-  function $(id) { return document.getElementById(id); }
+  const $ = (id) => document.getElementById(id);
   const api = (...args) => window.api(...args);
-  const toast = (...args) => window.toast(...args);
-  const metric = (...args) => window.metric(...args);
-  const escapeHtml = (value) => window.escapeHtml(value);
+  const esc = (value) => window.escapeHtml(String(value ?? ""));
 
-async function loadInsights() {
-  try {
-    const payload = await api("/api/stats");
-    state.insightsCache = payload;
-    renderInsights(payload);
-  } catch (error) {
-    toast(`Insights error: ${error.message}`);
+  function css(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
-}
 
-function readVar(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
-}
+  function colors() {
+    return {
+      ink: css("--ink"), muted: css("--muted"), line: css("--line"),
+      surface: css("--surface-solid"), accent: css("--accent"),
+      accent2: css("--accent-2"), soft: css("--accent-soft"),
+      good: css("--good"), warn: css("--warn"), bad: css("--bad"),
+    };
+  }
 
-function destroyChart(key) {
-  const existing = state.charts[key];
-  if (existing && typeof existing.destroy === "function") existing.destroy();
-  state.charts[key] = null;
-}
+  function tooltip(callbacks = {}) {
+    const tone = colors();
+    return {
+      enabled: true,
+      backgroundColor: tone.surface,
+      titleColor: tone.ink,
+      bodyColor: tone.muted,
+      borderColor: tone.line,
+      borderWidth: 1,
+      padding: 11,
+      callbacks,
+    };
+  }
 
-function renderFunnelChart(funnel) {
-  if (typeof Chart === "undefined") return;
-  destroyChart("funnel");
-  const ctx = document.getElementById("funnelChart");
-  if (!ctx) return;
-  const labels = funnel.map((row) => row.label);
-  const values = funnel.map((row) => row.count);
-  state.charts.funnel = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [{
-        label: "Jobs",
-        data: values,
-        backgroundColor: labels.map((_, i) => `rgba(${i % 2 ? "28,63,114" : "11,139,127"}, 0.85)`),
-        borderRadius: 6,
-        borderSkipped: false,
-      }],
-    },
-    options: {
-      indexAxis: "y",
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { beginAtZero: true, grid: { color: readVar("--line") }, ticks: { color: readVar("--muted") } },
-        y: { grid: { display: false }, ticks: { color: readVar("--ink") } },
+  function axes() {
+    const tone = colors();
+    return {
+      x: { grid: { color: tone.line }, ticks: { color: tone.muted } },
+      y: { beginAtZero: true, grid: { color: tone.line }, ticks: { color: tone.muted, precision: 0 } },
+    };
+  }
+
+  function showCanvas(id, hasData) {
+    const canvas = $(id);
+    const empty = $(`${id}Empty`);
+    if (canvas) canvas.hidden = !hasData;
+    if (empty) empty.hidden = hasData;
+    return canvas;
+  }
+
+  function mount(key, id, hasData, config) {
+    const existing = state.charts[key];
+    if (existing && typeof existing.destroy === "function") existing.destroy();
+    state.charts[key] = null;
+    const chartAvailable = typeof Chart !== "undefined";
+    const canvas = showCanvas(id, hasData && chartAvailable);
+    if (!hasData || !canvas || !chartAvailable) return;
+    Chart.defaults.font.family = css("--font-body");
+    state.charts[key] = new Chart(canvas, config);
+  }
+
+  function renderFunnel(rows) {
+    const values = rows.map((row) => row.count);
+    const tone = colors();
+    mount("metricsFunnel", "funnelChart", values.some(Boolean), {
+      type: "bar",
+      data: {
+        labels: rows.map((row) => row.label),
+        datasets: [{ data: values, backgroundColor: tone.accent, borderRadius: 8, borderSkipped: false }],
       },
-    },
-  });
-}
-
-function renderWeeklyChart(weeks) {
-  if (typeof Chart === "undefined") return;
-  destroyChart("weekly");
-  const ctx = document.getElementById("weeklyChart");
-  if (!ctx) return;
-  const labels = weeks.map((row) => row.week.replace(/^\d{4}-/, ""));
-  const added = weeks.map((row) => row.added);
-  const applied = weeks.map((row) => row.applied);
-  state.charts.weekly = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        { label: "Added", data: added, backgroundColor: "rgba(28,63,114,0.75)", borderRadius: 4 },
-        { label: "Applied", data: applied, backgroundColor: "rgba(11,139,127,0.85)", borderRadius: 4 },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: readVar("--muted") } } },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: readVar("--muted") } },
-        y: { beginAtZero: true, grid: { color: readVar("--line") }, ticks: { color: readVar("--muted") } },
-      },
-    },
-  });
-}
-
-function renderPipelineChart(funnel) {
-  if (typeof Chart === "undefined") return;
-  destroyChart("pipeline");
-  const ctx = document.getElementById("pipelineChart");
-  if (!ctx) return;
-  if (!funnel || !funnel.length) return;
-  const labels = funnel.map((row) => row.label);
-  const values = funnel.map((row) => row.count);
-  const conversions = values.map((value, idx) => {
-    if (idx === 0 || !values[idx - 1]) return "100%";
-    return `${Math.round((value / values[idx - 1]) * 100)}%`;
-  });
-  state.charts.pipeline = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [{
-        label: "Jobs",
-        data: values,
-        backgroundColor: labels.map((_, i) => {
-          const ratio = i / Math.max(1, labels.length - 1);
-          return `rgba(${Math.round(11 + (28 - 11) * ratio)}, ${Math.round(139 - (139 - 63) * ratio)}, ${Math.round(127 - (127 - 114) * ratio)}, 0.85)`;
-        }),
-        borderRadius: 8,
-        borderSkipped: false,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (item) => `${item.raw} jobs · ${conversions[item.dataIndex]} of previous`,
-          },
+      options: {
+        indexAxis: "y", responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: tooltip({
+            label: (item) => {
+              const previous = item.dataIndex ? values[item.dataIndex - 1] : values[0];
+              const rate = previous ? Math.round((Number(item.raw) / previous) * 100) : 0;
+              return `${item.raw} jobs · ${rate}% of previous stage`;
+            },
+          }),
+        },
+        scales: {
+          x: { beginAtZero: true, grid: { color: tone.line }, ticks: { color: tone.muted, precision: 0 } },
+          y: { grid: { display: false }, ticks: { color: tone.muted } },
         },
       },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: readVar("--muted") } },
-        y: { beginAtZero: true, grid: { color: readVar("--line") }, ticks: { color: readVar("--muted") } },
+    });
+  }
+
+  function renderSources(rows) {
+    const tone = colors();
+    const palette = [tone.accent, tone.accent2, tone.good, tone.warn, tone.bad, tone.muted];
+    mount("metricsSources", "sourcesChart", rows.some((row) => row.count), {
+      type: "doughnut",
+      data: {
+        labels: rows.map((row) => row.source),
+        datasets: [{
+          data: rows.map((row) => row.count),
+          backgroundColor: rows.map((_, index) => palette[index % palette.length]),
+          borderColor: tone.surface, borderWidth: 3, hoverOffset: 8,
+        }],
       },
-    },
-  });
-}
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: "66%",
+        plugins: {
+          legend: { position: "bottom", labels: { color: tone.muted, usePointStyle: true, boxWidth: 8 } },
+          tooltip: tooltip({
+            label: (item) => `${item.label}: ${item.raw} tracked · ${rows[item.dataIndex].conversion_rate}% applied`,
+          }),
+        },
+      },
+    });
+    $("sourceConversionTable").innerHTML = rows.length ? `
+      <div class="source-table-head"><span>Source</span><span>Applied</span><span>Rate</span></div>
+      ${rows.map((row) => `<div class="source-table-row"><strong>${esc(row.source)}</strong><span>${row.applications}/${row.count}</span><span>${row.conversion_rate}%</span></div>`).join("")}`
+      : '<div class="chart-empty-inline">No source conversion data yet.</div>';
+  }
 
-function renderScoreChart(buckets) {
-  if (typeof Chart === "undefined") return;
-  destroyChart("score");
-  const ctx = document.getElementById("scoreChart");
-  if (!ctx) return;
-  const labels = Object.keys(buckets);
-  const values = Object.values(buckets);
-  state.charts.score = new Chart(ctx, {
-    type: "doughnut",
-    data: {
-      labels,
-      datasets: [{
-        data: values,
-        backgroundColor: [
-          "rgba(192,57,43,0.85)",
-          "rgba(244,184,96,0.85)",
-          "rgba(11,139,127,0.85)",
-          "rgba(28,63,114,0.85)",
-        ],
-        borderColor: readVar("--surface"),
-        borderWidth: 2,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom", labels: { color: readVar("--muted") } } },
-    },
-  });
-}
+  function renderScores(rows) {
+    const tone = colors();
+    mount("metricsScores", "scoreChart", rows.some((row) => row.count), {
+      type: "bar",
+      data: {
+        labels: rows.map((row) => row.label),
+        datasets: [{
+          label: "Jobs", data: rows.map((row) => row.count),
+          backgroundColor: [tone.bad, tone.warn, tone.accent2, tone.good],
+          borderRadius: 8, borderSkipped: false,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: tooltip({ label: (item) => `${item.raw} scored jobs` }) },
+        scales: axes(),
+      },
+    });
+  }
 
-function renderInsights(stats) {
-  const total = stats.total || 0;
-  const submitted = stats.submitted_count || 0;
-  const interviews = stats.interview_count || 0;
-  $("insightsMetrics").innerHTML = [
-    metric("Total tracked", total),
-    metric("Submitted", submitted),
-    metric("Interviews+", interviews),
-    metric("Response rate", `${stats.response_rate ?? 0}%`, `avg score ${stats.avg_score ?? "—"}`),
-  ].join("");
+  function renderApplications(rows) {
+    const tone = colors();
+    mount("metricsApplications", "applicationsChart", rows.some((row) => row.count), {
+      type: "line",
+      data: {
+        labels: rows.map((row) => row.date.slice(5)),
+        datasets: [{
+          label: "Applications", data: rows.map((row) => row.count),
+          borderColor: tone.accent, backgroundColor: tone.soft, fill: true,
+          borderWidth: 2, tension: 0.32, pointRadius: 2, pointHoverRadius: 6,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, interaction: { intersect: false, mode: "index" },
+        plugins: { legend: { display: false }, tooltip: tooltip() },
+        scales: axes(),
+      },
+    });
+  }
 
-  renderFunnelChart(stats.funnel || []);
-  renderWeeklyChart(stats.weekly || []);
-  renderScoreChart(stats.score_buckets || {});
-  renderPipelineChart(stats.funnel || []);
+  function renderStatus(rows) {
+    $("statusSnapshot").innerHTML = rows.length
+      ? rows.map((row) => `<div class="status-snapshot-row"><span>${esc(row.status.replaceAll("_", " "))}</span><strong>${row.count}</strong></div>`).join("")
+      : '<div class="chart-empty-inline">No tracked statuses yet.</div>';
+  }
 
-  $("topCompaniesView").innerHTML = (stats.top_companies || [])
-    .map((row) => `<li><span>${escapeHtml(row.name)}</span><strong>${row.count}</strong></li>`)
-    .join("") || "<li class='muted'>No data yet.</li>";
-  $("topSourcesView").innerHTML = (stats.top_sources || [])
-    .map((row) => `<li><span>${escapeHtml(row.name)}</span><strong>${row.count}</strong></li>`)
-    .join("") || "<li class='muted'>No data yet.</li>";
-  $("topLocationsView").innerHTML = (stats.top_locations || [])
-    .map((row) => `<li><span>${escapeHtml(row.name)}</span><strong>${row.count}</strong></li>`)
-    .join("") || "<li class='muted'>No data yet.</li>";
-}
+  function renderInsights(metrics) {
+    const kpis = metrics.kpis || {};
+    $("insightsMetrics").innerHTML = [
+      window.metric("Tracked", kpis.tracked || 0),
+      window.metric("Applied", kpis.applied || 0, `${kpis.application_rate || 0}% of tracked`),
+      window.metric("Response rate", `${kpis.response_rate || 0}%`, `${kpis.responses || 0} responses`),
+      window.metric("Interview rate", `${kpis.interview_rate || 0}%`, `${kpis.interviews || 0} interviews`),
+    ].join("");
+    renderFunnel(metrics.funnel || []);
+    renderSources(metrics.sources || []);
+    renderScores(metrics.score_distribution || []);
+    renderApplications(metrics.applications_over_time || []);
+    renderStatus(metrics.status_now || []);
+  }
 
+  async function loadInsights() {
+    try {
+      const payload = await api("/api/metrics");
+      state.insightsCache = payload;
+      renderInsights(payload);
+    } catch (error) {
+      window.toast(`Insights error: ${error.message}`);
+    }
+  }
 
-  // ---- event bindings (moved from bindEvents) ----
   $("insightsRefreshBtn").addEventListener("click", loadInsights);
-
-  window.JobAgentInsights = {
-    load: loadInsights,
-    render: renderInsights,
-  };
+  window.JobAgentInsights = { load: loadInsights, render: renderInsights };
 })();

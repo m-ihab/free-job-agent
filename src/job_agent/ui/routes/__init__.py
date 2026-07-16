@@ -14,9 +14,13 @@ from typing import Callable
 
 from job_agent.ui.routes import (
     boards,
+    feature_surfaces,
     get_career,
     get_core,
     get_filtered_out,
+    get_graph,
+    get_metrics,
+    get_skill_tree,
     profile_facts,
     get_pipeline,
     get_portfolio,
@@ -68,6 +72,9 @@ GET_ROUTES: dict[str, Callable[[object], None]] = {
     "/api/ollama-pull-status": get_core.get_ollama_pull_status,
     "/api/ai-cache": get_core.get_ai_cache,
     "/api/stats": get_core.get_stats,
+    "/api/metrics": get_metrics.get_metrics,
+    "/api/graph": get_graph.get_graph,
+    "/api/skill-tree": get_skill_tree.get_skill_tree,
     "/api/export-csv": get_core.get_export_csv,
     "/api/pipeline/today": get_pipeline.get_pipeline_today,
     "/api/pipeline/stale": get_pipeline.get_pipeline_stale,
@@ -84,6 +91,8 @@ GET_ROUTES: dict[str, Callable[[object], None]] = {
     "/api/career/cert-plan": get_career.get_cert_plan,
     "/api/career/project-plan": get_career.get_project_plan,
     "/api/filtered-out": get_filtered_out.get_filtered_out,
+    "/api/france-targets": feature_surfaces.get_france_targets,
+    "/api/job-history": feature_surfaces.get_job_history,
 }
 
 
@@ -179,6 +188,7 @@ POST_ROUTES: dict[str, Callable[[object, dict], None]] = {
     "/api/evaluate": stories.post_evaluate,
     "/api/discover-boards": boards.post_discover_boards,
     "/api/profile-facts": profile_facts.post_profile_facts,
+    "/api/profile-import": feature_surfaces.post_profile_import,
 }
 
 
