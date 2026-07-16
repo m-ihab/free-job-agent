@@ -8,9 +8,12 @@
   const TAB_LABELS = {
     overview: "Overview", search: "Search", jobs: "Jobs", pipeline: "Pipeline",
     tracker: "Tracker", autopilot: "Autopilot", studio: "CV Studio",
-    portfolio: "Portfolio", coach: "Career Coach", insights: "Insights",
-    add: "Add Job", profile: "Profile & API",
+    portfolio: "Portfolio", career: "Career", "skill-tree": "Skill Tree",
+    coach: "Career Coach", brain: "Brain", insights: "Insights",
+    myprofile: "My Profile", add: "Add Job", profile: "Profile & API",
   };
+
+  const CLI_FEATURES = window.JobAgentFeatureCatalog || [];
 
   function staticCommands() {
     const commands = Object.entries(TAB_LABELS).map(([tab, label]) => ({
@@ -26,6 +29,20 @@
       { kind: "action", label: "Seed story bank from CV", keywords: "star stories interview seed", run: () => { window.activateTab("coach"); window.JobAgentFeatures?.syncStories(); } },
       { kind: "action", label: "Keyboard shortcuts help", keywords: "help keys shortcuts", run: () => window.toggleShortcuts(true) },
     );
+    commands.push(...CLI_FEATURES.map((feature) => {
+      if (feature.surface) {
+        return {
+          kind: "feature", label: feature.description,
+          keywords: `${feature.command} ${feature.description}`,
+          run: () => window.activateTab(feature.surface),
+        };
+      }
+      return {
+        kind: "CLI only", label: `CLI only: ${feature.command}`,
+        keywords: `${feature.command} ${feature.description} terminal`,
+        run: () => window.toast(`Run in a terminal: job-agent ${feature.command}`),
+      };
+    }));
     return commands;
   }
 
@@ -85,7 +102,7 @@
       .map((item) => ({ item, score: Math.max(fuzzyScore(query, item.label), fuzzyScore(query, item.keywords)) }))
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score)
-      .slice(0, 12)
+      .slice(0, query ? 12 : pool.length)
       .map(({ item }) => item);
     selected = 0;
     render();
