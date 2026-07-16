@@ -49,7 +49,12 @@ def test_eu_source_registry_schema() -> None:
 
     for source in sources:
         assert REQUIRED_FIELDS <= source.keys()
-        assert source["verified"] is False
+        assert isinstance(source["verified"], bool)
+        if source["verified"]:
+            date.fromisoformat(source["verified_date"])
+            assert source["verification"].startswith("Keyless live probe:")
+        else:
+            assert source["requires_auth"], "keyless sources must carry a live-probe verification"
         assert source["access_type"] in {"api", "rss", "manual-links"}
         assert isinstance(source["requires_auth"], bool)
         assert isinstance(source["countries"], list) and source["countries"]
