@@ -200,6 +200,27 @@ The core workflow includes local fallbacks for the command runner, HTTP
 fetches, and basic HTML extraction so it still runs without every optional
 package being installed.
 
+### Install with pipx
+
+This is a local-first personal tool and is not published on PyPI. Install it
+from a local clone or directly from its Git repository:
+
+```bash
+pipx install .
+pipx install "git+https://github.com/m-ihab/free-job-agent.git"
+```
+
+Upgrade or remove the pipx-managed installation with:
+
+```bash
+pipx upgrade free-job-agent
+pipx uninstall free-job-agent
+```
+
+From a local clone, `python scripts/launch_web.py` is a one-file,
+cross-platform dashboard launcher. It starts the local server and opens
+<http://127.0.0.1:8765> in the default browser.
+
 ## Quick start
 
 ```powershell
