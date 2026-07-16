@@ -42,6 +42,22 @@ def test_insights_uses_metrics_api_chart_types_tooltips_and_empty_states() -> No
     assert "conversion_rate" in script
 
 
+def test_insights_registers_zoom_and_only_wires_interactive_xy_charts() -> None:
+    html = INDEX.read_text(encoding="utf-8")
+    script = INSIGHTS.read_text(encoding="utf-8")
+
+    assert html.index("chart.umd.min.js") < html.index("hammer.min.js") < html.index("chartjs-plugin-zoom.min.js")
+    assert "Chart.register(window.ChartZoom)" in script
+    assert 'mode: "x"' in script
+    assert "wheel: { enabled: true" in script
+    assert "pinch: { enabled: true" in script
+    assert "pan: { enabled: true" in script
+    assert "resetZoom" in script and 'addEventListener("dblclick"' in script
+    assert html.count("drag \u00b7 scroll to zoom") >= 4
+    assert 'mount("metricsScores", "scoreChart"' in script
+    assert 'mount("metricsApplications", "applicationsChart"' in script
+
+
 def test_overview_kpis_come_from_metrics_endpoint() -> None:
     script = OVERVIEW.read_text(encoding="utf-8")
 

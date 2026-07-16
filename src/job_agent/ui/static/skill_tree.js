@@ -6,6 +6,42 @@
   const escapeHtml = (value) => window.escapeHtml(value);
   const setNotice = (...args) => window.setNotice(...args);
   const state = { payload: null, selectedId: null, loading: false };
+  let baseView = { x: 0, y: 0, width: 1, height: 1 };
+  let view = { ...baseView };
+
+  function applyView() {
+    $("skillTreeSvg").setAttribute("viewBox", `${view.x} ${view.y} ${view.width} ${view.height}`);
+  }
+
+  function resetView() {
+    view = { ...baseView };
+    applyView();
+  }
+
+  function zoomView(factor, point) {
+    const svg = $("skillTreeSvg"), rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const rx = (point.x - rect.left) / rect.width, ry = (point.y - rect.top) / rect.height;
+    const worldX = view.x + rx * view.width, worldY = view.y + ry * view.height;
+    const width = Math.max(baseView.width / 4, Math.min(baseView.width * 2, view.width / factor));
+    const height = width * (baseView.height / baseView.width);
+    view = { x: worldX - rx * width, y: worldY - ry * height, width, height };
+    applyView();
+  }
+
+  function bindTreeInteractions() {
+    const svg = $("skillTreeSvg");
+    window.JobAgentGraphGestures.bindSurface(svg, {
+      onDrag(dx, dy) {
+        const rect = svg.getBoundingClientRect();
+        view.x -= (dx / rect.width) * view.width; view.y -= (dy / rect.height) * view.height;
+        applyView();
+      },
+      onWheel(delta, point) { zoomView(Math.exp(-delta * 0.001), point); },
+      onPinch(scale, point) { zoomView(scale, point); },
+      onDoubleActivate: resetView,
+    });
+  }
 
   function roleMeters(roles) {
     $("skillTreeRoles").innerHTML = roles.length ? roles.map((row) => {
@@ -60,7 +96,8 @@
     svg.classList.remove("hidden");
     $("skillTreeEmpty").classList.add("hidden");
     const { byId, positions, width, height } = layoutSkills(skills);
-    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    baseView = { x: 0, y: 0, width, height };
+    resetView();
     skills.forEach((skill) => (skill.parents || []).forEach((parentId) => {
       const from = positions.get(parentId);
       const to = positions.get(skill.id);
@@ -120,6 +157,7 @@
     }
   }
 
+  bindTreeInteractions();
   $("skillTreeRefreshBtn").addEventListener("click", () => load(true));
   $("skillTreeDetails").addEventListener("click", (event) => {
     if (!event.target.closest("[data-evidence-flow]")) return;

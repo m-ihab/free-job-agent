@@ -1077,6 +1077,7 @@ data engineer</textarea>
               <span><i class="skill-state-dot claimed"></i>Claimed Â· add evidence</span>
               <span><i class="skill-state-dot locked"></i>Locked Â· recurring gap</span>
             </div>
+            <span class="graph-hint graph-hint-overlay">drag · scroll to zoom</span>
             <svg id="skillTreeSvg" role="img" aria-label="Candidate skill progression graph"></svg>
             <div id="skillTreeEmpty" class="empty-state hidden">
               <span class="empty-glyph">â—‡</span>
@@ -1193,7 +1194,8 @@ data engineer</textarea>
           <label>Yaw <input id="brainYaw" type="range" min="-180" max="180" value="18" /></label>
           <label>Pitch <input id="brainPitch" type="range" min="-80" max="80" value="-12" /></label>
           <label>Zoom <input id="brainZoom" type="range" min="45" max="180" value="100" /></label>
-          <span class="muted">Drag the canvas to orbit in 3D. Click a node to inspect its real links.</span>
+          <span class="graph-hint">drag · scroll to zoom</span>
+          <span class="muted">In 3D, drag rotates the orbit. Click a node to inspect its real links.</span>
         </div>
         <div class="brain-layout">
           <section class="panel brain-stage">
@@ -1251,6 +1253,7 @@ data engineer</textarea>
           </section>
           <section class="panel chart-card">
             <div class="chart-heading"><div><h3>Score distribution</h3><p>Current fit scores across four decision bands.</p></div></div>
+            <span class="graph-hint">drag · scroll to zoom</span>
             <div class="chart-wrap">
               <canvas id="scoreChart"></canvas>
               <div id="scoreChartEmpty" class="chart-empty" hidden>No scored jobs yet.</div>
@@ -1262,6 +1265,7 @@ data engineer</textarea>
           </section>
           <section class="panel chart-card span-2">
             <div class="chart-heading"><div><h3>Applications over time</h3><p>Daily submissions during the last 60 days.</p></div></div>
+            <span class="graph-hint">drag · scroll to zoom</span>
             <div class="chart-wrap chart-wrap-wide">
               <canvas id="applicationsChart"></canvas>
               <div id="applicationsChartEmpty" class="chart-empty" hidden>No applications in the last 60 days.</div>
@@ -1554,6 +1558,7 @@ SQL
     <script src="/static/studio_tools.js" defer></script>
     <script src="/static/portfolio.js" defer></script>
     <script src="/static/coach.js" defer></script>
+    <script src="/static/graph_gestures.js" defer></script>
     <script src="/static/brain_graph.js" defer></script>
     <script src="/static/brain.js" defer></script>
     <script src="/static/skill_tree.js" defer></script>

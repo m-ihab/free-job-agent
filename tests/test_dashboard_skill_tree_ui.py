@@ -8,6 +8,7 @@ STATIC = ROOT / "src" / "job_agent" / "ui" / "static"
 INDEX = STATIC / "index.html"
 SCRIPT = STATIC / "skill_tree.js"
 CAREER = STATIC / "career.js"
+GESTURES = STATIC / "graph_gestures.js"
 
 
 def test_dashboard_has_skill_tree_tab_dag_panel_and_role_readiness() -> None:
@@ -43,3 +44,16 @@ def test_career_stat_tiles_link_to_skill_tree() -> None:
 
     assert 'data-skill-tree-link' in script
     assert 'activateTab("skill-tree")' in script
+
+
+def test_skill_tree_binds_viewbox_pan_zoom_pinch_and_reset() -> None:
+    html = INDEX.read_text(encoding="utf-8")
+    script = SCRIPT.read_text(encoding="utf-8") + GESTURES.read_text(encoding="utf-8")
+
+    assert 'id="skillTreeSvg" role="img"' in html
+    assert "drag \u00b7 scroll to zoom" in html
+    assert "viewBox" in script and "bindSurface" in script
+    for event_name in ("pointerdown", "pointermove", "pointerup", "wheel", "dblclick"):
+        assert f'addEventListener("{event_name}"' in script
+    assert "onPinch" in script and "resetView" in script
+    assert "DRAG_THRESHOLD" in script

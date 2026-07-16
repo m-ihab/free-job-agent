@@ -3,11 +3,10 @@
   const $ = (id) => document.getElementById(id);
   const api = (...args) => window.api(...args);
   const esc = (value) => window.escapeHtml(String(value ?? ""));
-
+  if (typeof Chart !== "undefined" && window.ChartZoom && !Chart.registry?.plugins?.items?.zoom) Chart.register(window.ChartZoom);
   function css(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
-
   function colors() {
     return {
       ink: css("--ink"), muted: css("--muted"), line: css("--line"),
@@ -16,7 +15,6 @@
       good: css("--good"), warn: css("--warn"), bad: css("--bad"),
     };
   }
-
   function tooltip(callbacks = {}) {
     const tone = colors();
     return {
@@ -30,7 +28,6 @@
       callbacks,
     };
   }
-
   function axes() {
     const tone = colors();
     return {
@@ -38,7 +35,13 @@
       y: { beginAtZero: true, grid: { color: tone.line }, ticks: { color: tone.muted, precision: 0 } },
     };
   }
-
+  function xAxisZoom() {
+    return {
+      limits: { x: { min: "original", max: "original", minRange: 1 } },
+      pan: { enabled: true, mode: "x", threshold: 5 },
+      zoom: { wheel: { enabled: true, speed: 0.08 }, pinch: { enabled: true }, mode: "x" },
+    };
+  }
   function showCanvas(id, hasData) {
     const canvas = $(id);
     const empty = $(`${id}Empty`);
@@ -47,7 +50,7 @@
     return canvas;
   }
 
-  function mount(key, id, hasData, config) {
+  function mount(key, id, hasData, config, interactive = false) {
     const existing = state.charts[key];
     if (existing && typeof existing.destroy === "function") existing.destroy();
     state.charts[key] = null;
@@ -56,6 +59,10 @@
     if (!hasData || !canvas || !chartAvailable) return;
     Chart.defaults.font.family = css("--font-body");
     state.charts[key] = new Chart(canvas, config);
+    if (interactive && !canvas.dataset.zoomResetBound) {
+      canvas.addEventListener("dblclick", () => state.charts[key]?.resetZoom?.());
+      canvas.dataset.zoomResetBound = "true";
+    }
   }
 
   function renderFunnel(rows) {
@@ -130,10 +137,10 @@
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: tooltip({ label: (item) => `${item.raw} scored jobs` }) },
+        plugins: { legend: { display: false }, tooltip: tooltip({ label: (item) => `${item.raw} scored jobs` }), zoom: xAxisZoom() },
         scales: axes(),
       },
-    });
+    }, true);
   }
 
   function renderApplications(rows) {
@@ -150,10 +157,10 @@
       },
       options: {
         responsive: true, maintainAspectRatio: false, interaction: { intersect: false, mode: "index" },
-        plugins: { legend: { display: false }, tooltip: tooltip() },
+        plugins: { legend: { display: false }, tooltip: tooltip(), zoom: xAxisZoom() },
         scales: axes(),
       },
-    });
+    }, true);
   }
 
   function renderStatus(rows) {

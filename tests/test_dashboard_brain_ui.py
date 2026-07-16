@@ -8,6 +8,7 @@ STATIC = ROOT / "src" / "job_agent" / "ui" / "static"
 INDEX = STATIC / "index.html"
 BRAIN = STATIC / "brain.js"
 GRAPH_RENDERER = STATIC / "brain_graph.js"
+GESTURES = STATIC / "graph_gestures.js"
 
 
 def test_dashboard_has_brain_tab_canvas_controls_legend_and_details() -> None:
@@ -39,3 +40,16 @@ def test_brain_uses_local_canvas_force_projection_and_lifecycle_guards() -> None
     assert "http://" not in script and "https://" not in script
     assert "stable_seed_no_relations" in script
     assert "Evidence entries" in script and "Profile/CV claims" in script
+
+
+def test_brain_binds_pointer_touch_wheel_reset_and_keyboard_interactions() -> None:
+    html = INDEX.read_text(encoding="utf-8")
+    script = GRAPH_RENDERER.read_text(encoding="utf-8") + GESTURES.read_text(encoding="utf-8")
+
+    assert '<script src="/static/graph_gestures.js" defer></script>' in html
+    assert "drag \u00b7 scroll to zoom" in html
+    for event_name in ("pointerdown", "pointermove", "pointerup", "wheel", "dblclick", "keydown"):
+        assert f'addEventListener("{event_name}"' in script
+    assert "onPinch" in script and "onTap" in script
+    assert "prefers-reduced-motion: reduce" in script
+    assert "orbitVelocity" in script and "resetView" in script
