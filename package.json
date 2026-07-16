@@ -14,5 +14,9 @@
     "@playwright/test": "^1.46.0",
     "eslint": "^9.11.0",
     "stylelint": "^16.10.0"
+  },
+  "dependencies": {
+    "chartjs-plugin-zoom": "^2.0.1",
+    "hammerjs": "^2.0.8"
   }
 }
