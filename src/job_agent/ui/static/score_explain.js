@@ -47,6 +47,11 @@
   .se-row .se-lbl em{color:var(--muted,#9aa1ad);font-style:normal}
   .se-bar{height:7px;border-radius:5px;background:var(--border,#2a2f3a);overflow:hidden}
   .se-bar i{display:block;height:100%;background:var(--accent,#7aa2ff);border-radius:5px}
+  .se-evidence-toggle{margin-top:5px;padding:2px 0;border:0;background:none;color:var(--accent,#7aa2ff);font:inherit;font-size:.78rem;cursor:pointer}
+  .se-evidence-toggle:focus-visible{outline:2px solid var(--accent,#7aa2ff);outline-offset:2px}
+  .se-evidence{margin:5px 0 0;padding:7px 9px;border-left:2px solid var(--border,#2a2f3a);color:var(--muted,#9aa1ad);font-size:.78rem}
+  .se-evidence p{margin:0}.se-evidence ul{margin:5px 0 0;padding-left:17px}
+  .se-evidence li{margin:3px 0}.se-evidence small{display:block}
   .se-caps{margin:12px 0;padding:9px 12px;border:1px solid #b4832a55;background:#b4832a1a;
     border-radius:8px;font-size:.82rem}
   .se-sec{margin-top:14px;font-size:.82rem}
@@ -130,6 +135,12 @@
       if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     });
+    drawer.addEventListener("click", (e) => {
+      const toggle = e.target.closest?.("[data-evidence-toggle]"); if (!toggle) return;
+      const panel = drawer.querySelector(`#${toggle.getAttribute("aria-controls")}`); if (!panel) return;
+      const expanded = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", String(!expanded)); panel.hidden = expanded;
+    });
     drawer.querySelector(".se-close").focus();
 
     try {
@@ -155,12 +166,18 @@
     const ex = data.explain, job = data.job || {};
     drawer.querySelector("#se-title").innerHTML =
       `Why this score?<small>${esc(job.title || "")} · ${esc(job.company || "")}</small>`;
-    const rows = (ex.components || []).map((c) => {
+    const rows = (ex.components || []).map((c, index) => {
       const pct = Math.max(0, Math.min(100, c.score));
+      const evidence = Array.isArray(c.evidence) ? c.evidence : [];
+      const evidenceLabel = c.evidence_label || "No supporting evidence found in the evidence store.";
+      const panelId = `se-evidence-${index}`;
+      const evidenceList = evidence.length ? `<ul>${evidence.map((item) => `<li>${esc(item.snippet || "")}<small>${esc(item.source || "")} · entry ${esc(item.id)}</small></li>`).join("")}</ul>` : "";
       return `<div class="se-row">
         <div class="se-lbl"><span>${esc(c.name)}</span>
           <em>${c.score}/100 · weight ${(c.weight * 100).toFixed(0)}% · +${c.contribution} pts</em></div>
         <div class="se-bar" aria-hidden="true"><i style="width:${pct}%"></i></div>
+        <button type="button" class="se-evidence-toggle" data-evidence-toggle aria-expanded="false" aria-controls="${panelId}">Evidence (${evidence.length})</button>
+        <div class="se-evidence" id="${panelId}" hidden><p>${esc(evidenceLabel)}</p>${evidenceList}</div>
       </div>`;
     }).join("");
     const caps = (ex.caps_applied || []).length

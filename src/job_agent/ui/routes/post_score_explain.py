@@ -11,6 +11,7 @@ from typing import Any
 
 from job_agent import embeddings
 from job_agent.feedback import aggregate_feedback, calculate_feedback_adjustment
+from job_agent.score_evidence import link_score_evidence
 from job_agent.scorer import explain_score
 from job_agent.ui.route_helpers import _tracker
 from job_agent.validators import load_profile_bundle
@@ -39,7 +40,21 @@ def post_score_explain(h: Any, payload: dict[str, Any]) -> None:
         logger.debug("Semantic similarity skipped in score-explain", exc_info=True)
         semantic = None
 
+    evidence_items: list[dict[str, Any]] = []
+    evidence_store_available = True
+    try:
+        evidence_items = tracker.db.list_evidence_items_with_ids()
+    except Exception:
+        logger.debug("Evidence store unavailable in score-explain", exc_info=True)
+        evidence_store_available = False
+
     explain = explain_score(job, profile, semantic_score=semantic)
+    link_score_evidence(
+        explain,
+        job,
+        evidence_items,
+        store_available=evidence_store_available,
+    )
     adjustment = calculate_feedback_adjustment(
         job,
         aggregate_feedback(tracker.db.list_feedback()),

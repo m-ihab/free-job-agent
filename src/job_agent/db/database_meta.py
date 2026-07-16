@@ -225,3 +225,12 @@ class MetaMixin:
                 "FROM evidence_items ORDER BY kind, label, source_ref"
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def list_evidence_items_with_ids(self) -> list[dict]:
+        """Return evidence rows with their concrete store identifiers."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, kind, label, value, source, source_ref, confidence "
+                "FROM evidence_items ORDER BY kind, label, source_ref"
+            ).fetchall()
+        return [dict(row) for row in rows]

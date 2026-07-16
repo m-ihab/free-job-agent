@@ -105,6 +105,72 @@ def test_profile_tab_is_visible(page: Page, live_server_url: str) -> None:
     expect(page.locator("#tab-profile")).to_be_visible()
 
 
+def test_score_drawer_evidence_expands_from_keyboard(page: Page, live_server_url: str) -> None:
+    page.route(
+        "**/api/score-explain",
+        lambda intercepted: intercepted.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "job": {"id": "job-evidence", "title": "Data Scientist", "company": "ACME"},
+                    "explain": {
+                        "total_score": 88,
+                        "base_score": 88,
+                        "decision": "apply",
+                        "confidence": 0.9,
+                        "feedback_adjustment": 0,
+                        "feedback_reasons": [],
+                        "caps_applied": [],
+                        "missing_requirements": [],
+                        "notes": [],
+                        "components": [
+                            {
+                                "name": "skill",
+                                "score": 100,
+                                "weight": 0.38,
+                                "contribution": 38,
+                                "evidence_label": "1 supporting evidence entry.",
+                                "evidence": [
+                                    {
+                                        "id": 17,
+                                        "snippet": "Python — programming; 2 years",
+                                        "source": "candidate_profile.skills",
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                }
+            ),
+        ),
+    )
+    page.goto(live_server_url)
+    page.evaluate(
+        """
+        const row = document.createElement("div");
+        row.id = "_scoreEvidence";
+        row.setAttribute("data-job-row", "");
+        row.innerHTML = '<span class="score-pill">88</span><button data-job="job-evidence">Details</button>';
+        document.body.appendChild(row);
+        """
+    )
+    pill = page.locator("#_scoreEvidence .score-pill")
+    expect(pill).to_have_attribute("role", "button")
+    pill.press("Enter")
+
+    toggle = page.get_by_role("button", name="Evidence (1)")
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+    toggle.focus()
+    toggle.press("Enter")
+
+    expect(toggle).to_have_attribute("aria-expanded", "true")
+    expect(page.locator("#se-evidence-0")).to_contain_text("Python — programming; 2 years")
+    expect(page.locator("#se-evidence-0")).to_contain_text("candidate_profile.skills · entry 17")
+    toggle.press("Space")
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+
+
 # ---------------------------------------------------------------------------
 # API: state / jobs / stats
 # ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from job_agent.scorer import WEIGHTS, explain_score, score_job
 from job_agent.schemas.job import JobListing
@@ -57,3 +58,14 @@ def test_payload_is_json_serialisable(sample_job, sample_profile):
     d = explain_score(sample_job, sample_profile, semantic_score=50)
     json.dumps(d)  # must not raise
     assert set(d) >= {"job_id", "components", "caps_applied", "total_score", "decision"}
+
+
+def test_drawer_renders_accessible_component_evidence() -> None:
+    source = (
+        Path(__file__).parents[1] / "src" / "job_agent" / "ui" / "static" / "score_explain.js"
+    ).read_text(encoding="utf-8")
+
+    assert 'class="se-evidence-toggle"' in source
+    assert 'data-evidence-toggle' in source
+    assert 'aria-expanded="false"' in source
+    assert "No supporting evidence found in the evidence store." in source
