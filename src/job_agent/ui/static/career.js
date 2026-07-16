@@ -68,11 +68,12 @@ function renderProjectPlan(report) {
 }
 
 function renderAll(gaps, certs, projects) {
+  const skillTreeMetric = (label, value) => `<button type="button" class="metric metric-link" data-skill-tree-link><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>Open Skill Tree â†’</small></button>`;
   $("careerMetrics").innerHTML = [
-    metric("Scored jobs", gaps.scored_job_count || 0),
-    metric(`Below ${gaps.threshold}`, gaps.low_score_job_count || 0),
-    metric("Gap clusters", (gaps.clusters || []).length),
-    metric("Project plan", (projects.masterplan || []).length),
+    skillTreeMetric("Scored jobs", gaps.scored_job_count || 0),
+    skillTreeMetric(`Below ${gaps.threshold}`, gaps.low_score_job_count || 0),
+    skillTreeMetric("Gap clusters", (gaps.clusters || []).length),
+    skillTreeMetric("Project plan", (projects.masterplan || []).length),
   ].join("");
   renderGapTable(gaps);
   renderCertPlan(certs, Boolean(gaps.scored_job_count));
@@ -114,6 +115,9 @@ async function loadCareer() {
   if (refreshBtn) refreshBtn.addEventListener("click", loadCareer);
   const thresholdSelect = $("careerThreshold");
   if (thresholdSelect) thresholdSelect.addEventListener("change", loadCareer);
+  $("careerMetrics").addEventListener("click", (event) => {
+    if (event.target.closest("[data-skill-tree-link]")) window.activateTab("skill-tree");
+  });
   renderLoading();
 
   const load = loadCareer;
