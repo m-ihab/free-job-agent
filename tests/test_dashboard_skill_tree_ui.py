@@ -7,6 +7,7 @@ ROOT = Path(__file__).parents[1]
 STATIC = ROOT / "src" / "job_agent" / "ui" / "static"
 INDEX = STATIC / "index.html"
 SCRIPT = STATIC / "skill_tree.js"
+LAYOUT = STATIC / "skill_tree_layout.js"
 CAREER = STATIC / "career.js"
 GESTURES = STATIC / "graph_gestures.js"
 
@@ -57,3 +58,28 @@ def test_skill_tree_binds_viewbox_pan_zoom_pinch_and_reset() -> None:
         assert f'addEventListener("{event_name}"' in script
     assert "onPinch" in script and "resetView" in script
     assert "DRAG_THRESHOLD" in script
+
+
+def test_skill_tree_initial_view_fits_content_with_padding_and_readable_labels() -> None:
+    script = SCRIPT.read_text(encoding="utf-8") + LAYOUT.read_text(encoding="utf-8")
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+
+    assert "contentBounds" in script
+    assert "const padding = Math.max(bounds.width, bounds.height) * 0.08" in script
+    assert "baseView = fitView" in script
+    assert "wrapLabel" in script and 'svgNode("tspan"' in script
+    assert ".skill-node text" in css and "font-size: 16px" in css
+    assert "perRow = 4" in script
+
+
+def test_skill_tree_taps_use_current_viewbox_and_have_padded_hit_targets() -> None:
+    script = SCRIPT.read_text(encoding="utf-8")
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+
+    assert "screenToWorld" in script
+    assert "getScreenCTM" in script and "matrix.inverse()" in script
+    assert "view.x + ((point.x - rect.left) / rect.width) * view.width" in script
+    assert "onTap(point)" in script and "hitSkill(point)" in script
+    assert 'class: "skill-node-hit"' in script
+    assert 'x: -8, y: -8, width: 172, height: 78' in script
+    assert ".skill-node-hit" in css and "pointer-events: all" in css

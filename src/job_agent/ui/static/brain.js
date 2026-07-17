@@ -94,19 +94,32 @@
     return loading;
   }
 
-  function setMode(mode) {
+  function savedMode() {
+    try {
+      const saved = localStorage.getItem("job-agent-brain-mode");
+      return saved === "2d" || saved === "3d" ? saved : "3d";
+    } catch { return "3d"; }
+  }
+
+  function setMode(mode, persist = true) {
     $("brainMode2d").setAttribute("aria-pressed", String(mode === "2d"));
     $("brainMode3d").setAttribute("aria-pressed", String(mode === "3d"));
+    $("brainGestureHint").textContent = mode === "3d" ? "drag to orbit · scroll to zoom" : "drag to pan · drag a node to pin";
+    $("brainYaw").disabled = mode === "2d";
+    $("brainPitch").disabled = mode === "2d";
+    $("brainControls").dataset.mode = mode;
     ensureRenderer().setMode(mode);
+    if (persist) { try { localStorage.setItem("job-agent-brain-mode", mode); } catch { /* private mode */ } }
   }
 
   async function openJob(jobId) { window.activateTab("brain"); await load(); selectNode(`job:${jobId}`); }
-  function state() { return renderer?.snapshot() || { nodeCount: 0, mode: "2d" }; }
+  function state() { return renderer?.snapshot() || { nodeCount: 0, mode: "3d" }; }
   function setActive(active) { ensureRenderer().setVisible(active && !document.hidden); }
 
   function bind() {
     if (!$("brainCanvas")) return;
     ensureRenderer();
+    setMode(savedMode(), false);
     $("brainRefreshBtn").addEventListener("click", () => load(true));
     $("brainMode2d").addEventListener("click", () => setMode("2d"));
     $("brainMode3d").addEventListener("click", () => setMode("3d"));

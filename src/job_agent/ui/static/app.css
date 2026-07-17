@@ -3285,12 +3285,15 @@ html {
   padding: 0.25rem 0.75rem;
   border: 0;
   background: transparent;
+  opacity: 0.7;
+  font-weight: 650;
 }
 
 .brain-mode-toggle button[aria-pressed="true"] {
-  color: var(--ink);
-  background: var(--accent-soft);
-  box-shadow: var(--shadow-soft);
+  color: var(--surface-solid);
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow-soft);
+  opacity: 1;
 }
 
 .brain-controls {
@@ -3315,6 +3318,9 @@ html {
 }
 
 .brain-controls input { width: 110px; }
+
+.brain-controls[data-mode="2d"] label:has(#brainYaw),
+.brain-controls[data-mode="2d"] label:has(#brainPitch) { opacity: 0.45; }
 
 .brain-layout {
   display: grid;
@@ -3474,13 +3480,14 @@ html {
 .skill-state-dot.locked { background: var(--muted); opacity: 0.5; }
 .skill-edge { fill: none; stroke: var(--line-strong); stroke-width: 2; stroke-dasharray: 5 6; }
 .skill-node { cursor: pointer; outline: none; }
-.skill-node rect { fill: var(--surface-solid); stroke: var(--line-strong); stroke-width: 1.5; transition: stroke 0.18s ease, filter 0.18s ease, opacity 0.18s ease; }
-.skill-node text { fill: var(--ink); font-size: 13px; font-weight: 700; pointer-events: none; }
-.skill-node .skill-node-state { fill: var(--muted); font-size: 9px; font-weight: 600; text-transform: uppercase; }
-.skill-node.unlocked rect { stroke: var(--good); filter: drop-shadow(0 0 10px color-mix(in srgb, var(--good) 38%, transparent)); }
-.skill-node.claimed rect { fill: transparent; stroke: var(--accent); stroke-dasharray: 6 4; }
-.skill-node.locked rect { opacity: 0.52; }
-.skill-node:hover rect, .skill-node:focus-visible rect { stroke: var(--accent-hover); filter: drop-shadow(0 0 12px var(--accent-soft)); opacity: 1; }
+.skill-node .skill-node-hit { fill: transparent; stroke: none; pointer-events: all; }
+.skill-node .skill-node-card { fill: var(--surface-solid); stroke: var(--line-strong); stroke-width: 1.5; transition: stroke 0.18s ease, filter 0.18s ease, opacity 0.18s ease; }
+.skill-node text { fill: var(--ink); font-size: 16px; font-weight: 700; pointer-events: none; }
+.skill-node .skill-node-state { fill: var(--muted); font-size: 10px; font-weight: 600; text-transform: uppercase; }
+.skill-node.unlocked .skill-node-card { stroke: var(--good); filter: drop-shadow(0 0 10px color-mix(in srgb, var(--good) 38%, transparent)); }
+.skill-node.claimed .skill-node-card { fill: transparent; stroke: var(--accent); stroke-dasharray: 6 4; }
+.skill-node.locked .skill-node-card { opacity: 0.52; }
+.skill-node:hover .skill-node-card, .skill-node:focus-visible .skill-node-card { stroke: var(--accent-hover); filter: drop-shadow(0 0 12px var(--accent-soft)); opacity: 1; }
 .skill-tree-details { max-height: 590px; overflow: auto; }
 .skill-tree-details h3 { margin: 0.35rem 0 0.9rem; }
 .skill-tree-details h4 { margin-top: 1.1rem; }

@@ -6,9 +6,10 @@
     const ctx = canvas.getContext("2d");
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     let nodes = [], edges = [], byId = new Map(), frame = 0, alpha = 0, lastFrame = 0;
-    let mode = "2d", yaw = 18, pitch = -12, zoom = 1, visible = false, selected = "";
-    let panX = 0, panY = 0, lastDragAt = 0;
+    let mode = "3d", yaw = 18, pitch = -12, zoom = 1, visible = false, selected = "";
+    let panX = 0, panY = 0, lastDragAt = 0, draggedNode = null;
     const orbitVelocity = { yaw: 0, pitch: 0 };
+    const layout = window.JobAgentBrainLayout;
 
     function sizeCanvas() {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -28,34 +29,12 @@
         const radius = Math.sqrt(Math.max(0, 1 - sphereZ * sphereZ));
         const angle = index * golden + (node.meta.stable_seed % 997) / 997;
         return { ...node, x: Math.cos(angle) * radius * 230, y: Math.sin(angle) * radius * 230,
-          z: sphereZ * 230, vx: 0, vy: 0, sx: 0, sy: 0, sr: 0, depth: 0 };
+          z: sphereZ * 230, vx: 0, vy: 0, sx: 0, sy: 0, sr: 0, depth: 0, pinned: false };
       });
     }
 
     function simulate() {
-      const repulsion = 1300, spring = 0.012, centering = 0.004;
-      for (let i = 0; i < nodes.length; i += 1) {
-        for (let j = i + 1; j < nodes.length; j += 1) {
-          const a = nodes[i], b = nodes[j];
-          let dx = b.x - a.x, dy = b.y - a.y;
-          const d2 = Math.max(64, dx * dx + dy * dy), force = (repulsion * alpha) / d2;
-          const d = Math.sqrt(d2); dx /= d; dy /= d;
-          a.vx -= dx * force; a.vy -= dy * force; b.vx += dx * force; b.vy += dy * force;
-        }
-      }
-      edges.forEach((edge) => {
-        const a = byId.get(edge.source), b = byId.get(edge.target);
-        if (!a || !b) return;
-        const dx = b.x - a.x, dy = b.y - a.y, distance = Math.max(1, Math.hypot(dx, dy));
-        const pull = (distance - 95) * spring * alpha;
-        a.vx += (dx / distance) * pull; a.vy += (dy / distance) * pull;
-        b.vx -= (dx / distance) * pull; b.vy -= (dy / distance) * pull;
-      });
-      nodes.forEach((node) => {
-        node.vx = (node.vx - node.x * centering * alpha) * 0.84;
-        node.vy = (node.vy - node.y * centering * alpha) * 0.84;
-        node.x += node.vx; node.y += node.vy;
-      });
+      layout.simulate(nodes, edges, byId, alpha);
       alpha *= 0.985;
     }
 
@@ -83,7 +62,7 @@
       ctx.clearRect(0, 0, width, height);
       nodes.forEach((node) => {
         const p = project(node, width, height); node.sx = p.x; node.sy = p.y; node.depth = p.z;
-        node.sr = (node.type === "job" ? 7 : node.type === "skill" ? 6 : 5) * Math.sqrt(p.p);
+        node.sr = layout.radiusFor(node, p.p);
       });
       ctx.lineWidth = 1;
       edges.forEach((edge) => {
@@ -96,11 +75,8 @@
         ctx.globalAlpha = mode === "3d" ? Math.max(0.42, Math.min(1, 1.25 - (node.depth + 230) / 700)) : 1;
         ctx.fillStyle = colors[node.type]; ctx.shadowColor = colors[node.type]; ctx.shadowBlur = active ? 18 : 7;
         ctx.beginPath(); ctx.arc(node.sx, node.sy, node.sr + (active ? 3 : 0), 0, Math.PI * 2); ctx.fill();
-        if (active || node.meta.degree >= 3) {
-          ctx.shadowBlur = 0; ctx.fillStyle = colors.text; ctx.font = "12px Inter, Segoe UI, sans-serif";
-          ctx.fillText(node.label, node.sx + node.sr + 5, node.sy + 4);
-        }
       });
+      layout.drawLabels(ctx, nodes, selected, zoom, colors.text);
       ctx.globalAlpha = 1; ctx.shadowBlur = 0;
     }
 
@@ -133,7 +109,12 @@
     }
 
     function hit(x, y) {
-      return [...nodes].reverse().find((node) => Math.hypot(node.sx - x, node.sy - y) <= node.sr + 7);
+      return [...nodes].reverse().find((node) => Math.hypot(node.sx - x, node.sy - y) <= Math.max(node.sr, 12));
+    }
+
+    function canvasPoint(point) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: point.x - rect.left, y: point.y - rect.top };
     }
 
     function zoomAt(factor, point) {
@@ -151,20 +132,32 @@
     }
 
     window.JobAgentGraphGestures.bindSurface(canvas, {
-      onDragStart() { orbitVelocity.yaw = 0; orbitVelocity.pitch = 0; lastDragAt = window.performance.now(); },
+      onDragStart(point) {
+        orbitVelocity.yaw = 0; orbitVelocity.pitch = 0; lastDragAt = window.performance.now();
+        draggedNode = mode === "2d" ? hit(canvasPoint(point).x, canvasPoint(point).y) : null;
+        if (draggedNode) { draggedNode.pinned = true; draggedNode.vx = 0; draggedNode.vy = 0; }
+      },
       onDrag(dx, dy) {
-        if (mode === "2d") { panX += dx; panY += dy; draw(); return; }
+        if (mode === "2d") {
+          if (draggedNode) { draggedNode.x += dx / zoom; draggedNode.y += dy / zoom; }
+          else { panX += dx; panY += dy; }
+          draw(); return;
+        }
         const now = window.performance.now(), delta = Math.max(8, now - lastDragAt);
         const yawDelta = dx * 0.45, pitchDelta = dy * 0.35;
         yaw += yawDelta; pitch = Math.max(-80, Math.min(80, pitch + pitchDelta));
         orbitVelocity.yaw = yawDelta / delta; orbitVelocity.pitch = pitchDelta / delta; lastDragAt = now;
         options.onOrbit?.({ yaw, pitch, zoom }); draw();
       },
-      onDragEnd({ moved }) { if (moved && mode === "3d" && !reduced.matches) wake(0); },
+      onDragEnd({ moved }) { draggedNode = null; if (moved && mode === "3d" && !reduced.matches) wake(0); },
       onWheel(delta, point) { zoomAt(Math.exp(-delta * 0.001), point); },
       onPinch(scale, point) { zoomAt(scale, point); },
-      onTap(point) { const rect = canvas.getBoundingClientRect(), node = hit(point.x - rect.left, point.y - rect.top); if (node) options.onSelect?.(node.id); },
-      onDoubleActivate: resetView,
+      onTap(point) { const local = canvasPoint(point), node = hit(local.x, local.y); if (node) options.onSelect?.(node.id); },
+      onDoubleActivate(point) {
+        const local = canvasPoint(point), node = mode === "2d" ? hit(local.x, local.y) : null;
+        if (node?.pinned) { node.pinned = false; wake(0.5); return; }
+        resetView();
+      },
       onKey(event) {
         const turns = { ArrowLeft: [-6, 0], ArrowRight: [6, 0], ArrowUp: [0, -5], ArrowDown: [0, 5] };
         if (turns[event.key]) {
@@ -179,7 +172,7 @@
     new window.ResizeObserver(() => draw()).observe(canvas);
 
     return {
-      setData(data) { nodes = place(data.nodes || []); edges = data.edges || []; byId = new Map(nodes.map((n) => [n.id, n])); selected = ""; wake(1); },
+      setData(data) { nodes = place(data.nodes || []); edges = data.edges || []; byId = new Map(nodes.map((n) => [n.id, n])); selected = ""; layout.collide(nodes); wake(1); },
       setMode(value) { mode = value; draw(); },
       setOrbit(next) { yaw = Number(next.yaw); pitch = Number(next.pitch); zoom = Number(next.zoom); draw(); },
       setVisible(value) { visible = value; if (!visible && frame) { window.cancelAnimationFrame(frame); frame = 0; lastFrame = 0; } else if (visible) wake(); },

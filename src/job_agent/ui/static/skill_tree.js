@@ -5,9 +5,11 @@
   const api = (...args) => window.api(...args);
   const escapeHtml = (value) => window.escapeHtml(value);
   const setNotice = (...args) => window.setNotice(...args);
+  const treeLayout = window.JobAgentSkillTreeLayout;
   const state = { payload: null, selectedId: null, loading: false };
   let baseView = { x: 0, y: 0, width: 1, height: 1 };
   let view = { ...baseView };
+  let skillById = new Map(), skillPositions = new Map();
 
   function applyView() {
     $("skillTreeSvg").setAttribute("viewBox", `${view.x} ${view.y} ${view.width} ${view.height}`);
@@ -29,6 +31,28 @@
     applyView();
   }
 
+  function screenToWorld(point) {
+    const svg = $("skillTreeSvg"), rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const matrix = svg.getScreenCTM?.();
+    if (matrix && svg.createSVGPoint) {
+      const cursor = svg.createSVGPoint();
+      cursor.x = point.x; cursor.y = point.y;
+      const world = cursor.matrixTransform(matrix.inverse());
+      return { x: world.x, y: world.y };
+    }
+    return {
+      x: view.x + ((point.x - rect.left) / rect.width) * view.width,
+      y: view.y + ((point.y - rect.top) / rect.height) * view.height,
+    };
+  }
+
+  function hitSkill(point) {
+    const world = screenToWorld(point);
+    if (!world) return null;
+    return [...skillPositions].find(([, position]) => Math.abs(world.x - position.x) <= 86 && Math.abs(world.y - position.y) <= 39)?.[0] || null;
+  }
+
   function bindTreeInteractions() {
     const svg = $("skillTreeSvg");
     window.JobAgentGraphGestures.bindSurface(svg, {
@@ -39,6 +63,7 @@
       },
       onWheel(delta, point) { zoomView(Math.exp(-delta * 0.001), point); },
       onPinch(scale, point) { zoomView(scale, point); },
+      onTap(point) { const id = hitSkill(point); if (id) selectSkill(id, skillById); },
       onDoubleActivate: resetView,
     });
   }
@@ -50,39 +75,10 @@
     }).join("") : "";
   }
 
-  function skillDepth(skill, byId, trail = new Set()) {
-    if (trail.has(skill.id)) return 0;
-    const parents = (skill.parents || []).map((id) => byId.get(id)).filter(Boolean);
-    if (!parents.length) return 0;
-    const nextTrail = new Set(trail);
-    nextTrail.add(skill.id);
-    return 1 + Math.max(...parents.map((parent) => skillDepth(parent, byId, nextTrail)));
-  }
-
   function svgNode(name, attributes = {}) {
     const node = document.createElementNS(SVG_NS, name);
     Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, String(value)));
     return node;
-  }
-
-  function layoutSkills(skills) {
-    const byId = new Map(skills.map((skill) => [skill.id, skill]));
-    const tiers = new Map();
-    skills.forEach((skill) => {
-      const depth = skillDepth(skill, byId);
-      if (!tiers.has(depth)) tiers.set(depth, []);
-      tiers.get(depth).push(skill);
-    });
-    const widest = Math.max(1, ...[...tiers.values()].map((rows) => rows.length));
-    const width = Math.max(760, widest * 190 + 80);
-    const height = Math.max(420, tiers.size * 150 + 100);
-    const positions = new Map();
-    [...tiers.entries()].sort(([a], [b]) => a - b).forEach(([depth, rows]) => {
-      rows.sort((a, b) => a.label.localeCompare(b.label));
-      const gap = width / (rows.length + 1);
-      rows.forEach((skill, index) => positions.set(skill.id, { x: gap * (index + 1), y: 95 + depth * 150 }));
-    });
-    return { byId, positions, width, height };
   }
 
   function drawTree(skills) {
@@ -95,8 +91,10 @@
     }
     svg.classList.remove("hidden");
     $("skillTreeEmpty").classList.add("hidden");
-    const { byId, positions, width, height } = layoutSkills(skills);
-    baseView = { x: 0, y: 0, width, height };
+    const { byId, positions } = treeLayout.layoutSkills(skills);
+    skillById = byId; skillPositions = positions;
+    const bounds = treeLayout.contentBounds(positions), fitView = treeLayout.fitView;
+    baseView = fitView(bounds);
     resetView();
     skills.forEach((skill) => (skill.parents || []).forEach((parentId) => {
       const from = positions.get(parentId);
@@ -110,9 +108,14 @@
       const group = svgNode("g", { class: `skill-node ${skill.state}`, transform: `translate(${point.x - 78} ${point.y - 31})`, "aria-label": `${skill.label}, ${skill.state}` });
       group.setAttribute("tabindex", "0");
       group.setAttribute("role", "button");
-      group.appendChild(svgNode("rect", { width: 156, height: 62, rx: 16 }));
-      const label = svgNode("text", { x: 78, y: 27, "text-anchor": "middle" });
-      label.textContent = skill.label;
+      group.appendChild(svgNode("rect", { class: "skill-node-hit", x: -8, y: -8, width: 172, height: 78, rx: 22 }));
+      group.appendChild(svgNode("rect", { class: "skill-node-card", width: 156, height: 62, rx: 16 }));
+      const label = svgNode("text", { x: 78, "text-anchor": "middle" });
+      const lines = treeLayout.wrapLabel(skill.label);
+      lines.forEach((line, index) => {
+        const part = svgNode("tspan", { x: 78, y: lines.length === 1 ? 27 : 19 + index * 14 });
+        part.textContent = line; label.appendChild(part);
+      });
       group.appendChild(label);
       const status = svgNode("text", { class: "skill-node-state", x: 78, y: 46, "text-anchor": "middle" });
       status.textContent = skill.state === "locked" ? `\u{1F512} ${skill.unlock.jobsBlocked} gap job(s)` : skill.state === "claimed" ? "â—‹ add evidence" : `âœ¦ ${skill.evidenceCount} proof item(s)`;

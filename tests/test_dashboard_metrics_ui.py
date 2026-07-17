@@ -53,7 +53,8 @@ def test_insights_registers_zoom_and_only_wires_interactive_xy_charts() -> None:
     assert "pinch: { enabled: true" in script
     assert "pan: { enabled: true" in script
     assert "resetZoom" in script and 'addEventListener("dblclick"' in script
-    assert html.count("drag \u00b7 scroll to zoom") >= 4
+    insights_html = html.split('<section id="tab-insights"', 1)[1].split('<section id="tab-', 1)[0]
+    assert insights_html.count("drag \u00b7 scroll to zoom") == 2
     assert 'mount("metricsScores", "scoreChart"' in script
     assert 'mount("metricsApplications", "applicationsChart"' in script
 

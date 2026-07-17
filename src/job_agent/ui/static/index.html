@@ -1185,16 +1185,16 @@ data engineer</textarea>
           <div class="action-row">
             <button id="brainRefreshBtn">Refresh</button>
             <div class="brain-mode-toggle" aria-label="Graph view">
-              <button id="brainMode2d" aria-pressed="true">2D map</button>
-              <button id="brainMode3d" aria-pressed="false">3D orbit</button>
+              <button id="brainMode2d" aria-pressed="false">2D map</button>
+              <button id="brainMode3d" aria-pressed="true">3D orbit</button>
             </div>
           </div>
         </div>
-        <div class="brain-controls" aria-label="Orbit controls">
+        <div id="brainControls" class="brain-controls" data-mode="3d" aria-label="Orbit controls">
           <label>Yaw <input id="brainYaw" type="range" min="-180" max="180" value="18" /></label>
           <label>Pitch <input id="brainPitch" type="range" min="-80" max="80" value="-12" /></label>
           <label>Zoom <input id="brainZoom" type="range" min="45" max="180" value="100" /></label>
-          <span class="graph-hint">drag · scroll to zoom</span>
+          <span id="brainGestureHint" class="graph-hint" aria-live="polite">drag to orbit · scroll to zoom</span>
           <span class="muted">In 3D, drag rotates the orbit. Click a node to inspect its real links.</span>
         </div>
         <div class="brain-layout">
@@ -1559,8 +1559,10 @@ SQL
     <script src="/static/portfolio.js" defer></script>
     <script src="/static/coach.js" defer></script>
     <script src="/static/graph_gestures.js" defer></script>
+    <script src="/static/brain_graph_layout.js" defer></script>
     <script src="/static/brain_graph.js" defer></script>
     <script src="/static/brain.js" defer></script>
+    <script src="/static/skill_tree_layout.js" defer></script>
     <script src="/static/skill_tree.js" defer></script>
     <script src="/static/autopilot.js" defer></script>
     <script src="/static/insights.js" defer></script>

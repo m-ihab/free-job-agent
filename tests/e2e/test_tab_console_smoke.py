@@ -96,12 +96,21 @@ def test_brain_tab_paints_seeded_graph_and_opens_job_details(
         page.wait_for_function("() => window.JobAgentBrain?.state().nodeCount > 0")
         assert page.locator("#brainEmpty").is_hidden()
         assert "5 nodes" in (page.locator("#brainGraphStats").text_content() or "")
+        assert page.locator("#brainMode3d").get_attribute("aria-pressed") == "true"
+        assert page.locator("#brainGestureHint").text_content() == "drag to orbit · scroll to zoom"
+        page.locator("#brainMode2d").click()
+        assert page.locator("#brainGestureHint").text_content() == "drag to pan · drag a node to pin"
+        page.reload()
+        page.locator("button[data-tab='brain']").click()
+        page.wait_for_function("() => window.JobAgentBrain?.state().nodeCount > 0")
+        assert page.locator("#brainMode2d").get_attribute("aria-pressed") == "true"
+        assert page.evaluate("() => window.JobAgentBrain.state().mode") == "2d"
+        page.locator("#brainMode3d").click()
         page.evaluate("jobId => window.JobAgentBrain.selectNode(`job:${jobId}`)", job.id)
         page.locator("#brainDetails").get_by_text("Graph Data Scientist").wait_for()
         details = page.locator("#brainDetails").text_content() or ""
         assert "Fit score" in details
         assert "Search quality" in details
-        page.locator("#brainMode3d").click()
         assert page.locator("#brainMode3d").get_attribute("aria-pressed") == "true"
         page.screenshot(path=str(tmp_path / "brain-seeded-3d.png"), full_page=True)
         assert page_errors == []
@@ -141,11 +150,26 @@ def test_skill_tree_renders_seeded_states_and_details(
         assert page.locator(".skill-role-card").count() > 0
         assert page.locator("#skillTreeSvg .skill-node.locked").count() >= 1
         locked = page.locator("#skillTreeSvg .skill-node.locked").first
+        effective_font = locked.evaluate(
+            "node => parseFloat(getComputedStyle(node.querySelector('text')).fontSize) * node.getScreenCTM().a"
+        )
+        assert effective_font >= 12
         locked.press("Enter")
         page.locator("#skillTreeDetails").get_by_text("How to unlock").wait_for()
         details = page.locator("#skillTreeDetails").text_content() or ""
         assert "low-score job(s) expose it as a gap" in details
         assert "Hypothetical re-score, not a promise" in details
+        svg = page.locator("#skillTreeSvg")
+        svg.hover(position={"x": 520, "y": 310})
+        page.mouse.wheel(0, -180)
+        page.mouse.move(700, 760)
+        page.mouse.down()
+        page.mouse.move(675, 740)
+        page.mouse.up()
+        unlocked = page.locator("#skillTreeSvg .skill-node.unlocked").first
+        unlocked_label = (unlocked.get_attribute("aria-label") or "").split(",", 1)[0]
+        unlocked.click()
+        page.locator("#skillTreeDetails h3").get_by_text(unlocked_label, exact=True).wait_for()
         page.screenshot(path=str(tmp_path / "skill-tree-seeded-desktop.png"), full_page=True)
         page.set_viewport_size({"width": 820, "height": 1000})
         columns = page.locator(".skill-tree-layout").evaluate(
