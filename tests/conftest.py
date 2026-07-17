@@ -82,6 +82,13 @@ def _disable_embeddings_autodetect(monkeypatch):
     Ollama server during tests. Tests that exercise embeddings pass an explicit
     model/embedder, which bypasses env-based auto-detection entirely."""
     monkeypatch.setenv("JOB_AGENT_DISABLE_EMBEDDINGS", "1")
+    # Generation paths auto-detect a live Ollama too (outreach Smart engine, AI
+    # helpers). With the owner's Ollama actually running, non-mocking tests start
+    # doing real generations — slow, non-deterministic, and wrong. Point every
+    # env-based client at a dead loopback port so reachability fails instantly;
+    # tests that exercise Ollama behavior monkeypatch their own env/HTTP layer.
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("JOB_AGENT_USE_OLLAMA", "0")
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 
