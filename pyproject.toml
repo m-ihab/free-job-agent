@@ -67,9 +67,10 @@ include = ["job_agent*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-# Use a project-local basetemp: a locked/corrupted %TEMP%\pytest-of-* dir on Windows
-# otherwise throws PermissionErrors and silently under-reports coverage.
-addopts = "--basetemp=.pytest_tmp/bt"
+# No pinned basetemp: the old project-local .pytest_tmp/bt became an undeletable
+# OneDrive reparse point with broken ACLs and failed every bare `pytest -q` run.
+# tests/conftest.py redirects the temp root only when the system default is actually
+# inaccessible, which was the original reason for pinning; system temp is the default.
 
 [tool.ruff]
 src = ["src"]
