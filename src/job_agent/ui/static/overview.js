@@ -22,8 +22,8 @@
     return `<span class="score-ring ${size}" style="--ring-value:${value};--ring-color:${ringColor(score)}">${label}</span>`;
   }
 
-  function heroStat(num, label) {
-    return `<div class="ov-card ov-stat"><span class="ov-num">${esc(num)}</span><span class="ov-label">${esc(label)}</span></div>`;
+  function heroStat(num, label, target) {
+    return `<button type="button" class="ov-card ov-stat" data-goto="${esc(target)}" aria-label="${esc(label)}: ${esc(num)}. Open ${esc(target)}."><span class="ov-num">${esc(num)}</span><span class="ov-label">${esc(label)}</span></button>`;
   }
 
   function emptyState(glyph, title, hint) {
@@ -118,19 +118,21 @@
       if (!state.jobs.length) await window.loadJobs(false);
       const [metrics, today] = await Promise.all([
         window.api("/api/metrics"),
-        window.api("/api/pipeline/today?limit=6"),
+        window.api("/api/pipeline/today?limit=50"),
       ]);
       const jobs = state.jobs || [];
       const kpis = metrics.kpis || {};
       $("ovHero").innerHTML = [
-        heroStat(kpis.tracked ?? jobs.length, "Tracked jobs"),
-        heroStat(kpis.scored ?? 0, "Scored"),
-        heroStat(kpis.packets ?? 0, "Packet ready"),
-        heroStat(kpis.applied ?? 0, "Applied"),
-        heroStat(`${kpis.response_rate ?? 0}%`, "Response rate"),
-        heroStat(kpis.interviews ?? 0, "Interviews"),
+        heroStat(kpis.tracked ?? jobs.length, "Tracked jobs", "jobs"),
+        heroStat(kpis.scored ?? 0, "Scored", "jobs"),
+        heroStat(kpis.packets ?? 0, "Packet ready", "tracker"),
+        heroStat(kpis.applied ?? 0, "Applied", "tracker"),
+        heroStat(`${kpis.response_rate ?? 0}%`, "Response rate", "insights"),
+        heroStat(kpis.interviews ?? 0, "Interviews", "tracker"),
       ].join("");
-      renderQueue(today.items || today.queue || []);
+      const actions = today.items || today.queue || [];
+      window.JobAgentOverviewShortlist.render(actions, jobs);
+      renderQueue(actions.slice(0, 6));
       renderMatches(jobs);
       renderFunnel(metrics.funnel || []);
       renderChecklist(state.profile || {}, jobs.length, kpis.applied || 0);

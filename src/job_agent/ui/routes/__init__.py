@@ -15,8 +15,7 @@ from typing import Callable
 from job_agent.ui.routes import (
     boards,
     feature_surfaces,
-    get_career,
-    get_core,
+    get_activity, get_career, get_core,
     get_filtered_out,
     get_graph,
     get_metrics,
@@ -74,6 +73,7 @@ GET_ROUTES: dict[str, Callable[[object], None]] = {
     "/api/ai-cache": get_core.get_ai_cache,
     "/api/stats": get_core.get_stats,
     "/api/metrics": get_metrics.get_metrics,
+    "/api/activity": get_activity.get_activity,
     "/api/graph": get_graph.get_graph,
     "/api/skill-tree": get_skill_tree.get_skill_tree,
     "/api/export-csv": get_core.get_export_csv,

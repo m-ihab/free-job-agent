@@ -86,6 +86,10 @@
             <button id="ovRefreshBtn" title="Reload overview data">Refresh</button>
           </div>
         </div>
+        <section class="ov-card ov-shortlist-card" aria-labelledby="ovShortlistTitle">
+          <h3 id="ovShortlistTitle">Your top 5 right now <span class="muted">urgency + fit</span></h3>
+          <ul class="ov-list ov-shortlist" id="ovShortlist"><li class="muted">Loading...</li></ul>
+        </section>
         <div class="ov-hero" id="ovHero"></div>
         <div class="ov-grid" id="ovGrid">
           <div class="ov-card span-7">
@@ -470,6 +474,27 @@
         </div>
         <div class="metric-grid" id="trackerFunnel"></div>
         <div class="notice hidden" id="trackerNotice"></div>
+        <section class="panel activity-panel" aria-labelledby="activityTitle">
+          <div class="activity-heading">
+            <div>
+              <h3 id="activityTitle">Activity</h3>
+              <p class="hint">Real tracker events, including failures and manual handoffs.</p>
+            </div>
+            <button id="activityCopyBtn" type="button">Copy export</button>
+          </div>
+          <div id="activityFilters" class="activity-filters" role="group" aria-label="Filter activity by subsystem">
+            <button type="button" class="active" data-subsystem="" aria-pressed="true">All</button>
+            <button type="button" data-subsystem="scout" aria-pressed="false">Scout</button>
+            <button type="button" data-subsystem="evaluate" aria-pressed="false">Evaluate</button>
+            <button type="button" data-subsystem="customize" aria-pressed="false">Customize</button>
+            <button type="button" data-subsystem="apply" aria-pressed="false">Apply</button>
+            <button type="button" data-subsystem="tracker" aria-pressed="false">Tracker</button>
+            <button type="button" data-subsystem="system" aria-pressed="false">System</button>
+          </div>
+          <ol id="trackerActivity" class="activity-stream" aria-live="polite">
+            <li class="muted">Loading recorded activity...</li>
+          </ol>
+        </section>
         <div id="trackerTableWrap"></div>
         <div id="trackerBoardWrap" class="kb-board hidden" aria-label="Application kanban board"></div>
       </section>
@@ -1032,6 +1057,17 @@ data engineer</textarea>
           </div>
         </div>
 
+        <section id="careerIdentity" class="panel career-identity" aria-labelledby="careerIdentityTitle">
+          <div>
+            <span class="eyebrow">Candidate proof profile</span>
+            <h3 id="careerIdentityTitle">Evidence identity</h3>
+            <p class="muted">Counts come from current local profile and CV rows.</p>
+          </div>
+          <div class="career-identity-counts">
+            <div><span>Evidence</span><strong id="careerEvidenceCount">-</strong></div>
+            <div><span>Claimed</span><strong id="careerClaimedCount">-</strong></div>
+          </div>
+        </section>
         <div class="metric-grid" id="careerMetrics"></div>
         <div class="notice hidden" id="careerNotice"></div>
 
@@ -1217,6 +1253,7 @@ data engineer</textarea>
             <div class="brain-detail-empty"><span class="empty-glyph">◇</span><strong>Select a node</strong><span>Its stored relationships will appear here.</span></div>
           </aside>
         </div>
+        <p id="brainTrustCaption" class="brain-trust-caption">Layout fallback: nodes start at stable seeded positions; stored relationships then shape the map. No embedding coordinates are used.</p>
       </section>
 
       <section id="tab-insights" class="tab-panel">
@@ -1546,12 +1583,14 @@ SQL
 
     <script src="/static/app.js"></script>
     <script src="/static/pipeline.js"></script>
+    <script src="/static/overview_shortlist.js" defer></script>
     <script src="/static/overview.js" defer></script>
     <script src="/static/feature_catalog.js" defer></script>
     <script src="/static/palette.js" defer></script>
     <script src="/static/feature_surfaces.js" defer></script>
     <script src="/static/drawer.js" defer></script>
     <script src="/static/tracker_view.js" defer></script>
+    <script src="/static/activity.js" defer></script>
     <script src="/static/kanban.js" defer></script>
     <script src="/static/features.js" defer></script>
     <script src="/static/profile_editor.js" defer></script>

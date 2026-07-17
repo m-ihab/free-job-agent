@@ -2645,6 +2645,50 @@ html {
   margin-bottom: 1rem;
 }
 
+.ov-shortlist-card { margin-bottom: 0.8rem; }
+
+.ov-stat {
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ov-stat:focus-visible,
+.ov-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ov-shortlist-row { min-height: 58px; }
+
+.ov-score-badges {
+  display: flex;
+  gap: 0.35rem;
+  flex: none;
+}
+
+.ov-score-badge {
+  display: grid;
+  min-width: 44px;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  text-align: center;
+}
+
+.ov-score-badge span { color: var(--muted); font-size: 0.62rem; text-transform: uppercase; }
+.ov-score-badge strong { font-variant-numeric: tabular-nums; }
+
+.ov-next-action {
+  max-width: 180px;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: right;
+}
+
 .ov-card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -2811,6 +2855,77 @@ html {
   border-radius: 99px;
   background: var(--accent-grad);
   transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Tracker activity */
+.activity-panel { margin: 0.8rem 0; }
+
+.activity-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.activity-heading h3,
+.career-identity h3 { margin: 0; }
+
+.activity-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.8rem 0;
+}
+
+.activity-filters button { padding: 0.35rem 0.65rem; border-radius: 999px; }
+.activity-filters button.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+.activity-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 360px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.activity-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) 86px minmax(0, 3fr);
+  gap: 0.65rem;
+  padding: 0.55rem 0.2rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.82rem;
+}
+
+.activity-row time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.activity-tag { color: var(--accent); font-size: 0.68rem; font-weight: 800; text-transform: uppercase; }
+.activity-tag.apply { color: var(--warn); }
+.activity-tag.evaluate { color: var(--brain-skill); }
+.activity-tag.system { color: var(--bad); }
+
+/* Career identity */
+.career-identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.career-identity p { margin: 0.25rem 0 0; }
+.career-identity-counts { display: grid; grid-template-columns: repeat(2, minmax(100px, 1fr)); gap: 0.6rem; }
+.career-identity-counts div { padding: 0.65rem 0.9rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.career-identity-counts span { display: block; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
+.career-identity-counts strong { display: block; font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 720px) {
+  .ov-shortlist-row { align-items: flex-start; flex-wrap: wrap; }
+  .ov-next-action { max-width: none; margin-left: auto; }
+  .activity-row { grid-template-columns: 1fr; gap: 0.2rem; }
+  .career-identity { align-items: stretch; flex-direction: column; }
 }
 
 /* ── Empty states ── */
@@ -3411,6 +3526,12 @@ html {
   max-height: 620px;
   overflow: auto;
   padding: 1.1rem;
+}
+
+.brain-trust-caption {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .brain-details h3 { margin: 0.35rem 0 1rem; overflow-wrap: anywhere; }

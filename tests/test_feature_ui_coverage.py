@@ -56,9 +56,17 @@ def test_missing_feature_controls_are_visible_and_route_backed() -> None:
         'id="franceTargetsBtn"',
         'id="franceTargetsResults"',
         'id="drawerHistory"',
+        'id="trackerActivity"',
+        'id="activityFilters"',
+        'id="activityCopyBtn"',
     ):
         assert control in html
-    for route in ("/api/profile-import", "/api/france-targets", "/api/job-history"):
+    for route in (
+        "/api/profile-import",
+        "/api/france-targets",
+        "/api/job-history",
+        "/api/activity",
+    ):
         assert route in scripts
 
 

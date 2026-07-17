@@ -101,6 +101,13 @@ def test_gap_report_route_honors_threshold_and_exposes_simulation(career_server:
     assert clusters[0]["simulated_score_lift"]["label"] == "simulated"
 
 
+def test_gap_report_exposes_real_evidence_and_claim_row_counts(career_server: int) -> None:
+    status, payload = _get(career_server, "/api/career/gap-report")
+
+    assert status == 200
+    assert payload["identity"] == {"evidence": 1, "claimed": 4}
+
+
 def test_cert_plan_route_returns_ranked_issuer_and_signal(career_server: int) -> None:
     status, payload = _get(career_server, "/api/career/cert-plan")
 

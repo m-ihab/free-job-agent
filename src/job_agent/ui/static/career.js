@@ -67,13 +67,20 @@ function renderProjectPlan(report) {
   ).join("") : "<li class='muted'>No project specifications are available.</li>";
 }
 
+function renderIdentity(identity) {
+  $("careerEvidenceCount").textContent = Number(identity.evidence || 0);
+  $("careerClaimedCount").textContent = Number(identity.claimed || 0);
+}
+
 function renderAll(gaps, certs, projects) {
+  renderIdentity(gaps.identity || {});
+  const navMetric = (label, value, target, anchor = "") => `<button type="button" class="metric metric-link" ${target ? `data-goto="${escapeHtml(target)}"` : `data-career-anchor="${escapeHtml(anchor)}"`}><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${target ? `Open ${escapeHtml(target)}` : "Jump to section"}</small></button>`;
   const skillTreeMetric = (label, value) => `<button type="button" class="metric metric-link" data-skill-tree-link><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>Open Skill Tree â†’</small></button>`;
   $("careerMetrics").innerHTML = [
-    skillTreeMetric("Scored jobs", gaps.scored_job_count || 0),
-    skillTreeMetric(`Below ${gaps.threshold}`, gaps.low_score_job_count || 0),
+    navMetric("Scored jobs", gaps.scored_job_count || 0, "jobs"),
+    navMetric(`Below ${gaps.threshold}`, gaps.low_score_job_count || 0, "", "careerGapContent"),
     skillTreeMetric("Gap clusters", (gaps.clusters || []).length),
-    skillTreeMetric("Project plan", (projects.masterplan || []).length),
+    navMetric("Project plan", (projects.masterplan || []).length, "", "careerMasterplan"),
   ].join("");
   renderGapTable(gaps);
   renderCertPlan(certs, Boolean(gaps.scored_job_count));
@@ -116,7 +123,17 @@ async function loadCareer() {
   const thresholdSelect = $("careerThreshold");
   if (thresholdSelect) thresholdSelect.addEventListener("change", loadCareer);
   $("careerMetrics").addEventListener("click", (event) => {
-    if (event.target.closest("[data-skill-tree-link]")) window.activateTab("skill-tree");
+    const target = event.target.closest("[data-goto]");
+    if (target) {
+      window.activateTab(target.dataset.goto);
+      return;
+    }
+    if (event.target.closest("[data-skill-tree-link]")) {
+      window.activateTab("skill-tree");
+      return;
+    }
+    const anchor = event.target.closest("[data-career-anchor]");
+    if (anchor) $(anchor.dataset.careerAnchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
   renderLoading();
 

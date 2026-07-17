@@ -21,8 +21,14 @@ def get_gap_report(h: Any) -> None:
     """Return aggregate gaps for scored jobs below the requested threshold."""
     try:
         threshold = _threshold_from_path(h.path)
-        report, _profile, _master_cv, _evidence = _career_context(h, threshold)
-        h._send_json(report.to_dict())
+        report, _profile, _master_cv, evidence = _career_context(h, threshold)
+        items = evidence.all()
+        payload = report.to_dict()
+        payload["identity"] = {
+            "evidence": sum(item.kind != "skill" for item in items),
+            "claimed": sum(item.kind == "skill" for item in items),
+        }
+        h._send_json(payload)
     except (OSError, ValueError) as exc:
         h._send_error_json(str(exc), HTTPStatus.BAD_REQUEST)
 

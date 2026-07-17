@@ -102,6 +102,7 @@ async function loadTracker() {
     }
   }
   renderTracker();
+  if (window.JobAgentActivity) await window.JobAgentActivity.load();
 }
 
 async function trackerSetStatus(jobId, status, el) {
