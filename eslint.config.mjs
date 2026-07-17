@@ -42,6 +42,7 @@ export default [
     // declaration doesn't trip no-redeclare.
     files: [
       "src/job_agent/ui/static/drawer.js",
+      "src/job_agent/ui/static/tracker_view.js",
       "src/job_agent/ui/static/kanban.js",
       "src/job_agent/ui/static/overview.js",
       "src/job_agent/ui/static/palette.js",

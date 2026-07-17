@@ -4,12 +4,12 @@ from __future__ import annotations
 from pathlib import Path
 
 
-APP_JS = Path("src/job_agent/ui/static/app.js")
+TRACKER_JS = Path("src/job_agent/ui/static/tracker_view.js")
 KANBAN_JS = Path("src/job_agent/ui/static/kanban.js")
 
 
 def test_tracker_render_dispatches_kanban_event():
-    js = APP_JS.read_text(encoding="utf-8")
+    js = TRACKER_JS.read_text(encoding="utf-8")
 
     render_tracker = js.index("function renderTracker()")
     tracker_rendered_event = js.index("jobagent:tracker-rendered", render_tracker)
