@@ -60,3 +60,20 @@ test("autopilot status endpoint responds", async ({ request }) => {
   expect(body).toHaveProperty("running");
   expect(body).toHaveProperty("config");
 });
+
+test("failed API fetch shows the shared server-restart banner and Retry", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    window.fetch = () => Promise.reject(new TypeError("Failed to fetch"));
+  });
+
+  await page.click('button.tab[data-tab="insights"]');
+  await page.click("#insightsRefreshBtn");
+
+  const banner = page.locator("#insightsMetrics [data-connection-lost]");
+  await expect(banner).toContainText(
+    "Dashboard server not reachable — restart it (launch.ps1) and refresh"
+  );
+  await expect(banner.getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect(banner).not.toContainText("Failed to fetch");
+});

@@ -36,6 +36,11 @@ def test_filters_module_uses_r3_namespace_and_designed_states() -> None:
     assert "Loading filtered jobs" in source
     assert "Nothing filtered out" in source
     assert "Filtered jobs could not load" in source
+    assert 'data-filtered-action="restore"' in source
+    assert 'data-filtered-action="delete"' in source
+    assert 'id="filteredOutRestoreAllBtn"' in source
+    assert 'api("/api/filtered-out/action"' in source
+    assert "window.confirm" in source
     assert 'document.body.addEventListener("click"' not in source
 
 

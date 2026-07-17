@@ -69,6 +69,18 @@
   }
 
   async function load() {
+    try {
+      return await loadPipeline();
+    } catch (error) {
+      if (error instanceof TypeError) {
+        window.renderConnectionLost("pipelineNotice", load);
+        return;
+      }
+      throw error;
+    }
+  }
+
+  async function loadPipeline() {
     const [today, stale, metrics, followups, learning] = await Promise.all([
       api("/api/pipeline/today?limit=8"),
       api("/api/pipeline/stale"),

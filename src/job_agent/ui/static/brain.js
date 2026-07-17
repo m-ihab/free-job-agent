@@ -85,6 +85,10 @@
       $("brainGraphStats").textContent = empty ? "0 nodes · fresh local database" : `${graph.nodes.length} nodes · ${graph.edges.length} relations${graph.truncated ? ` · showing top ${graph.nodes.length} of ${graph.total_nodes}` : ""}`;
       return graph;
     }).catch((error) => {
+      if (error instanceof TypeError) {
+        window.renderConnectionLost("brainGraphStats", () => load(true));
+        return graph;
+      }
       $("brainGraphStats").textContent = `Graph unavailable: ${error.message}`; throw error;
     }).finally(() => { loading = null; });
     return loading;

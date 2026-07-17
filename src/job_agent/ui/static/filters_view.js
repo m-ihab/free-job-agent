@@ -7,6 +7,7 @@
   const metric = (...args) => window.metric(...args);
   const setBusy = (...args) => window.setBusy(...args);
   const setNotice = (...args) => window.setNotice(...args);
+  let shownJobIds = [];
 
 function emptyState(glyph, title, detail) {
   return `<div class="empty-state"><span class="empty-glyph">${glyph}</span><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span></div>`;
@@ -37,6 +38,7 @@ function renderRules(rules) {
 }
 
 function renderJobs(jobs) {
+  shownJobIds = jobs.map((job) => job.id);
   if (!jobs.length) {
     $("filteredOutJobs").innerHTML = emptyState("âœ“", "Nothing filtered out", "All jobs in the current database pass the active quality gates.");
     return;
@@ -46,9 +48,9 @@ function renderJobs(jobs) {
       `<span class="badge bad" title="${escapeHtml(reason.rule || "")}">${escapeHtml(reason.message || "Filtered")}</span>`
     ).join(" ");
     const context = [job.company, job.location, job.source].filter(Boolean).join(" Â· ");
-    return `<li><div><span class="coach-title">${escapeHtml(job.title || "Untitled job")}</span><span class="coach-sub">${escapeHtml(context)}</span><div class="row-tags" style="margin-top:0.45rem">${reasons}</div></div></li>`;
+    return `<li><div><span class="coach-title">${escapeHtml(job.title || "Untitled job")}</span><span class="coach-sub">${escapeHtml(context)}</span><div class="row-tags" style="margin-top:0.45rem">${reasons}</div></div><div class="row-actions"><button data-filtered-action="restore" data-job="${escapeHtml(job.id)}">Restore</button><button data-filtered-action="delete" data-job="${escapeHtml(job.id)}">Delete</button></div></li>`;
   }).join("");
-  $("filteredOutJobs").innerHTML = `<ol class="coach-list">${rows}</ol>`;
+  $("filteredOutJobs").innerHTML = `<div class="row-actions"><button id="filteredOutRestoreAllBtn">Restore all shown</button></div><ol class="coach-list">${rows}</ol>`;
 }
 
 function renderPayload(payload) {
@@ -79,14 +81,56 @@ async function loadFilteredOut() {
   try {
     renderPayload(await api("/api/filtered-out"));
   } catch (error) {
+    if (error instanceof TypeError) {
+      window.renderConnectionLost("filteredOutNotice", loadFilteredOut);
+      return;
+    }
     renderError(error);
   } finally {
     setBusy(button, false);
   }
 }
 
+async function applyAction(jobId, action) {
+  await api("/api/filtered-out/action", { job_id: jobId, action });
+}
+
+async function runAction(jobId, action) {
+  if (action === "delete" && !window.confirm("Delete this filtered job permanently?")) return;
+  try {
+    await applyAction(jobId, action);
+    await loadFilteredOut();
+  } catch (error) {
+    if (error instanceof TypeError) {
+      window.renderConnectionLost("filteredOutNotice", () => runAction(jobId, action));
+      return;
+    }
+    setNotice("filteredOutNotice", error.message, true);
+  }
+}
+
+async function restoreAllShown() {
+  const ids = [...shownJobIds];
+  if (!ids.length) return;
+  try {
+    await Promise.all(ids.map((jobId) => applyAction(jobId, "restore")));
+    await loadFilteredOut();
+  } catch (error) {
+    if (error instanceof TypeError) {
+      window.renderConnectionLost("filteredOutNotice", restoreAllShown);
+      return;
+    }
+    setNotice("filteredOutNotice", error.message, true);
+  }
+}
+
   const refreshBtn = $("filteredOutRefreshBtn");
   if (refreshBtn) refreshBtn.addEventListener("click", loadFilteredOut);
+  $("filteredOutJobs")?.addEventListener("click", (event) => {
+    const action = event.target.closest("[data-filtered-action]");
+    if (action) runAction(action.dataset.job, action.dataset.filteredAction);
+    if (event.target.closest("#filteredOutRestoreAllBtn")) restoreAllShown();
+  });
   renderLoading();
 
   const load = loadFilteredOut;

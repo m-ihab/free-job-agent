@@ -190,6 +190,10 @@
       state.insightsCache = payload;
       renderInsights(payload);
     } catch (error) {
+      if (error instanceof TypeError) {
+        window.renderConnectionLost("insightsMetrics", loadInsights);
+        return;
+      }
       window.toast(`Insights error: ${error.message}`);
     }
   }

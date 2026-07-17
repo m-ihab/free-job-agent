@@ -150,6 +150,11 @@
       drawTree(state.payload.skills || []);
       if (state.selectedId) selectSkill(state.selectedId);
     } catch (error) {
+      if (error instanceof TypeError) {
+        window.renderConnectionLost("skillTreeNotice", () => load(true));
+        drawTree([]);
+        return;
+      }
       setNotice("skillTreeNotice", `Skill Tree could not load: ${error.message}`, true);
       drawTree([]);
     } finally {

@@ -135,6 +135,10 @@
       renderFunnel(metrics.funnel || []);
       renderChecklist(state.profile || {}, jobs.length, kpis.applied || 0);
     } catch (error) {
+      if (error instanceof TypeError) {
+        window.renderConnectionLost("ovHero", loadOverview);
+        return;
+      }
       const node = $("ovHero");
       if (node) node.innerHTML = `<div class="notice error">Overview failed to load: ${esc(error.message)}</div>`;
     }

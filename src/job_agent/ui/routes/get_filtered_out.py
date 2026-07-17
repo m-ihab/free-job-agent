@@ -9,7 +9,7 @@ from job_agent.config import AppConfig
 from job_agent.db.database import Database
 from job_agent.filters import FilterConfig, apply_filters
 from job_agent.schemas.candidate import CandidateProfile
-from job_agent.schemas.job import JobListing
+from job_agent.schemas.job import JobListing, JobStatus
 from job_agent.search_quality import assess_search_quality
 from job_agent.validators import load_profile_bundle
 
@@ -71,14 +71,15 @@ def _load_profile(config: AppConfig) -> CandidateProfile | None:
 def build_filtered_out(config: AppConfig) -> dict[str, Any]:
     """Evaluate current DB rows without mutating jobs, packets, or evidence."""
     db = Database(config.db_path)  # type: ignore[arg-type]
-    jobs = db.list_jobs(limit=None)
+    all_jobs = db.list_jobs(limit=None)
+    jobs = [job for job in all_jobs if job.status is JobStatus.FILTERED]
     profile = _load_profile(config)
     counts: Counter[str] = Counter()
     filtered: list[dict[str, Any]] = []
     for job in jobs:
-        reasons = _job_reasons(job, profile)
-        if not reasons:
-            continue
+        reasons = _job_reasons(job, profile) or [
+            ("filtered_status", "Previously filtered out")
+        ]
         counts.update({rule for rule, _message in reasons})
         filtered.append(
             {
@@ -102,9 +103,9 @@ def build_filtered_out(config: AppConfig) -> dict[str, Any]:
         for rule, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     ]
     return {
-        "evaluated_count": len(jobs),
+        "evaluated_count": len(all_jobs),
         "filtered_count": len(filtered),
-        "passed_count": len(jobs) - len(filtered),
+        "passed_count": len(all_jobs) - len(filtered),
         "rule_counts": dict(counts),
         "rules": rules,
         "jobs": filtered,

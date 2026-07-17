@@ -56,6 +56,21 @@ async function api(path, body = null, method = body ? "POST" : "GET", timeoutMs 
   }
 }
 
+function renderConnectionLost(targetId, retry) {
+  const node = $(targetId);
+  if (!node) return false;
+  node.classList.remove("hidden");
+  node.innerHTML = `<div class="notice error" data-connection-lost>
+    <span>Dashboard server not reachable — restart it (launch.ps1) and refresh</span>
+    <button type="button" data-connection-retry>Retry</button>
+  </div>`;
+  node.querySelector("[data-connection-retry]")?.addEventListener("click", () => {
+    Promise.resolve(retry()).catch(() => {});
+  }, { once: true });
+  return true;
+}
+window.renderConnectionLost = renderConnectionLost;
+
 function toast(message) {
   const node = $("toast");
   node.textContent = message;
