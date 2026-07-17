@@ -44,7 +44,7 @@ def test_eu_source_registry_schema() -> None:
 
     assert registry["attribution"] == ATTRIBUTION
     sources = registry["sources"]
-    assert 12 <= len(sources) <= 18
+    assert 12 <= len(sources) <= 24
     assert len({source["id"] for source in sources}) == len(sources)
 
     for source in sources:

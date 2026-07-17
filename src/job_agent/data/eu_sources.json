@@ -305,6 +305,42 @@
       "verified": true,
       "verified_date": "2026-07-16",
       "verification": "Keyless live probe: GET 200 site reachable."
+    },
+    {
+      "id": "remoteok",
+      "name": "Remote OK",
+      "url": "https://remoteok.com/api",
+      "countries": [
+        "EU",
+        "REMOTE"
+      ],
+      "access_type": "api",
+      "requires_auth": false,
+      "license_posture": "Public API; terms require linking back to the job's Remote OK URL and prohibit redistribution without attribution.",
+      "notes": "Remote tech board with strong EU coverage; first array element is a legal/meta stanza, not a job.",
+      "added_date": "2026-07-17",
+      "attribution": "candidate surfaced by research agent 2026-07-17",
+      "verified": true,
+      "verified_date": "2026-07-17",
+      "verification": "Keyless live probe: GET 200 with job payload."
+    },
+    {
+      "id": "weworkremotely",
+      "name": "We Work Remotely (RSS)",
+      "url": "https://weworkremotely.com/remote-jobs.rss",
+      "countries": [
+        "EU",
+        "REMOTE"
+      ],
+      "access_type": "rss",
+      "requires_auth": false,
+      "license_posture": "Official public RSS feed; standard feed-reader terms, do not redistribute posting content.",
+      "notes": "Remote board RSS; programming category feeds also exist per-category.",
+      "added_date": "2026-07-17",
+      "attribution": "candidate surfaced by research agent 2026-07-17",
+      "verified": true,
+      "verified_date": "2026-07-17",
+      "verification": "Keyless live probe: GET 200 with job payload."
     }
   ]
 }
