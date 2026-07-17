@@ -14,6 +14,7 @@ from job_agent.schemas.candidate import CandidateProfile, MasterCV
 from job_agent.schemas.job import JobListing
 from job_agent.skill_extractor import _IMPLICATION_MAP
 from job_agent.skill_tree_roles import build_role_payloads
+from job_agent.skill_tokens import is_rome_occupation_code
 
 _GAP_PREFIXES = ("skill:", "ats_gap:")
 
@@ -112,6 +113,8 @@ def _required_by_job(jobs: list[JobListing], labels: dict[str, str]) -> dict[str
     required: dict[str, set[str]] = {}
     for job in jobs:
         for raw_skill in job.tech_stack:
+            if is_rome_occupation_code(raw_skill):
+                continue
             key = _remember(labels, raw_skill)
             if key:
                 required.setdefault(key, set()).add(job.id)

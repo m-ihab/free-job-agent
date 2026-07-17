@@ -7,6 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from job_agent.career.gap_coach import build_gap_report, write_gap_report
+from job_agent.career.cert_track import build_cert_plan
 from job_agent.cli.main import app
 from job_agent.db.database import Database
 from job_agent.evidence import EvidenceItem, EvidenceStore
@@ -19,6 +20,8 @@ from job_agent.schemas.candidate import (
 )
 from job_agent.schemas.job import JobListing
 from job_agent.scorer import score_job
+from job_agent.knowledge_graph import build_knowledge_graph
+from job_agent.skill_tree import build_skill_tree
 
 
 @pytest.fixture
@@ -98,6 +101,31 @@ def test_missing_skills_cluster_by_frequency_weighted_impact(
     skill_receipts = [row for row in report.clusters[0].evidence if row.component.startswith("skill:")]
     assert {row.job_id for row in skill_receipts} == {"mlops-1", "mlops-2"}
     assert report.clusters[0].market_share_pct == pytest.approx(66.67)
+
+
+def test_rome_occupation_code_never_becomes_a_career_skill_surface(
+    tmp_db: Database, profile: CandidateProfile, evidence: EvidenceStore
+) -> None:
+    job = _job("rome-code-role", ["Python", "M1905"])
+    _save_scored(tmp_db, job, profile)
+
+    report = build_gap_report(tmp_db, profile, evidence, threshold=100)
+    cert_plan = build_cert_plan(report.clusters, top=5)
+    tree = build_skill_tree(
+        tmp_db,
+        profile,
+        MasterCV(contact=profile.contact, skills=profile.skills),
+        evidence,
+    )
+    graph = build_knowledge_graph(tmp_db)
+
+    assert "m1905" not in json.dumps(report.to_dict()).casefold()
+    assert "m1905" not in json.dumps(cert_plan.to_dict()).casefold()
+    assert "m1905" not in json.dumps(tree).casefold()
+    assert not any(
+        node["type"] == "skill" and node["label"].casefold() == "m1905"
+        for node in graph["nodes"]
+    )
 
 
 def test_french_penalty_cluster_is_detected(

@@ -13,6 +13,7 @@ from job_agent.generator.ats_gap import compute_ats_gap
 from job_agent.schemas.candidate import CandidateProfile
 from job_agent.schemas.job import JobListing
 from job_agent.scorer import explain_score, score_job
+from job_agent.skill_tokens import is_rome_occupation_code
 
 _SKILL_FAMILIES = (
     ("MLOps / deployment", ("docker", "kubernetes", "k8s", "mlflow", "mlops", "deployment", "model registry")),
@@ -113,14 +114,18 @@ def _collect_job_gaps(
     explanation = explain_score(job, profile)
     breakdown = score_job(job, profile)
     skill_component = next(row for row in explanation["components"] if row["name"] == "skill")
-    missing = list(explanation["missing_requirements"])
+    missing = [
+        skill
+        for skill in explanation["missing_requirements"]
+        if not is_rome_occupation_code(skill)
+    ]
     per_skill = round(max(0.0, 100.0 - float(skill_component["score"])) * float(skill_component["weight"]) / max(1, len(missing)), 2)
     seen = {_normalise(skill) for skill in missing}
     for skill in missing:
         _add(states, _skill_family(skill), job, f"skill:{skill}", per_skill, skill)
     ats_gap = compute_ats_gap(job, profile, evidence_store)
     for skill in ats_gap.unsafe_claims_to_avoid:
-        if _normalise(skill) not in seen:
+        if not is_rome_occupation_code(skill) and _normalise(skill) not in seen:
             _add(states, _skill_family(skill), job, f"ats_gap:{skill}", 0.0, skill)
     for flag in breakdown.risk_flags:
         _add(states, flag, job, f"penalty:{flag}", _penalty_impact(flag, explanation), None)

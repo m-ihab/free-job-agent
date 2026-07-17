@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from job_agent.schemas.job import JobListing
+from job_agent.skill_tokens import is_rome_occupation_code
 from job_agent.secrets import load_local_env
 
 from .base import (
@@ -145,7 +146,11 @@ def fetch(search: FreeApiSearch) -> list[JobListing]:
             description=desc,
             requirements=desired + access,
             responsibilities=[],
-            tech_stack=desired + acquired[:12] + rome_codes,
+            tech_stack=[
+                skill
+                for skill in desired + acquired[:12]
+                if not is_rome_occupation_code(skill)
+            ],
             benefits=[],
             posted_date=publication.get("creation"),
             deadline=publication.get("expiration"),

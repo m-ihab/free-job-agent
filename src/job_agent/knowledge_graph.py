@@ -8,6 +8,7 @@ from typing import Any
 
 from job_agent.db.database import Database
 from job_agent.search_quality import assess_search_quality
+from job_agent.skill_tokens import is_rome_occupation_code
 
 
 def _normalise(value: str) -> str:
@@ -92,6 +93,8 @@ def build_knowledge_graph(db: Database, max_nodes: int = 150) -> dict[str, Any]:
 
         seen_job_skills: set[str] = set()
         for raw_skill in job.tech_stack:
+            if is_rome_occupation_code(raw_skill):
+                continue
             label = str(raw_skill).strip()
             key = _normalise(label)
             if not key or key in seen_job_skills:

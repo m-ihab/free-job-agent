@@ -320,6 +320,8 @@ def test_lba_fetch_maps_jobs(monkeypatch):
     assert job.company == "Acme"
     assert job.apply_url == "https://lba.example/apply/abc"
     assert "python" in job.tech_stack
+    assert "M1403" not in job.tech_stack
+    assert "M1403" in job.raw_text
 
 
 def test_lba_fetch_dedupes_and_handles_empty(monkeypatch):

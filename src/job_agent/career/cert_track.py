@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Iterable
 
 from job_agent.career.gap_coach import GapCluster
+from job_agent.skill_tokens import is_rome_occupation_code
 
 _CATALOG_PATH = Path(__file__).parents[1] / "data" / "certifications.json"
 _STALE_AFTER_DAYS = 90
@@ -68,7 +69,7 @@ def build_cert_plan(
     """Rank matching certifications by signal/hour, then by gap coverage."""
     if not 3 <= top <= 5:
         raise ValueError("top must be between 3 and 5")
-    gaps = list(gap_clusters)
+    gaps = [gap for gap in gap_clusters if not _is_rome_gap(gap)]
     items = load_certification_catalog() if catalog is None else list(catalog)
     today = as_of or date.today()
     recommendations: list[CertificationRecommendation] = []
@@ -138,6 +139,12 @@ def _cert_matches_gap(cert: Certification, gap: GapCluster) -> bool:
         (tag := _normalise(skill_tag)) and (tag in gap_text or gap_text in tag)
         for skill_tag in cert.skill_tags
     )
+
+
+def _is_rome_gap(gap: GapCluster) -> bool:
+    labels = [gap.name.removeprefix("Skill: ")]
+    labels.extend(item.component.rsplit(":", 1)[-1] for item in gap.evidence)
+    return any(is_rome_occupation_code(label) for label in labels)
 
 
 def _normalise(value: str) -> str:
